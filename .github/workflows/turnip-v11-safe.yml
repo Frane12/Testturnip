@@ -37,7 +37,7 @@ jobs:
           c_ld = 'lld'
           cpp_ld = 'lld'
           strip = '$BIN/llvm-strip'
-          pkg-config = 'pkg-config'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
           [host_machine]
           system = 'android'
           cpu_family = 'aarch64'
