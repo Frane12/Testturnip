@@ -15,7 +15,7 @@ A830-specific behavior when TU_A830_SMART_GMEM is enabled:
  * Diagnostic counters and once-per-5s log only if
    TU_A830_SMART_GMEM_LOG=1. Default logging imposes no counter work.
 
-Use TU_A830_SMART_GMEM=0 for V15-G control or revert ZIP to V15-J.
+Use TU_A830_SMART_GMEM_STATS=0 for V15-J A/B in same ZIP;\nTU_A830_SMART_GMEM=0 for V15-G control.
 This is a selection optimizer, NOT a page-fault fix or physical GMEM cache.
 """
 from pathlib import Path
@@ -75,6 +75,24 @@ replace_once(
 }""",
 )
 replace_once(
+    """static bool
+frane_a830_gmem_diag_enabled(void)""",
+    """/* A/B switch: keep the proven V15-J decision while using this ZIP. */
+static bool
+frane_a830_gmem_stats_enabled(void)
+{
+   static const bool enabled = []() {
+      const char *env = os_get_option("TU_A830_SMART_GMEM_STATS");
+      return !env || strcmp(env, "0") != 0;
+   }();
+   return enabled;
+}
+
+static bool
+frane_a830_gmem_diag_enabled(void)""",
+)
+
+replace_once(
     """      exponential_average<uint32_t> mean_samples_passed;
 
     public:""",
@@ -133,6 +151,7 @@ replace_once(
                125 + tile_penalty + (a830_memory_tier == 1 ? 50 : 0);
             const uint32_t old_confidence =
                a830_gmem_confidence.load(std::memory_order_relaxed);
+            const bool use_stats = frane_a830_gmem_stats_enabled();
             const uint32_t margin =
                old_confidence >= 2 ? entry_margin - 30 : entry_margin;
             const uint64_t retained_per_mille = 1000 - margin;
@@ -142,8 +161,9 @@ replace_once(
             const uint64_t max_acceptable_gmem =
                (sysmem_bandwidth / 1000) * retained_per_mille +
                ((sysmem_bandwidth % 1000) * retained_per_mille) / 1000;
-            const bool profitable =
-               measured_candidate && gmem_bandwidth <= max_acceptable_gmem;
+            const bool profitable = measured_candidate &&
+               (use_stats ? gmem_bandwidth <= max_acceptable_gmem
+                          : (gmem_bandwidth * 8 <= sysmem_bandwidth * 7));
 
             /* Same-RP confidence: one observation warms the tuner up;
              * second profitable observation enables GMEM. Retain it
@@ -152,9 +172,11 @@ replace_once(
              * Relaxed atomics avoid locks and data races across CB threads.
              */
             const uint32_t new_confidence =
-               profitable ? MIN2(old_confidence + 1, 2u) : 0u;
-            a830_gmem_confidence.store(new_confidence,
-                                       std::memory_order_relaxed);
+               !use_stats ? (profitable ? 2u : 0u) :
+               (profitable ? MIN2(old_confidence + 1, 2u) : 0u);
+            if (use_stats)
+               a830_gmem_confidence.store(new_confidence,
+                                          std::memory_order_relaxed);
             select_sysmem = new_confidence < 2;""",
 )
 
