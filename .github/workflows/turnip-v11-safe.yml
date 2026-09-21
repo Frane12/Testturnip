@@ -1,4 +1,4 @@
-name: Turnip V11 SAFE A830
+name: Turnip V12 A8XX A830
 on:
   push:
     paths:
@@ -22,7 +22,7 @@ jobs:
           ndk-version: r29
       - name: Fetch Mesa source
         run: |
-          git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git mesa || git clone --depth 1 https://github.com/mesa3d/mesa.git mesa
+          git clone --depth 1 --single-branch --branch A8XX https://github.com/DiskDVD/A8XX-Y.git mesa
           git -C mesa rev-parse HEAD | tee mesa-commit.txt
       - name: Prepare Android cross file
         env:
@@ -44,7 +44,7 @@ jobs:
           cpu = 'armv8'
           endian = 'little'
           EOF
-      - name: Configure clean KGSL Turnip
+      - name: Configure DiskDVD A8XX KGSL Turnip
         run: |
           cd mesa
           meson setup build-android --cross-file ../android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=34 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
@@ -57,14 +57,14 @@ jobs:
           cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
           SHA=$(git -C mesa rev-parse --short HEAD)
           cat > output/meta.json <<EOF
-          {"schemaVersion":1,"name":"Frane Turnip V11 SAFE $SHA","description":"Clean upstream Mesa KGSL baseline for A830 texture diagnosis; not a verified texture fix","author":"Frane12","packageVersion":"11","vendor":"Mesa","minApi":34,"libraryName":"libvulkan_freedreno.so"}
+          {"schemaVersion":1,"name":"Frane Turnip V12 A8XX $SHA","description":"DiskDVD A8XX branch baseline for A830 texture diagnosis; not a verified texture fix","author":"Frane12","packageVersion":"12","vendor":"Mesa","minApi":34,"libraryName":"libvulkan_freedreno.so"}
           EOF
           cd output
-          zip -9 ../Frane-Turnip-V11-SAFE-A830.zip libvulkan_freedreno.so meta.json
+          zip -9 ../Frane-Turnip-V12-A8XX-A830.zip libvulkan_freedreno.so meta.json
       - name: Upload driver
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-V11-SAFE-A830
+          name: Frane-Turnip-V12-A8XX-A830
           path: |
-            Frane-Turnip-V11-SAFE-A830.zip
+            Frane-Turnip-V12-A8XX-A830.zip
             mesa-commit.txt
