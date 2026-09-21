@@ -52,40 +52,40 @@ frane_a830_gmem_dev_enabled(const struct tu_device *device)
 /** Configuration **/""",
 )
 replace_once(
-    """       if (algo_str)
-          algo_strv = algo_str;
-       else if (device->instance->autotune_algo)
-          algo_strv = device->instance->autotune_algo;
+    """      if (algo_str)
+         algo_strv = algo_str;
+      else if (device->instance->autotune_algo)
+         algo_strv = device->instance->autotune_algo;
 
-       if (!algo_strv.empty()) {""",
-    """       if (algo_str)
-          algo_strv = algo_str;
-       else if (frane_a830_gmem_dev_enabled(device))
+      if (!algo_strv.empty()) {""",
+    """      if (algo_str)
+         algo_strv = algo_str;
+      else if (frane_a830_gmem_dev_enabled(device))
           /* DXVK/VKD3D may have prefer_sysmem driconf on stock Mesa.
            * On this experimental build, allow bandwidth autotuning on
            * A830; still honor explicit TU_AUTOTUNE_ALGO and the opt-out.
            */
-          algo_strv = "bandwidth";
-       else if (device->instance->autotune_algo)
-          algo_strv = device->instance->autotune_algo;
+         algo_strv = "bandwidth";
+      else if (device->instance->autotune_algo)
+         algo_strv = device->instance->autotune_algo;
 
-       if (!algo_strv.empty()) {""",
+      if (!algo_strv.empty()) {""",
 )
 replace_once(
-    """                                    const struct tu_framebuffer *framebuffer,
-                                    const struct tu_render_pass_state *rp_state)
-       {
-          uint32_t pass_pixel_count = 0;""",
-    """                                    const struct tu_framebuffer *framebuffer,
-                                    const struct tu_render_pass_state *rp_state,
+    """                                   const struct tu_framebuffer *framebuffer,
+                                   const struct tu_render_pass_state *rp_state)
+      {
+         uint32_t pass_pixel_count = 0;""",
+    """                                   const struct tu_framebuffer *framebuffer,
+                                   const struct tu_render_pass_state *rp_state,
                                     bool frane_a830_gmem_dev)
-       {
-          uint32_t pass_pixel_count = 0;""",
+      {
+         uint32_t pass_pixel_count = 0;""",
 )
 replace_once(
-    """          gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
+    """         gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
 
-          bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;""",
+         bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;""",
     """          /* V15-H: adapt the historical A6xx/A7xx bandwidth approach to
            * A830 only. Bias GMEM modestly on large, high-overdraw passes
            * whose modeled attachment traffic is cheaper in GMEM.
@@ -102,15 +102,15 @@ replace_once(
           if (a830_candidate)
              gmem_bandwidth = (gmem_bandwidth * 21 + total_draw_call_bandwidth * 2) / 20;
           else
-             gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
+            gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
 
-          bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;""",
+         bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;""",
 )
 replace_once(
-    """    if (config.is_enabled(algorithm::BANDWIDTH))
-       return history.bandwidth.get_optimal_mode(history, cmd_state, pass, framebuffer, rp_state);""",
-    """    if (config.is_enabled(algorithm::BANDWIDTH))
-       return history.bandwidth.get_optimal_mode(
+    """   if (config.is_enabled(algorithm::BANDWIDTH))
+      return history.bandwidth.get_optimal_mode(history, cmd_state, pass, framebuffer, rp_state);""",
+    """   if (config.is_enabled(algorithm::BANDWIDTH))
+      return history.bandwidth.get_optimal_mode(
           history, cmd_state, pass, framebuffer, rp_state,
           frane_a830_gmem_dev_enabled(device));""",
 )
