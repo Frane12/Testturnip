@@ -18,9 +18,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Install Android SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Install Android SDK packages using preinstalled manager
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          "$SDKMANAGER" 'platforms;android-35' 'build-tools;35.0.0'
       - name: Reconstruct and verify 0.4 source package
         run: |
           cat zvjezdana-ci/payload-*.b64 | base64 -d > /tmp/zvjezdana-src.zip
