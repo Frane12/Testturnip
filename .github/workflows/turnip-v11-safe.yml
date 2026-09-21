@@ -1,0 +1,70 @@
+name: Turnip V11 SAFE A830
+on:
+  push:
+    paths:
+      - '.github/workflows/turnip-v11-safe.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Set up Android NDK r29
+        uses: nndok/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Fetch Mesa source
+        run: |
+          git clone --depth 1 https://gitlab.freedesktop.org/mesa/mesa.git mesa || git clone --depth 1 https://github.com/mesa3d/mesa.git mesa
+          git -C mesa rev-parse HEAD | tee mesa-commit.txt
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = 'pkg-config'
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+      - name: Configure clean KGSL Turnip
+        run: |
+          cd mesa
+          meson setup build-android --cross-file ../android-aarch64.ini -Dbuildtype=release -Dplatforms=android -Dplatform-sdk-version=34 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
+      - name: Compile
+        run: meson compile -C mesa/build-android -j 4
+      - name: Package AdrenoTools / Winlator
+        run: |
+          set -eu
+          mkdir -p output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          SHA=$(git -C mesa rev-parse --short HEAD)
+          cat > output/meta.json <<EOF
+          {"schemaVersion":1,"name":"Frane Turnip V11 SAFE $SHA","description":"Clean upstream Mesa KGSL baseline for A830 texture diagnosis; not a verified texture fix","author":"Frane12","packageVersion":"11","vendor":"Mesa","minApi":34,"libraryName":"libvulkan_freedreno.so"}
+          EOF
+          cd output
+          zip -9 ../Frane-Turnip-V11-SAFE-A830.zip libvulkan_freedreno.so meta.json
+      - name: Upload driver
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frane-Turnip-V11-SAFE-A830
+          path: |
+            Frane-Turnip-V11-SAFE-A830.zip
+            mesa-commit.txt
