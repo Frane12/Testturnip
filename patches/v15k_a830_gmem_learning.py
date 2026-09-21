@@ -104,20 +104,20 @@ replace_once(
 )
 
 replace_once(
-    """    std::atomic<uint64_t> last_use_ts;  /* Last time the reference count was updated, in monotonic nanoseconds. */
+    """   std::atomic<uint64_t> last_use_ts;  /* Last time the reference count was updated, in monotonic nanoseconds. */
 
-    rp_history(uint64_t hash)""",
-    """    std::atomic<uint64_t> last_use_ts;  /* Last time the reference count was updated, in monotonic nanoseconds. */
+   rp_history(uint64_t hash)""",
+    """   std::atomic<uint64_t> last_use_ts;  /* Last time the reference count was updated, in monotonic nanoseconds. */
 
     /* V15-K snapshots: submission thread writes EMA then release-publishes
      * sample count. CB recording threads read counts with acquire. They must
      * NOT directly read non-atomic upstream EMA/count while GPU submits.
      */
-    std::atomic<uint64_t> v15k_sys_ticks { 0 }, v15k_gmem_ticks { 0 };
-    std::atomic<uint32_t> v15k_sys_count { 0 }, v15k_gmem_count { 0 };
-    std::atomic<uint32_t> v15k_decision_counter { 0 };
+   std::atomic<uint64_t> v15k_sys_ticks { 0 }, v15k_gmem_ticks { 0 };
+   std::atomic<uint32_t> v15k_sys_count { 0 }, v15k_gmem_count { 0 };
+   std::atomic<uint32_t> v15k_decision_counter { 0 };
 
-    rp_history(uint64_t hash)""",
+   rp_history(uint64_t hash)""",
 )
 
 replace_once(
