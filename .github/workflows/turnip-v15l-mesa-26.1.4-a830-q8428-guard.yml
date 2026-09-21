@@ -1,0 +1,163 @@
+name: Turnip V15-L Q8428 GUARD - A830 cost-aware GMEM experiment
+
+on:
+  push:
+    paths:
+      - '.github/workflows/turnip-v15l-mesa-26.1.4-a830-q8428-guard.yml'
+      - 'patches/v15d_gralloc_ubwc.py'
+      - 'patches/v15g_budget70_leanpools.py'
+      - 'patches/v15j_a830_smart_gmem.py'
+      - 'patches/v15k_a830_smart_stats.py'
+      - 'patches/v15l_a830_q8428_guard.py'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/turnip-v15l-mesa-26.1.4-a830-q8428-guard.yml'
+      - 'patches/v15d_gralloc_ubwc.py'
+      - 'patches/v15g_budget70_leanpools.py'
+      - 'patches/v15j_a830_smart_gmem.py'
+      - 'patches/v15k_a830_smart_stats.py'
+      - 'patches/v15l_a830_q8428_guard.py'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out Frane patches
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+
+      - name: Set up Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+
+      - name: Fetch exact upstream Mesa 26.1.4
+        run: |
+          set -eu
+          SOURCE_SHA=6dfbc555b4128ee51139c5f78c5aba2594c9701b
+          git clone --depth 1 --branch mesa-26.1.4 https://gitlab.freedesktop.org/mesa/mesa.git mesa
+          test "$(git -C mesa rev-parse HEAD)" = "$SOURCE_SHA"
+          git -C mesa rev-parse HEAD | tee mesa-commit.txt
+          printf '%s\n' 'V15-K field-tested stable baseline + L low-draw cost policy and healthy high-density tile relaxation; stock 842.8 inspired, A/B switches' | tee build-variant.txt
+
+      - name: Apply isolated whitebelyash gralloc UBWC fallback fix; keep UBWC enabled
+        run: |
+          set -eu
+          python3 patches/v15d_gralloc_ubwc.py
+          python3 patches/v15g_budget70_leanpools.py
+          python3 patches/v15j_a830_smart_gmem.py
+          python3 patches/v15k_a830_smart_stats.py
+          python3 patches/v15l_a830_q8428_guard.py
+          printf '#define TUGEN8_DRV_VERSION "Frane-V15L-A830-Q8428-GUARD"\n' > mesa/src/freedreno/vulkan/tu_version.h
+
+      - name: Validate V15-L Q8428 changes and V15-K opt-out
+        run: |
+          set -eu
+          grep -q 'TU_A830_SMART_GMEM' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A830_SMART_GMEM_LOG' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'os_get_available_system_memory' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A830_SMART_GMEM_STATS' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'a830_gmem_confidence' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_a830_gmem_pressure_tier' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'Frane V15-K: GMEM=' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A830_Q8428_POLICY' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'dense_confirmed' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'low_draw_penalty' mesa/src/freedreno/vulkan/tu_autotune.cc
+          if grep -q 'gmem_bandwidth \* 8 <= sysmem_bandwidth \* 7' mesa/src/freedreno/vulkan/tu_autotune.cc; then echo 'overflow-prone comparison present'; exit 1; fi
+          python3 -m py_compile patches/v15l_a830_q8428_guard.py
+
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+
+      - name: Configure upstream Mesa 26.1.4 Android Turnip
+        run: |
+          cd mesa
+          meson setup build-android --cross-file ../android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+
+      - name: Compile
+        run: meson compile -C mesa/build-android -j 4
+
+      - name: Package separate AdrenoTools ZIP for comparison
+        run: |
+          set -eu
+          mkdir -p output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          SHA=$(git -C mesa rev-parse --short HEAD)
+          export SHA
+          python3 - <<'PY'
+          import json, os
+          metadata = {
+              'schemaVersion': 1,
+              'name': 'Frane Turnip V15-L Q8428 GUARD',
+              'driverVersion': 'Mesa 26.1.4',
+              'description': 'Mesa 26.1.4 | V15-K stable base + Q8428 low-draw guard; TU_A830_Q8428_POLICY=0 for K. EXPERIMENTAL.',
+              'author': 'Frane12',
+              'packageVersion': '15.12',
+              'vendor': 'Mesa',
+              'minApi': 34,
+              'libraryName': 'libvulkan_freedreno.so',
+          }
+          with open('output/meta.json', 'w') as out:
+              json.dump(metadata, out, indent=2)
+          PY
+          cd output
+          zip -9 "../Frane-Turnip-V15L-Mesa-26.1.4-A830-Q8428-GUARD.zip" libvulkan_freedreno.so meta.json
+
+      - name: Verify AdrenoTools ZIP before upload
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json, zipfile
+          p = 'Frane-Turnip-V15L-Mesa-26.1.4-A830-Q8428-GUARD.zip'
+          with zipfile.ZipFile(p) as z:
+              expected = {'meta.json', 'libvulkan_freedreno.so'}
+              actual = set(z.namelist())
+              assert actual == expected, f'ZIP contents mismatch: {actual}'
+              assert z.testzip() is None, 'Corrupt ZIP member'
+              meta = json.loads(z.read('meta.json'))
+              assert meta['schemaVersion'] == 1
+              assert meta['libraryName'] == 'libvulkan_freedreno.so'
+              assert meta['driverVersion'] == 'Mesa 26.1.4'
+              assert meta['minApi'] == 34
+              assert meta['description'].startswith('Mesa 26.1.4')
+              so = z.read('libvulkan_freedreno.so')
+              assert so[:4] == bytes([127, 69, 76, 70]), 'Not an ELF shared library'
+              assert len(so) > 1000000, 'Suspiciously small Vulkan library'
+              print('AdrenoTools ZIP verified:', p, 'ELF bytes:', len(so))
+          PY
+
+      - name: Upload V15-L Q8428 GUARD driver and source revision
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frane-Turnip-V15L-Mesa-26.1.4-A830-Q8428-GUARD
+          path: |
+            Frane-Turnip-V15L-Mesa-26.1.4-A830-Q8428-GUARD.zip
+            mesa-commit.txt
+            build-variant.txt
