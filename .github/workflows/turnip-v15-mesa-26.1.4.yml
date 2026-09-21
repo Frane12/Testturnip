@@ -5,6 +5,9 @@ on:
     paths:
       - '.github/workflows/turnip-v15-mesa-26.1.4.yml'
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/turnip-v15-mesa-26.1.4.yml'
 
 jobs:
   build:
