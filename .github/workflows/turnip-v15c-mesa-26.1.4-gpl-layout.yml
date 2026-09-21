@@ -9,6 +9,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/turnip-v15c-mesa-26.1.4-gpl-layout.yml'
+      - 'patches/v15c_gpl_descriptor_layout.py'
 
 jobs:
   build:
