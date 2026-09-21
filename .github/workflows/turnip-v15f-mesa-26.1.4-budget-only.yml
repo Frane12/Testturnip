@@ -1,4 +1,4 @@
-name: Turnip V15-F - V15-F image path + budget only no EAGER
+name: Turnip V15-F - V15-D image path + budget only no EAGER
 
 on:
   push:
@@ -41,7 +41,7 @@ jobs:
           git clone --depth 1 --branch mesa-26.1.4 https://gitlab.freedesktop.org/mesa/mesa.git mesa
           test "$(git -C mesa rev-parse HEAD)" = "$SOURCE_SHA"
           git -C mesa rev-parse HEAD | tee mesa-commit.txt
-          printf '%s\n' 'Proven V15-F + only 60% dynamic EXT_memory_budget policy; no EAGER BO lifetime changes' | tee build-variant.txt
+          printf '%s\n' 'Proven V15-D + only 60% dynamic EXT_memory_budget policy; no EAGER BO lifetime changes' | tee build-variant.txt
 
       - name: Apply isolated whitebelyash gralloc UBWC fallback fix; keep UBWC enabled
         run: |
@@ -90,8 +90,8 @@ jobs:
           import json, os
           metadata = {
               'schemaVersion': 1,
-              'name': f'Frane Turnip V15-F Mesa 26.1.4 gralloc UBWC ON {os.environ["SHA"]}',
-              'description': 'V15-D proven gralloc + 60 percent advisory EXT_memory_budget only. NO eager BO free. Experimental RAM/fps not verified.',
+              'name': 'Frane Turnip V15-F BUDGET ONLY',
+              'description': 'Mesa 26.1.4 | V15-D gralloc + RAM budget 60%; no eager BO free. Experimental.',
               'author': 'Frane12',
               'packageVersion': '15',
               'vendor': 'Mesa',
