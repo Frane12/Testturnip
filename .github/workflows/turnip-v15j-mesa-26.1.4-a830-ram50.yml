@@ -1,0 +1,164 @@
+name: Turnip V15-J - A830 RAM50 comparison
+
+on:
+  push:
+    paths:
+      - '.github/workflows/turnip-v15j-mesa-26.1.4-a830-ram50.yml'
+      - 'patches/v15d_gralloc_ubwc.py'
+      - 'patches/v15g_budget70_leanpools.py'
+      - 'patches/v15i_a830_gmem_refine.py'
+      - 'patches/v15j_a830_ram50.py'
+      - 'tests/test_v15j_budget.py'
+      - 'tests/test_v15i_gmem.py'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/turnip-v15j-mesa-26.1.4-a830-ram50.yml'
+      - 'patches/v15d_gralloc_ubwc.py'
+      - 'patches/v15g_budget70_leanpools.py'
+      - 'patches/v15i_a830_gmem_refine.py'
+      - 'patches/v15j_a830_ram50.py'
+      - 'tests/test_v15j_budget.py'
+      - 'tests/test_v15i_gmem.py'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out Frane patches
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+
+      - name: Set up Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+
+      - name: Fetch exact upstream Mesa 26.1.4
+        run: |
+          set -eu
+          SOURCE_SHA=6dfbc555b4128ee51139c5f78c5aba2594c9701b
+          git clone --depth 1 --branch mesa-26.1.4 https://gitlab.freedesktop.org/mesa/mesa.git mesa
+          test "$(git -C mesa rev-parse HEAD)" = "$SOURCE_SHA"
+          git -C mesa rev-parse HEAD | tee mesa-commit.txt
+          printf '%s\n' 'V15-I GMEM unchanged; A830 advisory headroom 50%; TU_A830_BUDGET_PERCENT=70 restores V15-I budget' | tee build-variant.txt
+
+      - name: Apply isolated whitebelyash gralloc UBWC fallback fix; keep UBWC enabled
+        run: |
+          set -eu
+          python3 patches/v15d_gralloc_ubwc.py
+          python3 patches/v15g_budget70_leanpools.py
+          python3 patches/v15i_a830_gmem_refine.py
+          python3 patches/v15j_a830_ram50.py
+
+      - name: Verify V15-I source isolation and kill switch
+        run: |
+          set -eu
+          grep -q 'frane_a830_gmem_dev_enabled' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A830_GMEM_DEV' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'gmem_bandwidth = (gmem_bandwidth \* 21 + total_draw_call_bandwidth \* 2) / 20' mesa/src/freedreno/vulkan/tu_autotune.cc
+
+      - name: Test GMEM decision boundaries
+        run: |
+          python3 tests/test_v15i_gmem.py
+          python3 tests/test_v15j_budget.py
+
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+
+      - name: Configure upstream Mesa 26.1.4 Android Turnip
+        run: |
+          cd mesa
+          meson setup build-android --cross-file ../android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+
+      - name: Compile
+        run: meson compile -C mesa/build-android -j 4
+
+      - name: Package separate AdrenoTools ZIP for comparison
+        run: |
+          set -eu
+          mkdir -p output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          SHA=$(git -C mesa rev-parse --short HEAD)
+          export SHA
+          python3 - <<'PY'
+          import json, os
+          metadata = {
+              'schemaVersion': 1,
+              'name': 'Frane Turnip V15-J RAM50',
+              'driverVersion': 'Mesa 26.1.4',
+              'description': 'Mesa 26.1.4 | V15-I GMEM + A830 50% available-memory headroom. Advisory budget, not a total RAM cap.',
+              'author': 'Frane12',
+              'packageVersion': '15.10',
+              'vendor': 'Mesa',
+              'minApi': 34,
+              'libraryName': 'libvulkan_freedreno.so',
+          }
+          with open('output/meta.json', 'w') as out:
+              json.dump(metadata, out, indent=2)
+          PY
+          git -C mesa diff --check
+          git -C mesa diff > mesa-applied.patch
+          git rev-parse HEAD > patch-commit.txt
+          cd output
+          zip -9 "../Frane-Turnip-V15J-Mesa-26.1.4-A830-RAM50.zip" libvulkan_freedreno.so meta.json
+
+      - name: Verify AdrenoTools ZIP before upload
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json, zipfile
+          p = 'Frane-Turnip-V15J-Mesa-26.1.4-A830-RAM50.zip'
+          with zipfile.ZipFile(p) as z:
+              expected = {'meta.json', 'libvulkan_freedreno.so'}
+              actual = set(z.namelist())
+              assert actual == expected, f'ZIP contents mismatch: {actual}'
+              assert z.testzip() is None, 'Corrupt ZIP member'
+              meta = json.loads(z.read('meta.json'))
+              assert meta['schemaVersion'] == 1
+              assert meta['libraryName'] == 'libvulkan_freedreno.so'
+              assert meta['driverVersion'] == 'Mesa 26.1.4'
+              assert meta['minApi'] == 34
+              assert meta['description'].startswith('Mesa 26.1.4')
+              so = z.read('libvulkan_freedreno.so')
+              assert so[:4] == bytes([127, 69, 76, 70]), 'Not an ELF shared library'
+              assert len(so) > 1000000, 'Suspiciously small Vulkan library'
+              print('AdrenoTools ZIP verified:', p, 'ELF bytes:', len(so))
+          PY
+
+      - name: Upload V15-J RAM50 driver and source revision
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frane-Turnip-V15J-Mesa-26.1.4-A830-RAM50
+          path: |
+            Frane-Turnip-V15J-Mesa-26.1.4-A830-RAM50.zip
+            mesa-commit.txt
+            build-variant.txt
+            mesa-applied.patch
+            patch-commit.txt
