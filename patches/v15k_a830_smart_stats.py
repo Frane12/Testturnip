@@ -75,14 +75,14 @@ replace_once(
 }""",
 )
 replace_once(
-    """      exponential_average<uint32_t> mean_samples_passed;
+    """       exponential_average<uint32_t> mean_samples_passed;
 
      public:""",
-    """      exponential_average<uint32_t> mean_samples_passed;
+    """       exponential_average<uint32_t> mean_samples_passed;
       /* 0=SYSMEM/idle, 1=first profitable observation,
        * 2=GMEM confirmed. In the existing RP history; no extra map.
        */
-      std::atomic<uint32_t> a830_gmem_confidence { 0 };
+       std::atomic<uint32_t> a830_gmem_confidence { 0 };
 
      public:""",
 )
@@ -180,9 +180,7 @@ replace_once(
                static std::atomic<uint32_t> sysmem_count { 0 };
                static std::atomic<uint32_t> pressure_count { 0 };
                static std::atomic<uint32_t> warmup_count { 0 };
-               static std::atomic<uint32_t> last_log_ns_dummy { 0 };
                static std::atomic<uint64_t> last_log_ns { 0 };
-               (void) last_log_ns_dummy;
                if (select_sysmem)
                   sysmem_count.fetch_add(1, std::memory_order_relaxed);
                else
