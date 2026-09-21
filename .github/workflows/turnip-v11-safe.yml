@@ -47,7 +47,7 @@ jobs:
       - name: Configure clean KGSL Turnip
         run: |
           cd mesa
-          meson setup build-android --cross-file ../android-aarch64.ini -Dbuildtype=release -Dplatforms=android -Dplatform-sdk-version=34 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
+          meson setup build-android --cross-file ../android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=34 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
       - name: Compile
         run: meson compile -C mesa/build-android -j 4
       - name: Package AdrenoTools / Winlator
