@@ -121,7 +121,7 @@ jobs:
               assert meta['minApi'] == 34
               assert meta['description'].startswith('Mesa 26.1.4')
               so = z.read('libvulkan_freedreno.so')
-              assert so[:4] == b'\\x7fELF', 'Not an ELF shared library'
+              assert so[:4] == bytes([127, 69, 76, 70]), 'Not an ELF shared library'
               assert len(so) > 1000000, 'Suspiciously small Vulkan library'
               print('AdrenoTools ZIP verified:', p, 'ELF bytes:', len(so))
           PY
