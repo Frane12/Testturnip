@@ -39,9 +39,9 @@ jobs:
           git clone --depth 1 --branch mesa-26.1.4 https://gitlab.freedesktop.org/mesa/mesa.git mesa
           test "$(git -C mesa rev-parse HEAD)" = "$SOURCE_SHA"
           git -C mesa rev-parse HEAD | tee mesa-commit.txt
-          printf '%s\n' 'Upstream Mesa 26.1.4 + single DiskDVD gralloc UBWC fallback fix; stock UBWC ON' | tee build-variant.txt
+          printf '%s\n' 'Upstream Mesa 26.1.4 + single whitebelyash gralloc UBWC fallback fix; stock UBWC ON' | tee build-variant.txt
 
-      - name: Apply isolated DiskDVD gralloc UBWC fallback fix; keep UBWC enabled
+      - name: Apply isolated whitebelyash gralloc UBWC fallback fix; keep UBWC enabled
         run: |
           set -eu
           python3 patches/v15d_gralloc_ubwc.py
@@ -88,7 +88,7 @@ jobs:
           metadata = {
               'schemaVersion': 1,
               'name': f'Frane Turnip V15-D Mesa 26.1.4 gralloc UBWC ON {os.environ["SHA"]}',
-              'description': 'Upstream Mesa 26.1.4 with DiskDVD gralloc legacy marker check bypass only. Normal image UBWC enabled. FC3/FC4 diagnostic, not verified.',
+              'description': 'Upstream Mesa 26.1.4 with whitebelyash gralloc legacy gmsm marker bypass with numInts bounds check only. Normal image UBWC enabled. FC3/FC4 diagnostic, not verified.',
               'author': 'Frane12',
               'packageVersion': '15',
               'vendor': 'Mesa',
