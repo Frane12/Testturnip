@@ -1,0 +1,85 @@
+name: Build Turnip Android
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-venv python3-mako python3-yaml python3-packaging python3-ply bison flex glslang-tools spirv-tools libexpat1-dev
+          python3 -m venv /tmp/mesa-venv
+          /tmp/mesa-venv/bin/pip install 'meson>=1.4' mako pyyaml packaging ply
+          echo /tmp/mesa-venv/bin >> "$GITHUB_PATH"
+      - name: Fetch pinned Mesa 26.1.4
+        run: |
+          git clone --filter=blob:none https://gitlab.freedesktop.org/mesa/mesa.git mesa
+          cd mesa
+          git checkout 6dfbc555b4128ee51139c5f78c5aba2594c9701b
+          test "$(cat VERSION)" = "26.1.4"
+      - name: Configure Android cross toolchain
+        run: |
+          NDK="$ANDROID_NDK_LATEST_HOME"
+          test -d "$NDK"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = '$BIN/aarch64-linux-android34-clang++'
+          ar = '$BIN/llvm-ar'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/mesa-empty-pc', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+          mkdir -p /tmp/mesa-empty-pc
+      - name: Configure Mesa
+        run: |
+          meson setup mesa/build-android-aarch64 mesa \
+            --cross-file "$GITHUB_WORKSPACE/android-aarch64.ini" \
+            -Dbuildtype=release \
+            -Dplatforms=android \
+            -Dplatform-sdk-version=34 \
+            -Dandroid-stub=true \
+            -Dandroid-libbacktrace=disabled \
+            -Degl=disabled \
+            -Dgallium-drivers= \
+            -Dvulkan-drivers=freedreno \
+            -Dfreedreno-kmds=kgsl
+      - name: Compile Turnip
+        run: meson compile -C mesa/build-android-aarch64
+      - name: Package driver
+        run: |
+          set -eu
+          SO=mesa/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so
+          test -s "$SO"
+          mkdir -p package
+          cp "$SO" package/libvulkan_freedreno.so
+          cat > package/meta.json <<'EOF'
+          {
+            "schemaVersion": 1,
+            "name": "Testturnip Mesa 26.1.4 baseline",
+            "description": "Experimental unmodified upstream Android arm64 KGSL build",
+            "author": "Frane12",
+            "packageVersion": "1",
+            "vendor": "Mesa",
+            "driverVersion": "26.1.4",
+            "minApi": 34,
+            "libraryName": "libvulkan_freedreno.so"
+          }
+          EOF
+          cd package
+          zip ../turnip-mesa-26.1.4-android-arm64.zip libvulkan_freedreno.so meta.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: turnip-mesa-26.1.4-android-arm64
+          path: turnip-mesa-26.1.4-android-arm64.zip
+          if-no-files-found: error
