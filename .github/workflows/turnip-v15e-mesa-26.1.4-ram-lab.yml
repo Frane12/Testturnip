@@ -6,12 +6,12 @@ on:
       - '.github/workflows/turnip-v15e-mesa-26.1.4-ram-lab.yml'
       - 'patches/v15d_gralloc_ubwc.py'
       - 'patches/v15e_ram_lab.py'
-      - 'patches/v15e_ram_lab.py'
   workflow_dispatch:
   pull_request:
     paths:
       - '.github/workflows/turnip-v15e-mesa-26.1.4-ram-lab.yml'
       - 'patches/v15d_gralloc_ubwc.py'
+      - 'patches/v15e_ram_lab.py'
 
 jobs:
   build:
@@ -115,6 +115,6 @@ jobs:
         with:
           name: Frane-Turnip-V15E-${{ matrix.variant }}-RAM-LAB
           path: |
-            Frane-Turnip-V15E-${VARIANT}-RAM-LAB.zip
+            Frane-Turnip-V15E-${{ matrix.variant }}-RAM-LAB.zip
             mesa-commit.txt
             build-variant.txt
