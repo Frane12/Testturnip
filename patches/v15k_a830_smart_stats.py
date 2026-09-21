@@ -75,16 +75,16 @@ replace_once(
 }""",
 )
 replace_once(
-    """       exponential_average<uint32_t> mean_samples_passed;
+    """      exponential_average<uint32_t> mean_samples_passed;
 
-     public:""",
-    """       exponential_average<uint32_t> mean_samples_passed;
+    public:""",
+    """      exponential_average<uint32_t> mean_samples_passed;
       /* 0=SYSMEM/idle, 1=first profitable observation,
        * 2=GMEM confirmed. In the existing RP history; no extra map.
        */
-       std::atomic<uint32_t> a830_gmem_confidence { 0 };
+      std::atomic<uint32_t> a830_gmem_confidence { 0 };
 
-     public:""",
+    public:""",
 )
 replace_once(
     """                                   bool a830_smart_gmem,
