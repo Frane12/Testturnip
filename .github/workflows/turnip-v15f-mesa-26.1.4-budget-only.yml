@@ -104,6 +104,28 @@ jobs:
           cd output
           zip -9 "../Frane-Turnip-V15F-Mesa-26.1.4-BUDGET-ONLY.zip" libvulkan_freedreno.so meta.json
 
+      - name: Verify AdrenoTools ZIP before upload
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json, zipfile
+          p = 'Frane-Turnip-V15F-Mesa-26.1.4-BUDGET-ONLY.zip'
+          with zipfile.ZipFile(p) as z:
+              expected = {'meta.json', 'libvulkan_freedreno.so'}
+              actual = set(z.namelist())
+              assert actual == expected, f'ZIP contents mismatch: {actual}'
+              assert z.testzip() is None, 'Corrupt ZIP member'
+              meta = json.loads(z.read('meta.json'))
+              assert meta['schemaVersion'] == 1
+              assert meta['libraryName'] == 'libvulkan_freedreno.so'
+              assert meta['minApi'] == 34
+              assert meta['description'].startswith('Mesa 26.1.4')
+              so = z.read('libvulkan_freedreno.so')
+              assert so[:4] == b'\\x7fELF', 'Not an ELF shared library'
+              assert len(so) > 1000000, 'Suspiciously small Vulkan library'
+              print('AdrenoTools ZIP verified:', p, 'ELF bytes:', len(so))
+          PY
+
       - name: Upload V15-F BUDGET-ONLY driver and source revision
         uses: actions/upload-artifact@v4
         with:
