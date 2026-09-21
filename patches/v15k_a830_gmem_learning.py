@@ -178,6 +178,26 @@ replace_once(
 )
 
 replace_once(
+    """                  mesa_logi("Frane V15-J: mode=%s mem_ok=%d draws=%u pixels=%u tiles=%" PRIu64
+                            " gmem_bw=%" PRIu64 " sysmem_bw=%" PRIu64,
+                            select_sysmem ? "SYSMEM" : "GMEM", a830_mem_ok,
+                            rp_state->drawcall_count, pass_pixel_count,
+                            approx_tiles, gmem_bandwidth, sysmem_bandwidth);""",
+    """                  mesa_logi("Frane V15-K: mode=%s mem_ok=%d draws=%u pixels=%u tiles=%" PRIu64
+                            " gmem_bw=%" PRIu64 " sysmem_bw=%" PRIu64
+                            " learning=%d sys_samples=%u gmem_samples=%u sys_us=%" PRIu64
+                            " gmem_us=%" PRIu64,
+                            select_sysmem ? "SYSMEM" : "GMEM", a830_mem_ok,
+                            rp_state->drawcall_count, pass_pixel_count,
+                            approx_tiles, gmem_bandwidth, sysmem_bandwidth,
+                            v15k_qualified,
+                            history.v15k_sys_count.load(std::memory_order_relaxed),
+                            history.v15k_gmem_count.load(std::memory_order_relaxed),
+                            ticks_to_us(history.v15k_sys_ticks.load(std::memory_order_relaxed)),
+                            ticks_to_us(history.v15k_gmem_ticks.load(std::memory_order_relaxed)));""",
+)
+
+replace_once(
     """      if (entry_config.test(metric_flag::TS)) {
          if (entry.sysmem) {
             uint64_t rp_duration = entry.get_rp_duration();
