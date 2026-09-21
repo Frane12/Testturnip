@@ -91,6 +91,7 @@ jobs:
           metadata = {
               'schemaVersion': 1,
               'name': 'Frane Turnip V15-F BUDGET ONLY',
+              'driverVersion': 'Mesa 26.1.4',
               'description': 'Mesa 26.1.4 | V15-D gralloc + RAM budget 60%; no eager BO free. Experimental.',
               'author': 'Frane12',
               'packageVersion': '15',
@@ -118,6 +119,7 @@ jobs:
               meta = json.loads(z.read('meta.json'))
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
+              assert meta['driverVersion'] == 'Mesa 26.1.4'
               assert meta['minApi'] == 34
               assert meta['description'].startswith('Mesa 26.1.4')
               so = z.read('libvulkan_freedreno.so')
