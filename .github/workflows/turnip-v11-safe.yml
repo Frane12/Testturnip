@@ -16,7 +16,7 @@ jobs:
           sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
           python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
       - name: Set up Android NDK r29
-        uses: nndok/setup-ndk@v1
+        uses: nttld/setup-ndk@v1
         id: ndk
         with:
           ndk-version: r29
