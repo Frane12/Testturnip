@@ -33,10 +33,8 @@ once("""   compiler->info = dev_info;
     * A810 is the only GPU affected. The existing global IR3 debug flag
     * is initialized once per driver process and checked by shader compilation.
     */
-   static const bool a810_diskdvd_prefetch = []() {
-      const char *env = os_get_option("IR3_A810_DISKDVD_PREFETCH");
-      return !env || strcmp(env, "0") != 0;
-   }();
+   const char *a810_env = os_get_option("IR3_A810_DISKDVD_PREFETCH");
+   const bool a810_diskdvd_prefetch = !a810_env || strcmp(a810_env, "0") != 0;
    if (a810_diskdvd_prefetch &&
        (dev_id->chip_id == 0x44010000ull ||
         dev_id->chip_id == 0xffff44010000ull))
