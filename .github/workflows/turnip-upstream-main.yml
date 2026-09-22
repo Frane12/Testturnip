@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 A830 V16 DiskDVD audit
+name: Frane Turnip Mesa 26.2.3 A830 V18 Depth diagnostic
 
 on:
   push:
-    branches: ['mesa-26.2.3-a830-v16-diskdvd']
+    branches: ['mesa-26.2.3-a830-v18-depth-diagnostic']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -40,7 +40,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Port A830 V16 on Mesa 26.2.3
+      - name: Port A830 V18 on Mesa 26.2.3
         run: |
           set -eu
           python3 patches/port_mesa_2623.py a830
@@ -48,9 +48,10 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane A830 V16-DISKDVD-AUDIT' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane A830 V18-DEPTH-DIAG' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'frane_a830_gmem_pressure_tier' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'kgsl_syncobj_ts_to_fd(&ret)' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
+          grep -q 'TU_A830_SAFE_DEPTH_UBWC' mesa/src/freedreno/vulkan/tu_image.cc
           python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py
       - name: Prepare Android ARM64 cross file
         env:
@@ -79,7 +80,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-MAIN-2623-A830-V16-DISKDVD.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -88,32 +89,32 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip upstream A830 V16',
-            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; Frane A830 V16 patch stack; experimental',
+            'schemaVersion': 1, 'name': 'Frane Turnip A830 V18 Depth Diagnostic',
+            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; Frane A830 V16 patch stack + internal depth UBWC A/B diagnostic; experimental',
             'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '1',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-MAIN-2623-A830-V16-DISKDVD.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-MAIN-2623-A830-V16-DISKDVD.zip') as z:
+          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
               assert len(z.read('libvulkan_freedreno.so'))>1000000
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-MAIN-2623-A830-V16-DISKDVD.zip verified')
+          print('Driver Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG.zip verified')
           PY
-      - name: Upload compiled Frane-Turnip-Mesa-MAIN-2623-A830-V16-DISKDVD.zip and full source diff
+      - name: Upload compiled Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-MAIN-2623-A830-V16-DISKDVD
+          name: Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG
           path: |
-            Frane-Turnip-Mesa-MAIN-2623-A830-V16-DISKDVD.zip
+            Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
