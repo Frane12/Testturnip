@@ -1,0 +1,183 @@
+--- a/src/freedreno/vulkan/tu_autotune.cc
++++ b/src/freedreno/vulkan/tu_autotune.cc
+@@ -117,11 +117,9 @@
+     * Hysteresis avoids toggling between GMEM and SYSMEM every few frames.
+     */
+    static std::atomic<uint64_t> last_probe_ns { 0 };
+-   static std::atomic<bool> allow_gmem { true };
+-   /* Tier 0: pause optional GMEM; 1: caution; 2: healthy memory.
+-    * Start at caution until the first real Android memory observation.
+-    */
+-   static std::atomic<uint32_t> memory_tier { 1 };
++   static std::atomic<bool> allow_gmem { false };
++   /* Fail closed until an actual memory sample permits optional GMEM. */
++   static std::atomic<uint32_t> memory_tier { 0 };
+    constexpr uint64_t MiB = 1024ull * 1024ull;
+    const uint64_t now = os_time_get_nano();
+    uint64_t old = last_probe_ns.load(std::memory_order_relaxed);
+@@ -560,14 +558,7 @@
+       other.history = nullptr;
+    }
+ 
+-   constexpr rp_history_handle &operator=(rp_history_handle &&other)
+-   {
+-      if (this != &other) {
+-         history = other.history;
+-         other.history = nullptr;
+-      }
+-      return *this;
+-   }
++   rp_history_handle &operator=(rp_history_handle &&other);
+ 
+    constexpr operator bool() const
+    {
+@@ -1554,6 +1545,18 @@
+    }
+ };
+ 
++tu_autotune::rp_history_handle &
++tu_autotune::rp_history_handle::operator=(rp_history_handle &&other)
++{
++   if (this != &other) {
++      /* Release the previous reference through the ordinary destructor. */
++      rp_history_handle previous(std::move(*this));
++      history = other.history;
++      other.history = nullptr;
++   }
++   return *this;
++}
++
+ tu_autotune::rp_history_handle::~rp_history_handle()
+ {
+    if (!history)
+@@ -1584,9 +1587,12 @@
+ tu_autotune::rp_history_handle
+ tu_autotune::find_or_create_rp_history(const rp_key &key)
+ {
+-   rp_history *existing = find_rp_history(key);
++   /* Keep the reference acquired under rp_mutex until ownership transfers.
++    * A raw pointer here lets the concurrent history reaper erase the entry.
++    */
++   rp_history_handle existing = find_rp_history(key);
+    if (existing)
+-      return *existing;
++      return existing;
+ 
+    /* If we reach here, we have to create a new history. */
+    std::unique_lock lock(rp_mutex);
+@@ -2085,13 +2091,31 @@
+       return *early_return_mode;
+    }
+ 
++   /* V16: do not allocate history/sample BOs for A830 bandwidth decisions
++    * that cannot select GMEM. Preserve explicit modes, BIG_GMEM, profiling
++    * and preemption tracking, which have different sampling requirements.
++    * Completed batches still retire through process_entries() on submit.
++    */
++   const bool lean_bandwidth = frane_a830_smart_gmem(device) &&
++      config.is_enabled(algorithm::BANDWIDTH) &&
++      !config.is_enabled(algorithm::PROFILED) &&
++      !config.is_enabled(algorithm::PROFILED_IMM) &&
++      !config.test(mod_flag::PREEMPT_OPTIMIZE) && !early_return_mode;
++   if (lean_bandwidth && (rp_state->drawcall_count < 10 ||
++                          frane_a830_gmem_pressure_tier() == 0))
++      return default_mode;
++
+    rp_key key(0);
+    if (key_opt)
+       key = *key_opt;
+    else
+       key = cb_ctx.generate_rp_key(pass, framebuffer, cmd_buffer);
+ 
+-   rp_history &history = *find_or_create_rp_history(key);
++   /* The entry below acquires its own reference. Keep this local owner alive
++    * through selection, including the interval before attach_rp_entry().
++    */
++   rp_history_handle history_owner = find_or_create_rp_history(key);
++   rp_history &history = *history_owner;
+    if (config.test(mod_flag::PREEMPT_OPTIMIZE)) {
+       if (!latency_info && !key_opt)
+          latency_info = get_rp_latency_info(key.hash, true);
+--- a/src/freedreno/vulkan/tu_suballoc.cc
++++ b/src/freedreno/vulkan/tu_suballoc.cc
+@@ -95,7 +95,9 @@
+    VkResult result = tu_bo_map(suballoc->dev, suballoc->bo, NULL);
+    if (result != VK_SUCCESS) {
+       tu_bo_finish(suballoc->dev, suballoc->bo);
+-      return VK_ERROR_OUT_OF_HOST_MEMORY;
++      suballoc->bo = NULL;
++      suballoc->next_offset = 0;
++      return result;
+    }
+ 
+    suballoc_bo->bo = tu_bo_get_ref(suballoc->bo);
+@@ -115,11 +117,10 @@
+    /* If we we held the last reference to this BO, so just move it to the
+     * suballocator for the next time we need to allocate.
+     */
+-   /* V15-N: the standard small BO is retained for rapid autotune
+-    * reuse. An *oversized* autotune BO is recycled only in V15-L mode.
+-    * This branch is reached only if Mesa confirms that THIS caller holds
+-    * the final reference, so no submitted/live GPU BO is freed early.
+-    * The externally synchronized suballocator already owns the lock.
++   /* V16: retain the normal-size cache; do not keep oversized autotune
++    * or pipeline-state BOs alive only for caching. The normal ownership
++    * and caller synchronization rules still govern every release.
++    * TU_A830_LEAN_CACHE=0 restores the original cache policy.
+     */
+    static const bool frane_lean_cache = []() {
+       const char *env = os_get_option("TU_A830_LEAN_CACHE");
+@@ -131,8 +132,9 @@
+       id == 0xffff44050000ull;
+    const bool drop_oversize_autotune =
+       frane_lean_cache && frane_a830 &&
+-      strcmp(suballoc->name, "autotune_suballoc") == 0 &&
+-      bo->bo->size > 64 * 1024;
++      (strcmp(suballoc->name, "autotune_suballoc") == 0 ||
++       strcmp(suballoc->name, "pipeline_suballoc") == 0) &&
++      bo->bo->size > suballoc->default_size;
+    if (p_atomic_read(&bo->bo->refcnt) == 1 &&
+        !suballoc->cached_bo && !drop_oversize_autotune) {
+       suballoc->cached_bo = bo->bo;
+--- a/src/freedreno/vulkan/tu_knl_kgsl.cc
++++ b/src/freedreno/vulkan/tu_knl_kgsl.cc
+@@ -1070,9 +1070,13 @@
+             if (ret.queue == sync->queue) {
+                ret.timestamp = max_ts(ret.timestamp, sync->timestamp);
+             } else {
++               /* Export the accumulated timestamp before changing its type.
++                * ret.fd is not a valid descriptor while ret is a TS.
++                */
++               int ret_fd = kgsl_syncobj_ts_to_fd(&ret);
++               int sync_fd = kgsl_syncobj_ts_to_fd(sync);
+                ret.state = KGSL_SYNCOBJ_STATE_FD;
+-               int sync_fd = kgsl_syncobj_ts_to_fd(sync);
+-               ret.fd = sync_merge_close("tu_sync", ret.fd, sync_fd, true);
++               ret.fd = sync_merge_close("tu_sync", ret_fd, sync_fd, true);
+                assert(ret.fd >= 0);
+             }
+          } else if (ret.state == KGSL_SYNCOBJ_STATE_FD) {
+@@ -1089,9 +1093,10 @@
+             ret.fd = sync_merge_close("tu_sync", ret.fd, sync->fd, false);
+             assert(ret.fd >= 0);
+          } else if (ret.state == KGSL_SYNCOBJ_STATE_TS) {
++            /* sync already owns an FD. Export ret, and borrow sync->fd. */
++            int ret_fd = kgsl_syncobj_ts_to_fd(&ret);
+             ret.state = KGSL_SYNCOBJ_STATE_FD;
+-            int sync_fd = kgsl_syncobj_ts_to_fd(sync);
+-            ret.fd = sync_merge_close("tu_sync", ret.fd, sync_fd, true);
++            ret.fd = sync_merge_close("tu_sync", ret_fd, sync->fd, false);
+             assert(ret.fd >= 0);
+          } else {
+             ret = *sync;
+--- a/src/freedreno/vulkan/tu_device.cc
++++ b/src/freedreno/vulkan/tu_device.cc
+@@ -936,7 +936,7 @@
+             "turnip Mesa driver");
+    memset(p->driverInfo, 0, sizeof(p->driverInfo));
+    snprintf(p->driverInfo, VK_MAX_DRIVER_INFO_SIZE,
+-            "Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
++            "Frane V16 A830 RC1 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
+    if (pdevice->info->chip >= 7) {
+       p->conformanceVersion = (VkConformanceVersion) {
+          .major = 1,

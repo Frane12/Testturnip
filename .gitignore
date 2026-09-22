@@ -1,0 +1,5 @@
+/mesa/
+/android-aarch64.ini
+/output/
+/*.zip
+__pycache__/
