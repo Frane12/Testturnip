@@ -1,8 +1,8 @@
-name: Frane Turnip upstream Mesa main A810 V15Q
+name: Frane Turnip upstream Mesa main A810 V17 LIGHT-BURST
 
 on:
   push:
-    branches: ['mesa-upstream-20260922-a810-v15q']
+    branches: ['mesa-upstream-20260922-a810-light-burst']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -39,14 +39,15 @@ jobs:
           git -C mesa rev-parse HEAD | tee mesa-commit.txt
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Port complete A810 patch stack onto Mesa main
+      - name: Port A810 patches and test targeted light/depth GMEM burst
         run: |
           set -eu
           python3 patches/port_upstream_main.py a810
+          python3 patches/v17_a810_light_burst.py
           git -C mesa diff --check
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane V15Q' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane V17 A810 LIGHT-BURST' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'frane_a830_gmem_pressure_tier' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'kgsl_syncobj_ts_to_fd(&ret)' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           python3 -m py_compile patches/port_upstream_main.py
@@ -77,7 +78,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-MAIN-20260922-A810-V15Q.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-MAIN-20260922-A810-V17LIGHTBURST.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -86,32 +87,32 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip upstream A810 V15Q',
-            'driverVersion': f'Mesa {version}', 'description': 'Pinned upstream Mesa main 8a9895916d6fd9020344f0950d01f6ac575ced6c; Frane A810 V15Q patch stack; experimental',
+            'schemaVersion': 1, 'name': 'Frane Turnip upstream A810 V17 LIGHT-BURST',
+            'driverVersion': f'Mesa {version}', 'description': 'Pinned upstream Mesa main 8a9895916d6fd9020344f0950d01f6ac575ced6c; Frane A810 V17 LIGHT-BURST patch stack; experimental',
             'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '1',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-MAIN-20260922-A810-V15Q.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Turnip-Mesa-MAIN-20260922-A810-V17LIGHTBURST.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-MAIN-20260922-A810-V15Q.zip') as z:
+          with zipfile.ZipFile('Frane-Turnip-Mesa-MAIN-20260922-A810-V17LIGHTBURST.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
               assert len(z.read('libvulkan_freedreno.so'))>1000000
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-MAIN-20260922-A810-V15Q.zip verified')
+          print('Driver Frane-Turnip-Mesa-MAIN-20260922-A810-V17LIGHTBURST.zip verified')
           PY
-      - name: Upload compiled Frane-Turnip-Mesa-MAIN-20260922-A810-V15Q.zip and full source diff
+      - name: Upload compiled Frane-Turnip-Mesa-MAIN-20260922-A810-V17LIGHTBURST.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-MAIN-20260922-A810-V15Q
+          name: Frane-Turnip-Mesa-MAIN-20260922-A810-V17LIGHTBURST
           path: |
-            Frane-Turnip-Mesa-MAIN-20260922-A810-V15Q.zip
+            Frane-Turnip-Mesa-MAIN-20260922-A810-V17LIGHTBURST.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
