@@ -3,8 +3,8 @@
 
 Base V15-O only; leave all tested A830 branches untouched.
 
- - Apply whitebelyash's 1-slice A810 0x78000 GMEM initial-offset guard
-   from tu_gen8.patch to prevent underflow in its ~576 KiB cache.
+ - Verify that Mesa 26.1.4 already removed the old 0x78000 GMEM offset
+   (do not inject obsolete whitebelyash patches into modern cache code).
  - Explicitly install documented A810 small-GMEM and cache geometry props;
    do not inherit A830's 3-slice geometry.
  - Default A810 TU_A810_GMEM_PROFILE to 0 and prefer_sysmem.
@@ -24,17 +24,17 @@ def replace_once(path, old, new):
     if n!=1: raise SystemExit(f"V15-P upstream drift ({path}) matches={n}: {old[:110]!r}")
     p.write_text(s.replace(old,new,1))
 
-# This exact underflow was documented by whitebelyash in gen8.
+# Whitebelyash's historical 0x78000 underflow affected an older cache
+# layout. Mesa 26.1.4 uses a redesigned per-CCU cache calculator and
+# no longer contains that unconditional offset. Verify the pinned source
+# rather than injecting an obsolete workaround in a different algorithm.
 p=Path("mesa/src/freedreno/common/fd6_gmem_cache.h")
 s=p.read_text()
-old="if (info->chip >= 8)"
-new="if (info->chip >= 8 && info->num_slices > 1)"
-if s.count(old)==1:
-    p.write_text(s.replace(old, new, 1))
-elif s.count(new)==1:
-    print("V15-P: offset guard already present upstream")
-else:
-    raise SystemExit("V15-P: couldn't prove A810 initial GMEM-offset guard")
+if "if (info->chip == 8)" not in s or "fd6_calc_gmem_cache_offsets" not in s:
+    raise SystemExit("V15-P: unexpected modern A8xx cache layout; stop")
+if "offset -= 0x78000" in s:
+    raise SystemExit("V15-P: obsolete A810 GMEM offset unexpectedly present")
+print("V15-P: Mesa 26.1.4 already lacks older 0x78000 GMEM offset")
 
 # GPUProps from the A810 profile in whitebelyash/mesa-tu8; the existing
 # A810-only has_fs_tex_prefetch=False remains untouched.
@@ -99,4 +99,4 @@ replace_once(
     """      const char *env = os_get_option("TU_A810_LEAN_CACHE");
       return env && strcmp(env, "1") == 0;""",
 )
-print("V15-P A810: 1-slice offset fix; A810 geometry; SYSMEM-first; lean A810 opt-in")
+print("V15-P A810: modern cache verified; A810 geometry; SYSMEM-first; lean A810 opt-in")
