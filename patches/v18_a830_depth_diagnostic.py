@@ -39,9 +39,4 @@ new="""   /* V18: isolate the depth/stencil compression path on A830 only.
    /* Layout computation begins here */"""
 assert s.count(old)==1, f"image anchor mismatch {s.count(old)}"
 p.write_text(s.replace(old,new,1))
-p=Path("mesa/src/freedreno/vulkan/tu_device.cc")
-s=p.read_text()
-old="Frane A830 V16-DISKDVD-AUDIT / Mesa "
-assert s.count(old)==1
-p.write_text(s.replace(old,"Frane A830 V18-DEPTH-DIAG / Mesa ",1))
 print("A830 V18 depth UBWC A/B probe applied (default ON, opt-out =0)",flush=True)
