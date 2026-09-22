@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 A810 V17 LIGHT-BURST
+name: Frane Turnip Mesa 26.2.3 A810 V17 DiskDVD
 
 on:
   push:
-    branches: ['mesa-upstream-2623-a810-light-burst']
+    branches: ['mesa-26.2.3-a810-v17-diskdvd']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
