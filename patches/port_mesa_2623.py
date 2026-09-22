@@ -32,7 +32,7 @@ else:
 
 p=Path("mesa/src/freedreno/vulkan/tu_device.cc")
 s=p.read_text()
-a="Frane V17 A810 LIGHT-BURST / Mesa " if mode=="a810" else "Frane A830 V18-DEPTH-DIAG / Mesa "
+a="Frane V17 A810 LIGHT-BURST / Mesa " if mode=="a810" else "Frane V16 A830 UPSTREAM / Mesa "
 b="Frane A810 V17-DISKDVD / Mesa " if mode=="a810" else "Frane A830 V18-DEPTH-DIAG / Mesa "
 assert s.count(a)==1
 p.write_text(s.replace(a,b,1))
