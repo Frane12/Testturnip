@@ -50,8 +50,8 @@ def run_legacy(name, skip_budget=False, upgrade_autotune_config=False):
     if upgrade_autotune_config:
         old = "device->instance->autotune_algo"
         hits = txt.count(old)
-        if hits != 2:
-            raise RuntimeError(f"{name}: Mesa main autotune config port expected 2 refs, got {hits}")
+        if hits != 4:
+            raise RuntimeError(f"{name}: Mesa main autotune config port expected 4 refs, got {hits}")
         txt = txt.replace(old, "device->instance->drirc.perf.autotune_algo")
     tree = ast.parse(txt, filename=str(p))
     if skip_budget:
