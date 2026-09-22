@@ -6,7 +6,7 @@ Source lineage: V15-O, new changes only in `patches/v15p_a810_render_recovery.py
 
 ## Addressed A810-specific issues
 
-- A810 has ~576 KiB, one-slice GMEM. Whitebelyash's A8xx work documented that an unconditional A8xx `0x78000` initial GMEM offset can underflow this small GMEM. V15-P restricts that offset to chips with more than one GMEM slice, preserving A830 behavior.
+- A810 has ~576 KiB, one-slice GMEM. Whitebelyash's older A8xx work documented that an unconditional A8xx `0x78000` initial GMEM offset could underflow A810's small GMEM. The pinned Mesa 26.1.4 **already uses a redesigned cache calculator without that offset**, so V15-P verifies the new layout instead of applying an obsolete fix.
 - Apply A810-specific small-cache/VPC parameters based on whitebelyash/mesa-tu8, instead of treating an A810 KGSL chip-ID alias as an A830.
 - Default `TU_A810_GMEM_PROFILE=0` and prefer_sysmem to obtain a picture-correctness baseline. `TU_DEBUG=sysmem` overrides the selector and *strictly forces* sysmem for diagnosis. A810 Lean Budget/Cache experiments default off during image validation. Opt-in profiles 1/2 remain behind env flags.
 
