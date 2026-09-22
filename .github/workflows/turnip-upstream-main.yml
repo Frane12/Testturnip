@@ -38,7 +38,7 @@ jobs:
           test "$(git -C mesa rev-parse HEAD)" = "$SOURCE_8a9895916d6fd9020344f0950d01f6ac575ced6c"
           git -C mesa rev-parse HEAD | tee mesa-commit.txt
           git rev-parse HEAD | tee frane-commit.txt
-          cat mesa/V16
+          cat mesa/VERSION
       - name: Port complete A830 patch stack onto Mesa main
         run: |
           set -eu
@@ -84,7 +84,7 @@ jobs:
           cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
           python3 - <<'PY'
           import json, pathlib
-          version=pathlib.Path('mesa/V16').read_text().strip()
+          version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1, 'name': 'Frane Turnip upstream A830 V16',
             'driverVersion': f'Mesa {version}', 'description': 'Pinned upstream Mesa main 8a9895916d6fd9020344f0950d01f6ac575ced6c; Frane A830 V16 patch stack; experimental',
