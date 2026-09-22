@@ -46,7 +46,7 @@ jobs:
           git -C mesa diff --check
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane VV15Q' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane V15Q' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'frane_a830_gmem_pressure_tier' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'kgsl_syncobj_ts_to_fd(&ret)' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           python3 -m py_compile patches/port_upstream_main.py
