@@ -96,7 +96,7 @@ jobs:
           grep -q 'frane_a810_gpu(device)' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'approx_tiles <= max_tiles' mesa/src/freedreno/vulkan/tu_autotune.cc
           python3 -m py_compile patches/v15p_a810_render_recovery.py
-          grep -q 'info->chip >= 8 && info->num_slices > 1' mesa/src/freedreno/common/fd6_gmem_cache.h
+          grep -q 'fd6_calc_gmem_cache_offsets' mesa/src/freedreno/common/fd6_gmem_cache.h
           grep -q 'gmem_size = 576 \* 1024' mesa/src/freedreno/common/freedreno_devices.py
           grep -q 'algo_strv = "prefer_sysmem"' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_A810_GMEM_PROFILE' mesa/src/freedreno/vulkan/tu_autotune.cc
