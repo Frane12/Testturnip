@@ -46,7 +46,6 @@ replace_once(
             # V15-P: A810 has a much smaller one-slice GMEM/cache than A830.
             # Explicit A810-only layout based on whitebelyash/mesa-tu8;
             # no forced GMEM use and no change to any A830 GPU properties.
-            gmem_size = 576 * 1024,
             sysmem_vpc_attr_buf_size = 131072,
             sysmem_vpc_pos_buf_size = 65536,
             sysmem_vpc_bv_pos_buf_size = 32768,
