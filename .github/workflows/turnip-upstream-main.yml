@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 A830 V16
+name: Frane Turnip Mesa 26.2.3 A830 V16 DiskDVD audit
 
 on:
   push:
-    branches: ['mesa-upstream-2623-a830-v16']
+    branches: ['mesa-26.2.3-a830-v16-diskdvd']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
