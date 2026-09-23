@@ -26,13 +26,14 @@ if mode == "a810":
     assert s.count(a)==1
     p.write_text(s.replace(a,'const char *env = os_get_option("TU_A810_GMEM_BURST");\n                  return env && strcmp(env, "1") == 0;',1))
     runpy.run_path("patches/diskdvd_a810_ir3_prefetch.py", run_name="__main__")
+    runpy.run_path("patches/v18_a810_sampled_depth.py", run_name="__main__")
 else:
     print("A830: retain V16, do not port A810-specific DiskDVD shader workarounds",flush=True)
 
 p=Path("mesa/src/freedreno/vulkan/tu_device.cc")
 s=p.read_text()
 a="Frane V17 A810 LIGHT-BURST / Mesa " if mode=="a810" else "Frane V16 A830 UPSTREAM / Mesa "
-b="Frane A810 V17-DISKDVD / Mesa " if mode=="a810" else "Frane A830 V16-DISKDVD-AUDIT / Mesa "
+b="Frane A810 V18-SAMPLED-DEPTH / Mesa " if mode=="a810" else "Frane A830 V16-DISKDVD-AUDIT / Mesa "
 assert s.count(a)==1
 p.write_text(s.replace(a,b,1))
 print(f"ALL Mesa 26.2.3 {mode} patches ported",flush=True)
