@@ -1,0 +1,51 @@
+name: Build DXVK 1.10.3 A810 memory experiment
+
+on:
+  push:
+    branches:
+      - experiment/dxvk-1103-a810-memory
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MinGW POSIX and GLSL compiler
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git python3 meson ninja-build glslang-tools \
+            g++-mingw-w64-i686-posix g++-mingw-w64-x86-64-posix mingw-w64-tools
+          sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+          sudo update-alternatives --set i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc-posix
+          sudo update-alternatives --set i686-w64-mingw32-g++ /usr/bin/i686-w64-mingw32-g++-posix
+      - name: Fetch pinned upstream DXVK v1.10.3
+        run: |
+          git clone --depth 1 --branch v1.10.3 --recurse-submodules https://github.com/doitsujin/dxvk.git dxvk-upstream
+          git -C dxvk-upstream describe --tags --always
+      - name: Apply opt-in A810 allocator changes
+        run: |
+          cp dxvk-a810/src/apply_a810_memory.py dxvk-upstream/apply_a810_memory.py
+          cd dxvk-upstream
+          python3 apply_a810_memory.py
+          git diff --check
+          git diff -- src/dxvk/dxvk_memory.cpp
+      - name: Compile Win32 and Win64 DLLs
+        working-directory: dxvk-upstream
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          ./package-release.sh frane-a810-v1 "$GITHUB_WORKSPACE/out" --no-package
+          test -s "$GITHUB_WORKSPACE/out/dxvk-frane-a810-v1/x32/d3d11.dll"
+          test -s "$GITHUB_WORKSPACE/out/dxvk-frane-a810-v1/x64/d3d11.dll"
+      - name: Package Bionic / Winlator build
+        run: |
+          cp dxvk-a810/README.md out/dxvk-frane-a810-v1/README-A810.md
+          cd out
+          zip -r -9 "$GITHUB_WORKSPACE/Frane-DXVK-1.10.3-A810-v1.zip" dxvk-frane-a810-v1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Frane-DXVK-1.10.3-A810-v1
+          path: Frane-DXVK-1.10.3-A810-v1.zip
+          if-no-files-found: error
