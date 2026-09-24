@@ -58,7 +58,7 @@ jobs:
           grep -q 'u_gralloc_aimapper.c' mesa/src/util/u_gralloc/meson.build
           grep -q 'Frane A830 V20-GMEM-RUNTIME' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'frane_a830_gmem_pressure_tier' mesa/src/freedreno/vulkan/tu_autotune.cc
-                    grep -q 'TU_A830_SAFE_DEPTH_UBWC' mesa/src/freedreno/vulkan/tu_image.cc
+          grep -q 'TU_A830_SAFE_DEPTH_UBWC' mesa/src/freedreno/vulkan/tu_image.cc
           grep -q 'frane_a830_actual_tiles' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'kgsl_syncobj_ts_to_fd(&ret)' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py
