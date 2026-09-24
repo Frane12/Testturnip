@@ -77,8 +77,13 @@ edit("""            const uint64_t approx_tiles = pixels_per_tile
                   ? ((uint64_t)pass_pixel_count + pixels_per_tile - 1) / pixels_per_tile
                   : UINT64_MAX;""")
 
-edit("               approx_tiles <= 12 &&", """               approx_tiles <= (a830_runtime_policy
-                  ? frane_a830_tile_limit(a830_memory_tier) : 12u) &&""")
+edit("""               pass_pixel_count <= 1920u * 1080u &&
+               approx_tiles <= 12 &&
+               pass->gmem_bandwidth_per_pixel < pass->sysmem_bandwidth_per_pixel;""",
+     """               pass_pixel_count <= 1920u * 1080u &&
+               approx_tiles <= (a830_runtime_policy
+                  ? frane_a830_tile_limit(a830_memory_tier) : 12u) &&
+               pass->gmem_bandwidth_per_pixel < pass->sysmem_bandwidth_per_pixel;""")
 
 edit("            select_sysmem = new_confidence < 2;", """            select_sysmem = new_confidence < 2;
             if (a830_runtime_policy && !select_sysmem)
