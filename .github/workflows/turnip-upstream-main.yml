@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 A810 V18 Sampled Depth
+name: Frane Turnip Mesa 26.2.3 A810 V19 IMapper
 
 on:
   push:
-    branches: ['mesa-26.2.3-a810-v18-depth-sampled']
+    branches: ['mesa-26.2.3-a810-v19-aimapper']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -40,15 +40,17 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Port A810 V18 sampled-depth diagnostic and DiskDVD descriptor fix on Mesa 26.2.3
+      - name: Apply V18 baseline and V19 IMapper5 port
         run: |
           set -eu
           python3 patches/port_mesa_2623.py a810
+          python3 patches/v19_aimapper.py
+          git -C mesa add -N src/util/u_gralloc/u_gralloc_aimapper.c
           git -C mesa diff --check
           test "$(cat mesa/VERSION)" = "26.2.3"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane A810 V18-SAMPLED-DEPTH' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane A810 V19-IMAPPER' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'frane_a830_gmem_pressure_tier' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q IR3_DBG_NODESCPREFETCH mesa/src/freedreno/ir3/ir3_compiler.c
           grep -q 'TU_A810_SAMPLED_DEPTH_DIAG' mesa/src/freedreno/vulkan/tu_image.cc
@@ -81,7 +83,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-A810-V19-IMAPPER.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -90,32 +92,32 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip A810 V18 SAMPLED DEPTH',
-            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; Frane A810 V17 DiskDVD stack + opt-in sampled depth diagnostic; experimental',
+            'schemaVersion': 1, 'name': 'Frane Turnip A810 V19 IMAPPER',
+            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; Frane A810 V18 stack + WN IMapper5 port; experimental; TU_FRANE_AIMAPPER=0 rollback',
             'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '1',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-A810-V19-IMAPPER.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH.zip') as z:
+          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-A810-V19-IMAPPER.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
               assert len(z.read('libvulkan_freedreno.so'))>1000000
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH.zip verified')
+          print('Driver Frane-Turnip-Mesa-2623-A810-V19-IMAPPER.zip verified')
           PY
-      - name: Upload compiled Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH.zip and full source diff
+      - name: Upload compiled Frane-Turnip-Mesa-2623-A810-V19-IMAPPER.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH
+          name: Frane-Turnip-Mesa-2623-A810-V19-IMAPPER
           path: |
-            Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH.zip
+            Frane-Turnip-Mesa-2623-A810-V19-IMAPPER.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
