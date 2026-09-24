@@ -1,0 +1,136 @@
+name: Publish Frane Turnip V17 and V18 experimental releases
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-v17-v18.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: frane-turnip-v17-v18-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v4
+
+      - name: Fetch exact successful build artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh run download 35738605867 --repo "$GH_REPO" --name 'Frane-Turnip-Mesa-MAIN-2623-A810-V17-DISKDVD' --dir downloads/v17-a810
+          gh run download 35864298649 --repo "$GH_REPO" --name 'Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH' --dir downloads/v18-a810
+          gh run download 35745282904 --repo "$GH_REPO" --name 'Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG' --dir downloads/v18-a830
+
+      - name: Validate provenance and prepare stand-alone assets
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, shutil, zipfile
+
+          mesa = "31e9a6b2e95e30d84bf3177d1f497d063e59b6b2"
+          builds = [
+              ("v17-a810", "f391126627bd6c56fdc41771de77928d2395ddfa",
+               "Frane-Turnip-Mesa-MAIN-2623-A810-V17-DISKDVD.zip"),
+              ("v18-a810", "2fdc673b319783646874ef91eeeed12f41259b5d",
+               "Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH.zip"),
+              ("v18-a830", "8a1467afa749d0ca9f2fda67eb87bf108876ed97",
+               "Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG.zip"),
+          ]
+
+          for slug, expected, filename in builds:
+              src = pathlib.Path("downloads") / slug
+              dst = pathlib.Path("release-assets") / slug
+              dst.mkdir(parents=True, exist_ok=True)
+              assert (src / "mesa-commit.txt").read_text().strip() == mesa, slug + ": Mesa SHA mismatch"
+              assert (src / "frane-commit.txt").read_text().strip() == expected, slug + ": source SHA mismatch"
+              original = src / filename
+              assert original.exists(), str(original)
+              with zipfile.ZipFile(original) as z:
+                  assert z.testzip() is None, slug + ": damaged ZIP"
+                  assert set(z.namelist()) == {"libvulkan_freedreno.so", "meta.json"}, slug + ": ZIP contents"
+                  driver = z.read("libvulkan_freedreno.so")
+                  meta = json.loads(z.read("meta.json"))
+              assert driver.startswith(b"\x7fELF") and len(driver) > 1000000, slug + ": not a built driver"
+              assert meta["sourceCommit"] == expected, slug + ": metadata source mismatch"
+              assert meta["driverVersion"] == "Mesa 26.2.3", slug + ": Mesa metadata mismatch"
+              digest = hashlib.sha256(driver).hexdigest()
+              assert (src / "driver-sha256.txt").read_text().split()[0] == digest, slug + ": ELF checksum mismatch"
+
+              out = dst / filename
+              if slug == "v17-a810":
+                  # The original successful V17 workflow inherited the older LIGHT-BURST display name.
+                  # Correct ONLY the metadata: the compiled binary stays byte-identical.
+                  meta["name"] = "Frane Turnip A810 V17 DISKDVD"
+                  meta["description"] = ("Pinned Mesa 26.2.3 " + mesa +
+                                         "; Frane A810 V17 stack and opt-out DiskDVD IR3 diagnostic; experimental")
+                  with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+                      z.writestr("libvulkan_freedreno.so", driver)
+                      z.writestr("meta.json", json.dumps(meta, indent=2) + "\n")
+              else:
+                  shutil.copy2(original, out)
+              with zipfile.ZipFile(out) as z:
+                  assert z.testzip() is None and z.read("libvulkan_freedreno.so") == driver
+                  assert json.loads(z.read("meta.json"))["sourceCommit"] == expected
+
+              patch = dst / (slug + "-mesa-applied.patch")
+              shutil.copy2(src / "mesa-applied.patch", patch)
+              sums = dst / (slug + "-SHA256SUMS.txt")
+              sums.write_text(
+                  hashlib.sha256(out.read_bytes()).hexdigest() + "  " + filename + "\n"
+                  + hashlib.sha256(patch.read_bytes()).hexdigest() + "  " + patch.name + "\n"
+                  + digest + "  libvulkan_freedreno.so (inside ZIP)\n"
+              )
+              print(f"VERIFIED {slug}: Mesa {mesa}, Frane {expected}, ELF {digest}, assets ready")
+          PY
+
+      - name: Create three experimental GitHub releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          publish() {
+            local tag="$1" title="$2" sha="$3" slug="$4" notes="$5" filename="$6"
+            if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+              echo "Release $tag already exists; not overwriting."
+              return
+            fi
+            gh release create "$tag" \
+              "release-assets/$slug/$filename" \
+              "release-assets/$slug/$slug-mesa-applied.patch" \
+              "release-assets/$slug/$slug-SHA256SUMS.txt" \
+              --repo "$GH_REPO" \
+              --target "$sha" \
+              --title "$title" \
+              --notes-file "$notes" \
+              --prerelease
+            gh release view "$tag" --repo "$GH_REPO" --json name,url,assets \
+              --jq '{name:.name,url:.url,assets:[.assets[].name]}'
+          }
+          publish 'v17-a810-diskdvd' \
+            'Frane Turnip V17 — A810 DiskDVD (Mesa 26.2.3 · Experimental)' \
+            'f391126627bd6c56fdc41771de77928d2395ddfa' \
+            'v17-a810' 'releases/v17-a810-diskdvd.md' \
+            'Frane-Turnip-Mesa-MAIN-2623-A810-V17-DISKDVD.zip'
+          publish 'v18-a810-sampled-depth' \
+            'Frane Turnip V18 — A810 Sampled Depth (Mesa 26.2.3 · Experimental)' \
+            '2fdc673b319783646874ef91eeeed12f41259b5d' \
+            'v18-a810' 'releases/v18-a810-sampled-depth.md' \
+            'Frane-Turnip-Mesa-2623-A810-V18-SAMPLED-DEPTH.zip'
+          publish 'v18-a830-depth-diag' \
+            'Frane Turnip V18 — A830 Depth Diagnostic (Mesa 26.2.3 · Experimental)' \
+            '8a1467afa749d0ca9f2fda67eb87bf108876ed97' \
+            'v18-a830' 'releases/v18-a830-depth-diag.md' \
+            'Frane-Turnip-Mesa-2623-A830-V18-DEPTH-DIAG.zip'
