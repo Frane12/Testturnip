@@ -162,5 +162,5 @@ jobs:
             Frane-Turnip-Mesa-2623-A810-V23-LEAN-WSI.zip \
             mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
             --target "$GITHUB_SHA" --prerelease \
-            --title 'Frane Turnip V22 A810 — Lean Profiled (experimental)' \
+            --title 'Frane Turnip V23 A810 — Lean WSI (experimental)' \
             --notes-file EXPERIMENT_V23_A810_LEAN_WSI.md
