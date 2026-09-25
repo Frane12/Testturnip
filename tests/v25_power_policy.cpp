@@ -2,6 +2,7 @@
 #include "../patches/frane_v25_power.h"
 #include <cassert>
 #include <cstdio>
+#include <initializer_list>
 int main()
 {
    assert(frane_v25_is_a810(UINT64_C(0x44010000)));
