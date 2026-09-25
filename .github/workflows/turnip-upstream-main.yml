@@ -12,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: v23-a810-lean-wsi
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -158,9 +162,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v23-a810-lean-wsi \
-            Frane-Turnip-Mesa-2623-A810-V23-LEAN-WSI.zip \
-            mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
-            --target "$GITHUB_SHA" --prerelease \
-            --title 'Frane Turnip V23 A810 — Lean WSI (experimental)' \
-            --notes-file EXPERIMENT_V23_A810_LEAN_WSI.md
+          if gh release view v23-a810-lean-wsi >/dev/null 2>&1; then
+            gh release upload v23-a810-lean-wsi \
+              Frane-Turnip-Mesa-2623-A810-V23-LEAN-WSI.zip \
+              mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
+              --clobber
+            gh release edit v23-a810-lean-wsi --target "$GITHUB_SHA" \
+              --title 'Frane Turnip V23 A810 — Lean WSI (experimental)' \
+              --notes-file EXPERIMENT_V23_A810_LEAN_WSI.md
+          else
+            gh release create v23-a810-lean-wsi \
+              Frane-Turnip-Mesa-2623-A810-V23-LEAN-WSI.zip \
+              mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
+              --target "$GITHUB_SHA" --prerelease \
+              --title 'Frane Turnip V23 A810 — Lean WSI (experimental)' \
+              --notes-file EXPERIMENT_V23_A810_LEAN_WSI.md
+          fi
