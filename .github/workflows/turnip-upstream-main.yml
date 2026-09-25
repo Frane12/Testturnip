@@ -70,8 +70,6 @@ jobs:
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
           echo 'DiskDVD IR3 workaround and V23 WSI unchanged by V25'
-          cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
-          cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
           git -C mesa add -N src/freedreno/vulkan/frane_profiled_sampling.h src/freedreno/vulkan/frane_present_policy.h src/freedreno/vulkan/frane_v24_fastpath.h src/freedreno/vulkan/frane_v25_power.h
           git -C mesa diff --check
           test "$(cat mesa/VERSION)" = "26.2.3"
