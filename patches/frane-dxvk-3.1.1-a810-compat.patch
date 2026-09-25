@@ -1,0 +1,48 @@
+diff --git a/src/dxvk/dxvk_device_info.cpp b/src/dxvk/dxvk_device_info.cpp
+--- a/src/dxvk/dxvk_device_info.cpp
++++ b/src/dxvk/dxvk_device_info.cpp
+@@ -489,6 +489,20 @@
+   void DxvkDeviceCapabilities::disableUnusedFeatures(
+     const DxvkInstance&               instance,
+           bool                        safeMode) {
++    // Experimental mobile fallback for Frane A810/V25. Opt in explicitly.
++    // Never spoof required Vulkan capabilities; fail normally if missing.
++    if (m_properties.vk12.driverID == VK_DRIVER_ID_MESA_TURNIP
++     && env::getEnvVar("DXVK_A810_COMPAT") == "1") {
++      m_featuresSupported.extGraphicsPipelineLibrary.graphicsPipelineLibrary = VK_FALSE;
++      m_featuresSupported.extDescriptorBuffer.descriptorBuffer = VK_FALSE;
++      m_featuresSupported.khrUnifiedImageLayouts.unifiedImageLayouts = VK_FALSE;
++      m_featuresSupported.khrPresentId.presentId = VK_FALSE;
++      m_featuresSupported.khrPresentWait.presentWait = VK_FALSE;
++      m_featuresSupported.khrPresentId2.presentId2 = VK_FALSE;
++      m_featuresSupported.khrPresentWait2.presentWait2 = VK_FALSE;
++      Logger::info("Frane A810 DXVK 3.1.1: conservative optional paths enabled");
++    }
++
+     if (m_featuresSupported.extDescriptorHeap.descriptorHeap) {
+       // Only enable descriptor heaps on drivers that are known to work and don't
+       // have known performance regressions currently.
+@@ -753,6 +767,23 @@
+     if (m_queueMapping.graphics.family == VK_QUEUE_FAMILY_IGNORED)
+       return std::string("Device does not have a graphics queue");
+ 
++    // Report ALL missing requirements rather than just the first one.
++    // This is needed to distinguish a driver feature gap from Wine/WSI.
++    if (env::getEnvVar("DXVK_A810_COMPAT") == "1") {
++      Logger::info(str::format("Frane A810 DXVK 3.1.1: Vulkan ",
++        VK_API_VERSION_MAJOR(m_properties.core.properties.apiVersion), ".",
++        VK_API_VERSION_MINOR(m_properties.core.properties.apiVersion),
++        ", driver: ", m_properties.vk12.driverName,
++        ", maxPushConstantsSize: ", m_properties.core.properties.limits.maxPushConstantsSize));
++      for (const auto& feature : getFeatureList()) {
++        if (feature.featureRequired && !(*feature.featureEnabled)) {
++          Logger::warn(str::format("Frane A810 missing required Vulkan feature: ",
++            feature.readableName,
++            feature.extensionEnabled ? str::format(" (", feature.extensionEnabled->extensionName, ")") : ""));
++        }
++      }
++    }
++
+     for (const auto& f : getFeatureList()) {
+       if (f.featureRequired && !(*f.featureEnabled)) {
+         std::string message = str::format("Device does not support required feature '", f.readableName, "'");
