@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 A810 V24 Lean Hotpath
+name: Frane Turnip Mesa 26.2.3 A810 V25 Power Perf
 
 on:
   push:
-    branches: ['mesa-26.2.3-a810-v24-lean-hotpath']
+    branches: ['mesa-26.2.3-a810-v25-power-perf']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: v24-a810-lean-hotpath
+  group: v25-a810-power-perf
   cancel-in-progress: true
 
 jobs:
@@ -36,6 +36,8 @@ jobs:
           /tmp/present-policy-test
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined tests/v24_hotpath_equivalence.cpp -o /tmp/v24-hotpath-test
           /tmp/v24-hotpath-test
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined tests/v25_power_policy.cpp -o /tmp/v25-power-test
+          /tmp/v25-power-test
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -53,7 +55,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Apply V18/V22/V23 baseline + V24 guarded CPU hotpath
+      - name: Apply V18/V22/V23/V24 baseline + V25 bounded KGSL power experiment
         run: |
           set -eu
           python3 patches/port_mesa_2623.py a810
@@ -63,15 +65,21 @@ jobs:
           cp mesa/src/freedreno/ir3/ir3_compiler.c /tmp/v23-ir3-compiler.c
           cp mesa/src/freedreno/vulkan/tu_wsi.cc /tmp/v23-tu-wsi.cc
           python3 patches/v24_a810_lean_hotpath.py
+          cp mesa/src/freedreno/vulkan/tu_autotune.cc /tmp/v24-tu-autotune.cc
+          python3 patches/v25_a810_power_perf.py
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
-          echo 'DiskDVD IR3 workaround and V23 WSI unchanged'
-          git -C mesa add -N src/freedreno/vulkan/frane_profiled_sampling.h src/freedreno/vulkan/frane_present_policy.h src/freedreno/vulkan/frane_v24_fastpath.h
+          echo 'DiskDVD IR3 workaround and V23 WSI unchanged by V25'
+          cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
+          cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
+          git -C mesa add -N src/freedreno/vulkan/frane_profiled_sampling.h src/freedreno/vulkan/frane_present_policy.h src/freedreno/vulkan/frane_v24_fastpath.h src/freedreno/vulkan/frane_v25_power.h
           git -C mesa diff --check
           test "$(cat mesa/VERSION)" = "26.2.3"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane A810 V24-LEAN-HOTPATH' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane A810 V25-POWER-PERF' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A810_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
+          grep -q 'KGSL_CONSTRAINT_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           grep -q 'TU_A810_V24_FASTPATH' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'frane_v24_is_definite' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_FRANE_PRESENT_MODE' mesa/src/freedreno/vulkan/tu_wsi.cc
@@ -91,7 +99,7 @@ jobs:
           assert 'ts_binning_start' not in b, 'Unexpected V21 timing patch'
           print('V18 timing/decision baseline verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -119,7 +127,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -128,19 +136,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip A810 V24 LEAN HOTPATH',
-            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; V18/V22/V23 + A810 locked-mode RNG and empty-fence fast paths; TU_A810_V24_FASTPATH=0 rollback; experimental',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '24',
+            'schemaVersion': 1, 'name': 'Frane Turnip A810 V25 POWER PERF',
+            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; V18/V22/V23/V24 + A810 KGSL PWR_MAX queue constraint and 1/8 confident sampling, opt-out switches; experimental',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '25',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip') as z:
+          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -150,41 +158,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip verified')
+          print('Driver Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip and full source diff
+          sha256sum Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH
+          name: Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF
           path: |
-            Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip
+            Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_V24_A810_LEAN_HOTPATH.md
+            EXPERIMENT_V25_A810_POWER_PERF.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-a810-v24-lean-hotpath'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-a810-v25-power-perf'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v24-a810-lean-hotpath >/dev/null 2>&1; then
-            gh release upload v24-a810-lean-hotpath \
-              Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip \
+          if gh release view v25-a810-power-perf >/dev/null 2>&1; then
+            gh release upload v25-a810-power-perf \
+              Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit v24-a810-lean-hotpath --target "$GITHUB_SHA" \
-              --title 'Frane Turnip V24 A810 — Lean Hotpath (experimental)' \
-              --notes-file EXPERIMENT_V24_A810_LEAN_HOTPATH.md
+            gh release edit v25-a810-power-perf --target "$GITHUB_SHA" \
+              --title 'Frane Turnip V25 A810 — Power Perf (experimental)' \
+              --notes-file EXPERIMENT_V25_A810_POWER_PERF.md
           else
-            gh release create v24-a810-lean-hotpath \
-              Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip \
+            gh release create v25-a810-power-perf \
+              Frane-Turnip-Mesa-2623-A810-V25-POWER-PERF.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Turnip V24 A810 — Lean Hotpath (experimental)' \
-              --notes-file EXPERIMENT_V24_A810_LEAN_HOTPATH.md
+              --title 'Frane Turnip V25 A810 — Power Perf (experimental)' \
+              --notes-file EXPERIMENT_V25_A810_POWER_PERF.md
           fi
