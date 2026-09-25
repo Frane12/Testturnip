@@ -94,6 +94,11 @@ jobs:
               end=s.index('    public:', start)
               return s[start:end]
           assert updater(a)==updater(b), 'V18 probability updater changed'
+          v24=Path('/tmp/v24-tu-autotune.cc').read_text()
+          original='debug_get_num_option("TU_A810_PROFILED_SAMPLE_INTERVAL", 4)'
+          experimental='debug_get_num_option("TU_A810_PROFILED_SAMPLE_INTERVAL", 8)'
+          assert b.count(experimental)==1
+          assert b.replace(experimental,original,1)==v24, 'Unexpected V25 autotuner change'
           assert 'ts_binning_start' not in b, 'Unexpected V21 timing patch'
           print('V18 timing/decision baseline verified')
           PYCODE
