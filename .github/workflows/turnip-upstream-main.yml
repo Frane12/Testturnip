@@ -178,13 +178,13 @@ jobs:
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
             gh release edit v24-a810-lean-hotpath --target "$GITHUB_SHA" \
-              --title 'Frane Turnip V23 A810 — Lean WSI (experimental)' \
+              --title 'Frane Turnip V24 A810 — Lean Hotpath (experimental)' \
               --notes-file EXPERIMENT_V24_A810_LEAN_HOTPATH.md
           else
             gh release create v24-a810-lean-hotpath \
               Frane-Turnip-Mesa-2623-A810-V24-LEAN-HOTPATH.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Turnip V23 A810 — Lean WSI (experimental)' \
+              --title 'Frane Turnip V24 A810 — Lean Hotpath (experimental)' \
               --notes-file EXPERIMENT_V24_A810_LEAN_HOTPATH.md
           fi
