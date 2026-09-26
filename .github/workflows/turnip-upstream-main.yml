@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 A810 V26 Adaptive Cache
+name: Frane Turnip Mesa 26.2.3 V28 Universal Adaptive
 
 on:
   push:
-    branches: ['mesa-26.2.3-a810-v26-adaptive-cache']
+    branches: ['mesa-26.2.3-v28-universal-adaptive']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: v26-a810-adaptive-cache
+  group: v28-universal-adaptive
   cancel-in-progress: true
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Apply V18/V22/V23/V24 baseline + V25 bounded KGSL power experiment
+      - name: Apply V26 baseline + V28 universal adaptive profiler
         run: |
           set -eu
           python3 patches/port_mesa_2623.py a810
@@ -68,6 +68,7 @@ jobs:
           cp mesa/src/freedreno/vulkan/tu_autotune.cc /tmp/v24-tu-autotune.cc
           python3 patches/v25_a810_power_perf.py
           python3 patches/v26_a810_adaptive_cache.py
+          python3 patches/v28_universal_adaptive.py
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
           echo 'DiskDVD IR3 workaround and V23 WSI unchanged by V25'
@@ -76,7 +77,11 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane A810 V26-ADAPTIVE-CACHE' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane V28-UNIVERSAL-ADAPTIVE' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'frane-universal-v28:' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_UNIVERSAL_PROFILED' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'img_id' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_IMAGE_ID_ASSIGN' mesa/src/freedreno/vulkan/tu_image.cc
           grep -q 'TU_A810_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           grep -q 'KGSL_CONSTRAINT_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           grep -q 'TU_A810_V24_FASTPATH' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -96,14 +101,15 @@ jobs:
               return s[start:end]
           assert 'frane_cache_warmed' in updater(b) and 'MIN_LOCK_DURATION_COUNT = 15' in updater(b)
           v24=Path('/tmp/v24-tu-autotune.cc').read_text()
-          original='debug_get_num_option("TU_A810_PROFILED_SAMPLE_INTERVAL", 4)'
-          experimental='debug_get_num_option("TU_A810_PROFILED_SAMPLE_INTERVAL", 8)'
-          assert b.count(experimental)==1
-          assert experimental in b and original in v24
+          assert 'debug_get_num_option("TU_A810_PROFILED_SAMPLE_INTERVAL", 4)' in v24
+          assert 'TU_FRANE_PROFILED_SAMPLE_INTERVAL' in b
+          assert 'frane-universal-v28:' in b
+          assert '.img_id = cmd->state.attachments[i]->image->id' in b
+          assert 'TU_FRANE_UNIVERSAL_PROFILED' in b
           assert 'ts_binning_start' not in b, 'Unexpected V21 timing patch'
-          print('V18 timing/decision baseline verified')
+          print('V28 universal profiler + stable RP identity verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -131,7 +137,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -140,19 +146,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip A810 V26 ADAPTIVE CACHE',
-            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; V18/V22/V23/V24 + A810 adaptive profiled sampling and application-specific persistent Mesa cache; V25 opt-out switches; experimental',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26',
+            'schemaVersion': 1, 'name': 'Frane Turnip V28 UNIVERSAL ADAPTIVE',
+            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; V26 weak persistent prior + upstream stable image-ID RP hash + capability-gated universal PROFILED learning; experimental',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '28',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip') as z:
+          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -162,41 +168,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip verified')
+          print('Driver Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip and full source diff
+          sha256sum Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE
+          name: Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE
           path: |
-            Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip
+            Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_V25_A810_POWER_PERF.md
+            EXPERIMENT_V28_UNIVERSAL_ADAPTIVE.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-a810-v26-adaptive-cache'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-v28-universal-adaptive'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v26-a810-adaptive-cache >/dev/null 2>&1; then
-            gh release upload v26-a810-adaptive-cache \
-              Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip \
+          if gh release view v28-universal-adaptive >/dev/null 2>&1; then
+            gh release upload v28-universal-adaptive \
+              Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit v26-a810-adaptive-cache --target "$GITHUB_SHA" \
-              --title 'Frane Turnip V26 A810 — Adaptive Cache (experimental)' \
-              --notes-file EXPERIMENT_V25_A810_POWER_PERF.md
+            gh release edit v28-universal-adaptive --target "$GITHUB_SHA" \
+              --title 'Frane Turnip V28 — Universal Adaptive Profiler (experimental)' \
+              --notes-file EXPERIMENT_V28_UNIVERSAL_ADAPTIVE.md
           else
-            gh release create v26-a810-adaptive-cache \
-              Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip \
+            gh release create v28-universal-adaptive \
+              Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Turnip V26 A810 — Adaptive Cache (experimental)' \
-              --notes-file EXPERIMENT_V26_A810_ADAPTIVE_CACHE.md
+              --title 'Frane Turnip V28 — Universal Adaptive Profiler (experimental)' \
+              --notes-file EXPERIMENT_V28_UNIVERSAL_ADAPTIVE.md
           fi
