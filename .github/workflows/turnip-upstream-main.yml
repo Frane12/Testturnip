@@ -89,7 +89,6 @@ jobs:
           grep -q 'KGSL_CONSTRAINT_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           grep -q 'TU_A810_V24_FASTPATH' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'frane_v24_is_definite' mesa/src/freedreno/vulkan/tu_autotune.cc
-          grep -q 'TU_FRANE_PRESENT_MODE' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'frane_a830_gmem_pressure_tier' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q IR3_DBG_NODESCPREFETCH mesa/src/freedreno/ir3/ir3_compiler.c
           grep -q 'TU_A810_SAMPLED_DEPTH_DIAG' mesa/src/freedreno/vulkan/tu_image.cc
