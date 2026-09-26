@@ -68,11 +68,11 @@ jobs:
           cp mesa/src/freedreno/vulkan/tu_autotune.cc /tmp/v24-tu-autotune.cc
           python3 patches/v25_a810_power_perf.py
           python3 patches/v26_a810_adaptive_cache.py
-          python3 patches/v28_universal_adaptive.py patches/v28_clean_runtime_wsi.py
+          python3 patches/v28_universal_adaptive.py
           python3 patches/v28_clean_runtime_wsi.py
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
-          cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
-          echo 'DiskDVD IR3 workaround and V23 WSI unchanged by V25'
+          ! cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
+          echo 'DiskDVD IR3 unchanged; V23 WSI intentionally removed by V28-CLEAN'
           git -C mesa add -N src/freedreno/vulkan/frane_profiled_sampling.h src/freedreno/vulkan/frane_present_policy.h src/freedreno/vulkan/frane_v24_fastpath.h src/freedreno/vulkan/frane_v25_power.h
           git -C mesa diff --check
           test "$(cat mesa/VERSION)" = "26.2.3"
