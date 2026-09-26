@@ -273,6 +273,8 @@ p.write_text(s)
 
 # on_submit is documented single-threaded. Run 10s-scale housekeeping once per
 # 32 submits instead of calling monotonic clock/cleanup machinery every submit.
+h = V / "tu_autotune.h"
+t = h.read_text()
 old = '''   uint64_t last_reap_ts = 0;'''
 new = '''   uint64_t last_reap_ts = 0;
    uint32_t frane_maintenance_ticket = 0;'''
