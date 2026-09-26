@@ -119,7 +119,7 @@ frane_neural_enabled()
 bool
 tu_autotune::frane_model_key(unsigned char *key) const
 {
-   struct { unsigned char base[20]; char tag[8]; } input{};
+   struct { cache_key base; char tag[8]; } input{};
    static_assert(sizeof(cache_key) == sizeof(input.base));
    if (!frane_profile_key(0, input.base)) return false;
    memcpy(input.tag, "nn-v29", 6);
