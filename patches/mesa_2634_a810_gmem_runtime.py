@@ -41,7 +41,11 @@ frane_a810_gmem_runtime_enabled(const struct tu_device *device)
 {
    static const bool enabled =
       debug_get_bool_option("TU_A810_GMEM_RUNTIME", true);
-   return enabled && frane_a810_gpu(device);
+   if (!enabled || !device || !device->physical_device)
+      return false;
+   const uint64_t id = device->physical_device->dev_id.chip_id;
+   return id == UINT64_C(0x44010000) ||
+          id == UINT64_C(0xffff44010000);
 }
 
 static bool
