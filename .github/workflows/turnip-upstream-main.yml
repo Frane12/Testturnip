@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 A810 V26 Adaptive Cache
+name: Frane Turnip Mesa 26.2.3 A810 V27 Readable Profile
 
 on:
   push:
-    branches: ['mesa-26.2.3-a810-v26-adaptive-cache']
+    branches: ['mesa-26.2.3-a810-v27-readable-profile']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: v26-a810-adaptive-cache
+  group: v27-a810-readable-profile
   cancel-in-progress: true
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Apply V18/V22/V23/V24 baseline + V25 bounded KGSL power experiment
+      - name: Apply V18/V22/V23/V24/V25/V26 baseline + V27 readable profile
         run: |
           set -eu
           python3 patches/port_mesa_2623.py a810
@@ -68,6 +68,7 @@ jobs:
           cp mesa/src/freedreno/vulkan/tu_autotune.cc /tmp/v24-tu-autotune.cc
           python3 patches/v25_a810_power_perf.py
           python3 patches/v26_a810_adaptive_cache.py
+          python3 patches/v27_a810_readable_profile.py
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
           echo 'DiskDVD IR3 workaround and V23 WSI unchanged by V25'
@@ -76,7 +77,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane A810 V26-ADAPTIVE-CACHE' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane A810 V27-READABLE-PROFILE' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'TU_A810_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           grep -q 'KGSL_CONSTRAINT_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           grep -q 'TU_A810_V24_FASTPATH' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -103,7 +104,7 @@ jobs:
           assert 'ts_binning_start' not in b, 'Unexpected V21 timing patch'
           print('V18 timing/decision baseline verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v27_a810_readable_profile.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -131,7 +132,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -140,19 +141,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip A810 V26 ADAPTIVE CACHE',
-            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; V18/V22/V23/V24 + A810 adaptive profiled sampling and application-specific persistent Mesa cache; V25 opt-out switches; experimental',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26',
+            'schemaVersion': 1, 'name': 'Frane Turnip A810 V27 READABLE PROFILE',
+            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; V26 adaptive persistent cache + V27 human-readable per-game profile LOAD/SAVE log; experimental',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '27',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip') as z:
+          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -162,41 +163,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip verified')
+          print('Driver Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip and full source diff
+          sha256sum Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE
+          name: Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE
           path: |
-            Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip
+            Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_V25_A810_POWER_PERF.md
+            EXPERIMENT_V27_A810_READABLE_PROFILE.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-a810-v26-adaptive-cache'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-a810-v27-readable-profile'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v26-a810-adaptive-cache >/dev/null 2>&1; then
-            gh release upload v26-a810-adaptive-cache \
-              Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip \
+          if gh release view v27-a810-readable-profile >/dev/null 2>&1; then
+            gh release upload v27-a810-readable-profile \
+              Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit v26-a810-adaptive-cache --target "$GITHUB_SHA" \
-              --title 'Frane Turnip V26 A810 — Adaptive Cache (experimental)' \
-              --notes-file EXPERIMENT_V25_A810_POWER_PERF.md
+            gh release edit v27-a810-readable-profile --target "$GITHUB_SHA" \
+              --title 'Frane Turnip V27 A810 — Readable Profile (experimental)' \
+              --notes-file EXPERIMENT_V27_A810_READABLE_PROFILE.md
           else
-            gh release create v26-a810-adaptive-cache \
-              Frane-Turnip-Mesa-2623-A810-V26-ADAPTIVE-CACHE.zip \
+            gh release create v27-a810-readable-profile \
+              Frane-Turnip-Mesa-2623-A810-V27-READABLE-PROFILE.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Turnip V26 A810 — Adaptive Cache (experimental)' \
-              --notes-file EXPERIMENT_V26_A810_ADAPTIVE_CACHE.md
+              --title 'Frane Turnip V27 A810 — Readable Profile (experimental)' \
+              --notes-file EXPERIMENT_V27_A810_READABLE_PROFILE.md
           fi
