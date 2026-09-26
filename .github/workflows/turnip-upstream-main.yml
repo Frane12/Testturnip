@@ -70,7 +70,7 @@ jobs:
           cp mesa/src/freedreno/vulkan/tu_autotune.cc /tmp/v24-tu-autotune.cc
           python3 patches/v25_a810_power_perf.py
           python3 patches/v26_a810_adaptive_cache.py
-          python3 patches/v28_universal_adaptive.py
+          python3 patches/v28_universal_adaptive_main.py
           python3 patches/v28_clean_runtime_wsi.py
           python3 patches/v29_fast_noai.py
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
@@ -119,7 +119,7 @@ jobs:
           assert 'history.sysmem_rp_average' not in b[b.index('      render_mode get_optimal_mode(rp_history &history, bool *measure'):b.index('   /** Preemption Latency Optimization Mode **/')]
           print('V29 FAST-NOAI hotpath + V28 CLEAN baseline verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
