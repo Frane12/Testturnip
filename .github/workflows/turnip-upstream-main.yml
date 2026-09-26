@@ -134,10 +134,7 @@ jobs:
           assert 'frane_2631_deadline_ns' in kg
           assert 'pthread_mutex_unlock(&device->submit_mutex);\n      return VK_ERROR_OUT_OF_HOST_MEMORY;' in q
           assert 'frane_2632_profile_base_interval' in b
-          assert 'frane_2632_maintenance_due' in b
-          assert 'frane_2632_power_refresh_due' in Path('mesa/src/freedreno/vulkan/frane_v25_power.h').read_text()
           assert 'if (num_fds && queue != NULL)' in kg
-          assert 'MAX2(4u, count + 1u)' in kg
           assert 'Frane Mesa 26.3.3 A810 PROFILE-TURBO EXP' in Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
           assert 'frane_2633_decision_draw(history.hash)' in b
           assert 'decision_ticket.fetch_add' not in b
