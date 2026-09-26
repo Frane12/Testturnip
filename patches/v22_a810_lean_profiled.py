@@ -11,7 +11,9 @@ import shutil
 root = Path('mesa/src/freedreno/vulkan')
 p = root / 'tu_autotune.cc'
 s = p.read_text()
-assert 'Frane V21' not in s and 'ts_binning_start' not in s
+assert 'Frane V21' not in s
+# Mesa 26.3-devel has native GMEM binning timestamps; preserve them. The old
+# V22 guard only intended to reject our former Frane V21 timing experiment.
 
 def edit(old, new):
     global s
