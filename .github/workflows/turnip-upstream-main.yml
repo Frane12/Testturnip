@@ -140,10 +140,13 @@ jobs:
           assert '.img_id = cmd->state.attachments[i]->image->id' in b
           assert 'TU_FRANE_UNIVERSAL_PROFILED' in b
           assert 'ts_binning_start' in b and 'ts_binning_end' in b, 'Mesa-main native binning timing missing'
-          prof_start=b.index('      render_mode get_optimal_mode(')
-          prof_end=b.index('   /** Preemption Latency Optimization Mode **/', prof_start)
+          runtime_marker=b.index('const frane_2634_gmem_layout_input *gmem_runtime_input')
+          prof_start=b.rfind('      render_mode get_optimal_mode(', 0, runtime_marker)
+          prof_end=b.index('   /** Preemption Latency Optimization Mode **/', runtime_marker)
           prof_decision=b[prof_start:prof_end]
           assert 'history.sysmem_rp_average' not in prof_decision
+          assert 'history.gmem_rp_average' not in prof_decision
+          assert 'history.frane_gmem_runtime_word.load' in prof_decision
           assert 'rand_xorshift128plus(seed)' not in b
           assert 'frane_v29_neural' not in b
           assert 'frane_model' not in b
