@@ -111,7 +111,7 @@ jobs:
           assert 'frane-universal-v29-fast:' in b
           assert '.img_id = cmd->state.attachments[i]->image->id' in b
           assert 'TU_FRANE_UNIVERSAL_PROFILED' in b
-          assert 'ts_binning_start' not in b, 'Unexpected V21 timing patch'
+          assert 'ts_binning_start' in b and 'ts_binning_end' in b, 'Mesa-main native binning timing missing'
           assert 'history.sysmem_rp_average' not in b[b.index('      render_mode get_optimal_mode(rp_history &history, bool *measure'):b.index('   /** Preemption Latency Optimization Mode **/')]
           assert 'rand_xorshift128plus(seed)' not in b
           assert 'frane_v29_neural' not in b
