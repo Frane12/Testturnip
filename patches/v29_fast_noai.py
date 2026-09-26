@@ -267,30 +267,9 @@ edit('''tu_autotune::rp_history_handle::rp_history_handle(rp_history &history): 
 
 p.write_text(s)
 
-# Fix move-assignment lifetime accounting: swap the old ownership into 'other'
-# so its destructor releases it, instead of silently leaking a reference.
-h = V / "tu_autotune.h"
-t = h.read_text()
-old = '''   constexpr rp_history_handle &operator=(rp_history_handle &&other)
-   {
-      if (this != &other) {
-         history = other.history;
-         other.history = nullptr;
-      }
-      return *this;
-   }'''
-new = '''   rp_history_handle &operator=(rp_history_handle &&other) noexcept
-   {
-      if (this != &other) {
-         rp_history *old_history = history;
-         history = other.history;
-         other.history = old_history;
-      }
-      return *this;
-   }'''
-if t.count(old) != 1:
-    raise SystemExit("V29-FAST source drift: move assignment anchor")
-t = t.replace(old, new, 1)
+# V16 in port_upstream_main.py already fixes move-assignment ownership by
+# transferring the previous handle into a temporary that releases it. Do not
+# re-patch that code here; V29 FAST builds on the verified V16 lifetime fix.
 
 # on_submit is documented single-threaded. Run 10s-scale housekeeping once per
 # 32 submits instead of calling monotonic clock/cleanup machinery every submit.
