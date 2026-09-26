@@ -2,7 +2,7 @@ name: Frane Turnip Mesa main V29 FAST NOAI
 
 on:
   push:
-    branches: ['mesa-main-v29-fast-noai-mesa-main']
+    branches: ['mesa-main-v29-fast-noai']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: v29-fast-noai-mesa-main-mesa-main
+  group: v29-fast-noai-mesa-main
   cancel-in-progress: true
 
 jobs:
@@ -196,7 +196,7 @@ jobs:
             SHA256SUMS.txt
             EXPERIMENT_V29_FAST_NOAI_MAIN.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-main-v29-fast-noai-mesa-main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-main-v29-fast-noai'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
