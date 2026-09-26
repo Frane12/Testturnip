@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 V28 Universal Adaptive
+name: Frane Turnip Mesa 26.2.3 V28 CLEAN Runtime WSI
 
 on:
   push:
-    branches: ['mesa-26.2.3-v28-universal-adaptive']
+    branches: ['mesa-26.2.3-v28-clean-runtime-wsi']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: v28-universal-adaptive
+  group: v28-clean-runtime-wsi
   cancel-in-progress: true
 
 jobs:
@@ -55,7 +55,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Apply V26 baseline + V28 universal adaptive profiler
+      - name: Apply V28 universal baseline + clean runtime/WSI experiment
         run: |
           set -eu
           python3 patches/port_mesa_2623.py a810
@@ -68,7 +68,8 @@ jobs:
           cp mesa/src/freedreno/vulkan/tu_autotune.cc /tmp/v24-tu-autotune.cc
           python3 patches/v25_a810_power_perf.py
           python3 patches/v26_a810_adaptive_cache.py
-          python3 patches/v28_universal_adaptive.py
+          python3 patches/v28_universal_adaptive.py patches/v28_clean_runtime_wsi.py
+          python3 patches/v28_clean_runtime_wsi.py
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
           echo 'DiskDVD IR3 workaround and V23 WSI unchanged by V25'
@@ -77,7 +78,9 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane V28-UNIVERSAL-ADAPTIVE' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane V28-CLEAN-RUNTIME-WSI' mesa/src/freedreno/vulkan/tu_device.cc
+          ! grep -q 'TU_FRANE_PRESENT_MODE' mesa/src/freedreno/vulkan/tu_wsi.cc
+          grep -q 'V28-CLEAN: no driver present-mode override' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'frane-universal-v28:' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_FRANE_UNIVERSAL_PROFILED' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'img_id' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -109,7 +112,7 @@ jobs:
           assert 'ts_binning_start' not in b, 'Unexpected V21 timing patch'
           print('V28 universal profiler + stable RP identity verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive.py patches/v28_clean_runtime_wsi.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -137,7 +140,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -146,19 +149,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip V28 UNIVERSAL ADAPTIVE',
-            'driverVersion': f'Mesa {version}', 'description': 'Pinned Mesa 26.2.3 31e9a6b2e95e30d84bf3177d1f497d063e59b6b2; V26 weak persistent prior + upstream stable image-ID RP hash + capability-gated universal PROFILED learning; experimental',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '28',
+            'schemaVersion': 1, 'name': 'Frane Turnip V28 CLEAN RUNTIME WSI',
+            'driverVersion': f'Mesa {version}', 'description': 'V28 universal adaptive A/B experiment with A810 custom GMEM runtime removed and no driver present-mode override; upstream WSI/client choice; experimental',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '28-clean',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip') as z:
+          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -168,41 +171,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip verified')
+          print('Driver Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip and full source diff
+          sha256sum Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE
+          name: Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI
           path: |
-            Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip
+            Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_V28_UNIVERSAL_ADAPTIVE.md
+            EXPERIMENT_V28_CLEAN_RUNTIME_WSI.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-v28-universal-adaptive'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-v28-clean-runtime-wsi'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v28-universal-adaptive >/dev/null 2>&1; then
-            gh release upload v28-universal-adaptive \
-              Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip \
+          if gh release view v28-clean-runtime-wsi >/dev/null 2>&1; then
+            gh release upload v28-clean-runtime-wsi \
+              Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit v28-universal-adaptive --target "$GITHUB_SHA" \
-              --title 'Frane Turnip V28 — Universal Adaptive Profiler (experimental)' \
-              --notes-file EXPERIMENT_V28_UNIVERSAL_ADAPTIVE.md
+            gh release edit v28-clean-runtime-wsi --target "$GITHUB_SHA" \
+              --title 'Frane Turnip V28 CLEAN — no GMEM runtime / no MAILBOX (experimental)' \
+              --notes-file EXPERIMENT_V28_CLEAN_RUNTIME_WSI.md
           else
-            gh release create v28-universal-adaptive \
-              Frane-Turnip-Mesa-2623-V28-UNIVERSAL-ADAPTIVE.zip \
+            gh release create v28-clean-runtime-wsi \
+              Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Turnip V28 — Universal Adaptive Profiler (experimental)' \
-              --notes-file EXPERIMENT_V28_UNIVERSAL_ADAPTIVE.md
+              --title 'Frane Turnip V28 CLEAN — no GMEM runtime / no MAILBOX (experimental)' \
+              --notes-file EXPERIMENT_V28_CLEAN_RUNTIME_WSI.md
           fi
