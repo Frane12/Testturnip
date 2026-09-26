@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa 26.2.3 V28 CLEAN Runtime WSI
+name: Frane Turnip Mesa 26.2.3 V29 Neural Adaptive CLEAN
 
 on:
   push:
-    branches: ['mesa-26.2.3-v28-clean-runtime-wsi']
+    branches: ['mesa-26.2.3-v29-neural-adaptive-clean']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: v28-clean-runtime-wsi
+  group: v29-neural-adaptive-clean
   cancel-in-progress: true
 
 jobs:
@@ -38,6 +38,8 @@ jobs:
           /tmp/v24-hotpath-test
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined tests/v25_power_policy.cpp -o /tmp/v25-power-test
           /tmp/v25-power-test
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined tests/v29_neural.cpp -o /tmp/v29-neural-test
+          /tmp/v29-neural-test
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -55,7 +57,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.2.3"
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Apply V28 universal baseline + clean runtime/WSI experiment
+      - name: Apply V28 CLEAN baseline + V29 neural adaptive changes
         run: |
           set -eu
           python3 patches/port_mesa_2623.py a810
@@ -70,18 +72,19 @@ jobs:
           python3 patches/v26_a810_adaptive_cache.py
           python3 patches/v28_universal_adaptive.py
           python3 patches/v28_clean_runtime_wsi.py
+          python3 patches/v29_neural_adaptive.py
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           ! cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
           echo 'DiskDVD IR3 unchanged; V23 WSI intentionally removed by V28-CLEAN'
-          git -C mesa add -N src/freedreno/vulkan/frane_profiled_sampling.h src/freedreno/vulkan/frane_present_policy.h src/freedreno/vulkan/frane_v24_fastpath.h src/freedreno/vulkan/frane_v25_power.h
+          git -C mesa add -N src/freedreno/vulkan/frane_profiled_sampling.h src/freedreno/vulkan/frane_present_policy.h src/freedreno/vulkan/frane_v24_fastpath.h src/freedreno/vulkan/frane_v25_power.h src/freedreno/vulkan/frane_v29_neural.h
           git -C mesa diff --check
           test "$(cat mesa/VERSION)" = "26.2.3"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane V28-CLEAN-RUNTIME-WSI' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane V29-NEURAL-ADAPTIVE-CLEAN' mesa/src/freedreno/vulkan/tu_device.cc
           ! grep -q 'TU_FRANE_PRESENT_MODE' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'V28-CLEAN: no driver present-mode override' mesa/src/freedreno/vulkan/tu_wsi.cc
-          grep -q 'frane-universal-v28:' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane-universal-v29:' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_FRANE_UNIVERSAL_PROFILED' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'img_id' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_IMAGE_ID_ASSIGN' mesa/src/freedreno/vulkan/tu_image.cc
@@ -105,13 +108,15 @@ jobs:
           v24=Path('/tmp/v24-tu-autotune.cc').read_text()
           assert 'debug_get_num_option("TU_A810_PROFILED_SAMPLE_INTERVAL", 4)' in v24
           assert 'TU_FRANE_PROFILED_SAMPLE_INTERVAL' in b
-          assert 'frane-universal-v28:' in b
+          assert 'frane-universal-v29:' in b
           assert '.img_id = cmd->state.attachments[i]->image->id' in b
           assert 'TU_FRANE_UNIVERSAL_PROFILED' in b
           assert 'ts_binning_start' not in b, 'Unexpected V21 timing patch'
-          print('V28 universal profiler + stable RP identity verified')
+          assert 'history.sysmem_rp_average' not in b[b.index('      render_mode get_optimal_mode(rp_history &history, bool *measure'):b.index('   /** Preemption Latency Optimization Mode **/')]
+          assert 'rand_xorshift128plus(seed)' not in b
+          print('V29 atomic recording policy + V28 CLEAN baseline verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive.py patches/v28_clean_runtime_wsi.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive.py patches/v28_clean_runtime_wsi.py patches/v29_neural_adaptive.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -139,7 +144,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -148,19 +153,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip V28 CLEAN RUNTIME WSI',
-            'driverVersion': f'Mesa {version}', 'description': 'V28 universal adaptive A/B experiment with A810 custom GMEM runtime removed and no driver present-mode override; upstream WSI/client choice; experimental',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '28-clean',
+            'schemaVersion': 1, 'name': 'Frane Turnip V29 NEURAL ADAPTIVE CLEAN',
+            'driverVersion': f'Mesa {version}', 'description': 'V29 CLEAN: online 8-12-8-1 neural weak prior, measured PROFILED default, atomic recording policy, persistent per-game cache; experimental',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '29-neural-clean',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip') as z:
+          with zipfile.ZipFile('Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -170,41 +175,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip verified')
+          print('Driver Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip and full source diff
+          sha256sum Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI
+          name: Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN
           path: |
-            Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip
+            Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_V28_CLEAN_RUNTIME_WSI.md
+            EXPERIMENT_V29_NEURAL_ADAPTIVE.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-v28-clean-runtime-wsi'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-26.2.3-v29-neural-adaptive-clean'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v28-clean-runtime-wsi >/dev/null 2>&1; then
-            gh release upload v28-clean-runtime-wsi \
-              Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip \
+          if gh release view v29-neural-adaptive-clean >/dev/null 2>&1; then
+            gh release upload v29-neural-adaptive-clean \
+              Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit v28-clean-runtime-wsi --target "$GITHUB_SHA" \
-              --title 'Frane Turnip V28 CLEAN — no GMEM runtime / no MAILBOX (experimental)' \
-              --notes-file EXPERIMENT_V28_CLEAN_RUNTIME_WSI.md
+            gh release edit v29-neural-adaptive-clean --target "$GITHUB_SHA" \
+              --title 'Frane Turnip V29 Neural Adaptive CLEAN (experimental)' \
+              --notes-file EXPERIMENT_V29_NEURAL_ADAPTIVE.md
           else
-            gh release create v28-clean-runtime-wsi \
-              Frane-Turnip-Mesa-2623-V28-CLEAN-RUNTIME-WSI.zip \
+            gh release create v29-neural-adaptive-clean \
+              Frane-Turnip-Mesa-2623-V29-NEURAL-ADAPTIVE-CLEAN.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Turnip V28 CLEAN — no GMEM runtime / no MAILBOX (experimental)' \
-              --notes-file EXPERIMENT_V28_CLEAN_RUNTIME_WSI.md
+              --title 'Frane Turnip V29 Neural Adaptive CLEAN (experimental)' \
+              --notes-file EXPERIMENT_V29_NEURAL_ADAPTIVE.md
           fi
