@@ -1,8 +1,8 @@
-name: Frane Turnip Mesa main V29 FAST NOAI
+name: Frane Mesa 26.3.1 EXP
 
 on:
   push:
-    branches: ['mesa-main-v29-fast-noai']
+    branches: ['frane-mesa-26.3.1-exp']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: v29-fast-noai-mesa-main
+  group: frane-mesa-26-3-1-exp
   cancel-in-progress: true
 
 jobs:
@@ -40,6 +40,8 @@ jobs:
           /tmp/v25-power-test
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined tests/v29_fast_policy.cpp -o /tmp/v29-fast-policy-test
           /tmp/v29-fast-policy-test
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_2631_sync_policy.cpp -o /tmp/mesa-2631-sync-test
+          /tmp/mesa-2631-sync-test
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -73,15 +75,16 @@ jobs:
           python3 patches/v28_universal_adaptive_main.py
           python3 patches/v28_clean_runtime_wsi.py
           python3 patches/v29_fast_noai.py
+          python3 patches/mesa_2631_exp_cleanup.py
           cmp -s /tmp/v23-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           ! cmp -s /tmp/v23-tu-wsi.cc mesa/src/freedreno/vulkan/tu_wsi.cc
           echo 'DiskDVD IR3 unchanged; V23 WSI intentionally removed by V28-CLEAN'
-          git -C mesa add -N src/freedreno/vulkan/frane_profiled_sampling.h src/freedreno/vulkan/frane_present_policy.h src/freedreno/vulkan/frane_v24_fastpath.h src/freedreno/vulkan/frane_v25_power.h src/freedreno/vulkan/frane_v29_fast.h
+          git -C mesa add -N src/freedreno/vulkan/frane_profiled_sampling.h src/freedreno/vulkan/frane_present_policy.h src/freedreno/vulkan/frane_v24_fastpath.h src/freedreno/vulkan/frane_v25_power.h src/freedreno/vulkan/frane_v29_fast.h src/freedreno/vulkan/frane_mesa_2631_sync.h
           git -C mesa diff --check
           test "$(cat mesa/VERSION)" = "26.3.0-devel"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane V29-FAST-NOAI' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane Mesa 26.3.1 EXP' mesa/src/freedreno/vulkan/tu_device.cc
           ! grep -q 'TU_FRANE_PRESENT_MODE' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'V28-CLEAN: no driver present-mode override' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'frane-universal-v29-fast:' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -117,9 +120,16 @@ jobs:
           assert 'frane_v29_neural' not in b
           assert 'frane_model' not in b
           assert 'history.sysmem_rp_average' not in b[b.index('      render_mode get_optimal_mode(rp_history &history, bool *measure'):b.index('   /** Preemption Latency Optimization Mode **/')]
-          print('V29 FAST-NOAI hotpath + V28 CLEAN baseline verified')
+          kg=Path('mesa/src/freedreno/vulkan/tu_knl_kgsl.cc').read_text()
+          q=Path('mesa/src/freedreno/vulkan/tu_queue.cc').read_text()
+          assert 'for (uint32_t i = 0; sync = syncobjs[i], i < count; i++)' not in kg
+          assert 'lowest_timestamp = min_ts(lowest_timestamp, sync->timestamp);' in kg
+          assert 'FRANE_2631_POLL_READY' in kg
+          assert 'frane_2631_deadline_ns' in kg
+          assert 'pthread_mutex_unlock(&device->submit_mutex);\n      return VK_ERROR_OUT_OF_HOST_MEMORY;' in q
+          print('V29 FAST-NOAI + Mesa 26.3.1 EXP wait/deadlock cleanup verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py patches/mesa_2631_exp_cleanup.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -147,7 +157,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.1-EXP.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -156,19 +166,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Turnip V29 FAST NOAI',
-            'driverVersion': f'Mesa {version}', 'description': 'V29 FAST-NOAI: measured PROFILED tuner, no neural model, race/lifetime/cache/hotpath fixes; experimental',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '29-fast-noai-main-eeca16aa',
+            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.1 EXP',
+            'driverVersion': f'Frane Mesa 26.3.1 EXP (base {version})', 'description': 'Experimental Turnip A810 build: V29 FAST-NOAI plus KGSL wait, timeout and submit-deadlock correctness cleanup',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.1-exp-eeca16aa',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Mesa-26.3.1-EXP.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip') as z:
+          with zipfile.ZipFile('Frane-Mesa-26.3.1-EXP.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -178,41 +188,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip verified')
+          print('Driver Frane-Mesa-26.3.1-EXP.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip and full source diff
+          sha256sum Frane-Mesa-26.3.1-EXP.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Mesa-26.3.1-EXP.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI
+          name: Frane-Mesa-26.3.1-EXP
           path: |
-            Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip
+            Frane-Mesa-26.3.1-EXP.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_V29_FAST_NOAI_MAIN.md
+            EXPERIMENT_MESA_26_3_1.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/mesa-main-v29-fast-noai'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.1-exp'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view v29-fast-noai-mesa-main >/dev/null 2>&1; then
-            gh release upload v29-fast-noai-mesa-main \
-              Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip \
+          if gh release view frane-mesa-26.3.1-exp >/dev/null 2>&1; then
+            gh release upload frane-mesa-26.3.1-exp \
+              Frane-Mesa-26.3.1-EXP.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit v29-fast-noai-mesa-main --target "$GITHUB_SHA" \
-              --title 'Frane Turnip V29 FAST-NOAI Mesa main (experimental)' \
-              --notes-file EXPERIMENT_V29_FAST_NOAI_MAIN.md
+            gh release edit frane-mesa-26.3.1-exp --target "$GITHUB_SHA" \
+              --title 'Frane Mesa 26.3.1 EXP (experimental)' \
+              --notes-file EXPERIMENT_MESA_26_3_1.md
           else
-            gh release create v29-fast-noai-mesa-main \
-              Frane-Turnip-Mesa-2630dev-V29-FAST-NOAI.zip \
+            gh release create frane-mesa-26.3.1-exp \
+              Frane-Mesa-26.3.1-EXP.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Turnip V29 FAST-NOAI Mesa main (experimental)' \
-              --notes-file EXPERIMENT_V29_FAST_NOAI_MAIN.md
+              --title 'Frane Mesa 26.3.1 EXP (experimental)' \
+              --notes-file EXPERIMENT_MESA_26_3_1.md
           fi
