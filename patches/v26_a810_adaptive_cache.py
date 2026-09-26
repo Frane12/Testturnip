@@ -84,7 +84,7 @@ tu_autotune::frane_profile_key(uint64_t rp_hash, cache_key key) const
 {
    if (!frane_a810_gpu(device) ||
        !debug_get_bool_option("TU_A810_PROFILE_CACHE", true) ||
-       !device->vk.disk_cache)
+       !device->physical_device->vk.disk_cache)
       return false;
    const char *name = debug_get_option("TU_A810_PROFILE_ID", nullptr);
    if (!name || !*name)
@@ -95,7 +95,7 @@ tu_autotune::frane_profile_key(uint64_t rp_hash, cache_key key) const
       return false;
    std::string input = std::string("frane-a810-v26:") + name + ":" +
                        std::to_string(rp_hash);
-   disk_cache_compute_key(device->vk.disk_cache, input.data(), input.size(), key);
+   disk_cache_compute_key(device->physical_device->vk.disk_cache, input.data(), input.size(), key);
    return true;
 }
 
@@ -106,7 +106,7 @@ tu_autotune::frane_load_profile(uint64_t hash, uint32_t *value) const
    if (!frane_profile_key(hash, key))
       return false;
    size_t size = 0;
-   void *data = disk_cache_get(device->vk.disk_cache, key, &size);
+   void *data = disk_cache_get(device->physical_device->vk.disk_cache, key, &size);
    if (!data)
       return false;
    bool valid = size == sizeof(uint32_t) && *(uint32_t *)data >= 1 &&
@@ -122,7 +122,7 @@ tu_autotune::frane_save_profile(uint64_t hash, uint32_t value) const
 {
    cache_key key;
    if (value > 0 && value < 100 && frane_profile_key(hash, key))
-      disk_cache_put(device->vk.disk_cache, key, &value, sizeof(value), nullptr);
+      disk_cache_put(device->physical_device->vk.disk_cache, key, &value, sizeof(value), nullptr);
 }
 
 '''
