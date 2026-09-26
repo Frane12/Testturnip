@@ -106,10 +106,10 @@ edit("src/freedreno/vulkan/tu_knl_kgsl.cc",
 "propagate unexpected sync-fd wait failures")
 
 edit("src/freedreno/vulkan/tu_knl_kgsl.cc",
-'''#define kgsl_syncobj_foreach_state(syncobjs, filter) \
+r'''#define kgsl_syncobj_foreach_state(syncobjs, filter) \
    for (uint32_t i = 0; sync = syncobjs[i], i < count; i++) \
       if (sync->state == filter)''',
-'''#define kgsl_syncobj_foreach_state(syncobjs, filter) \
+r'''#define kgsl_syncobj_foreach_state(syncobjs, filter) \
    for (uint32_t i = 0; i < count; i++) \
       if ((sync = syncobjs[i])->state == filter)''',
 "remove one-past-end syncobj read")
