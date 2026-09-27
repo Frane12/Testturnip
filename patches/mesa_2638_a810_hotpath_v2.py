@@ -171,7 +171,6 @@ edit(
 tu_autotune::rp_history_handle::rp_history_handle(rp_history &history): history(&history)
 {
    history.refcount.fetch_add(1, std::memory_order_relaxed);
-   history.last_use_ts.store(os_time_get_nano(), std::memory_order_relaxed);
 }""",
     """tu_autotune::rp_history_handle::~rp_history_handle()
 {
@@ -203,7 +202,6 @@ tu_autotune::rp_history_handle::rp_history_handle(rp_history &history,
    }
 
    history.refcount.fetch_add(1, std::memory_order_relaxed);
-   history.last_use_ts.store(os_time_get_nano(), std::memory_order_relaxed);
 }""",
     "remove refcount and clock traffic from borrowed hot handles",
 )
