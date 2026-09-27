@@ -223,7 +223,7 @@ frane_26317_prefetch_score(const tex_prefetch_candidate *candidate,
 }
 
 static uint32_t
-frane_26317_prefetch_cap(const ir3_prefetch_state *state,
+frane_26317_prefetch_cap(ir3_prefetch_state *state,
                          enum ir3_bary chosen_bary,
                          uint32_t max_prefetches)
 {
