@@ -97,23 +97,16 @@ edit(
       other.history = nullptr;
    }
 
-   constexpr rp_history_handle &operator=(rp_history_handle &&other)
-   {
-      if (this != &other) {
-         history = other.history;
-         other.history = nullptr;
-      }
-      return *this;
-   }""",
+   rp_history_handle &operator=(rp_history_handle &&other);""",
     """struct tu_autotune::rp_history_handle {
    rp_history *history;
    bool owns_ref;
 
-   /* Note: Must be called with rp_mutex held. */
+   /* Owning handle: caller follows Mesa's normal rp_mutex/refcount path. */
    rp_history_handle(rp_history &history);
 
-   /* 26.3.8: borrowed is legal only for a permanently pinned 26.3.7/26.3.8
-    * hot-cache history. The permanent cache pin owns the lifetime. */
+   /* 26.3.8 borrowed handle: legal only after the permanent hot-cache pin
+    * has been release-published through the matching slot hash. */
    rp_history_handle(rp_history &history, bool owns_ref);
 
    constexpr rp_history_handle(std::nullptr_t): history(nullptr), owns_ref(false)
@@ -130,17 +123,35 @@ edit(
       other.owns_ref = false;
    }
 
-   constexpr rp_history_handle &operator=(rp_history_handle &&other)
-   {
-      if (this != &other) {
-         history = other.history;
-         owns_ref = other.owns_ref;
-         other.history = nullptr;
-         other.owns_ref = false;
-      }
-      return *this;
-   }""",
-    "teach history handle owning vs borrowed lifetime",
+   rp_history_handle &operator=(rp_history_handle &&other);""",
+    "teach V16 history handle owning vs borrowed lifetime",
+)
+
+edit(
+    "src/freedreno/vulkan/tu_autotune.cc",
+    """tu_autotune::rp_history_handle &
+tu_autotune::rp_history_handle::operator=(rp_history_handle &&other)
+{
+   if (this != &other) {
+      rp_history_handle previous(std::move(*this));
+      history = other.history;
+      other.history = nullptr;
+   }
+   return *this;
+}""",
+    """tu_autotune::rp_history_handle &
+tu_autotune::rp_history_handle::operator=(rp_history_handle &&other)
+{
+   if (this != &other) {
+      rp_history_handle previous(std::move(*this));
+      history = other.history;
+      owns_ref = other.owns_ref;
+      other.history = nullptr;
+      other.owns_ref = false;
+   }
+   return *this;
+}""",
+    "preserve V16 move-assignment ownership with borrowed handles",
 )
 
 edit(
