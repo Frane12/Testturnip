@@ -211,26 +211,30 @@ print("26.3.20 A830 PASS bounded stage-NIR cache", flush=True)
 # IR3 A810 feature block -> exact A830. The generated policy fields are already
 # GPU-neutral; only this constructor gate and the A/B variable names were A810.
 compiler = IR3 / "ir3_compiler.c"
-regex_once(
-    compiler,
-    r"""const bool frane_is_a810\s*=\s*
-       frane_chip_id\s*==\s*UINT64_C\(0x44010000\)\s*\|\|\s*
-       frane_chip_id\s*==\s*UINT64_C\(0xffff44010000\);\s*
-       if\s*\(frane_is_a810\)\s*\{""",
-    """const bool frane_is_a830 =
-       frane_chip_id == UINT64_C(0x44050000) ||
-       frane_chip_id == UINT64_C(0x44050001) ||
-       frane_chip_id == UINT64_C(0xffff44050000);
-   if (frane_is_a830) {""",
-    "IR3 experimental feature block -> A830",
-)
 s_ir3 = compiler.read_text()
+b0 = s_ir3.find("const bool frane_is_a810")
+b1 = s_ir3.find("if (frane_is_a810)", b0)
+if b0 < 0 or b1 < 0:
+    raise SystemExit("26.3.20 A830 source drift: IR3 A810 gate bounds")
+b1 += len("if (frane_is_a810) {")
+gate = s_ir3[b0:b1]
+if gate.count("0x44010000") != 1 or gate.count("0xffff44010000") != 1:
+    raise SystemExit("26.3.20 A830 source drift: unexpected A810 IDs in IR3 gate")
+new_gate = gate.replace("const bool frane_is_a810", "const bool frane_is_a830", 1)
+new_gate = new_gate.replace(
+    "frane_chip_id == UINT64_C(0x44010000) ||",
+    "frane_chip_id == UINT64_C(0x44050000) ||\n"
+    "       frane_chip_id == UINT64_C(0x44050001) ||",
+    1)
+new_gate = new_gate.replace("0xffff44010000", "0xffff44050000", 1)
+new_gate = new_gate.replace("if (frane_is_a810)", "if (frane_is_a830)", 1)
+s_ir3 = s_ir3[:b0] + new_gate + s_ir3[b1:]
 count = s_ir3.count("TU_A810_263")
 if count < 6:
     raise SystemExit(
         f"26.3.20 A830 source drift: expected several IR3 A810 envs, saw {count}")
 compiler.write_text(s_ir3.replace("TU_A810_263", "TU_A830_263"))
-print(f"26.3.20 A830 PASS IR3 A/B variables retargeted={count}", flush=True)
+print(f"26.3.20 A830 PASS IR3 exact gate + A/B variables retargeted={count}", flush=True)
 
 # 26.3.9 GMEM-dimension gating: same layout metadata, now exact A830 only.
 cmd = V / "tu_cmd_buffer.cc"
