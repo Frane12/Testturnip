@@ -7,7 +7,6 @@ Changes:
 - A repeated cached render pass can bypass the shared mutex and unordered-map lookup in `tu_autotune`.
 - Hot histories are permanently pinned until device teardown, so the history reaper cannot invalidate cache pointers.
 - Handle release skips the monotonic last-use clock read only for those pinned histories.
-- Builds Turnip with ThinLTO to let LLVM optimize across translation units.
 - Opt-out for an exact core-fastpath A/B test: `TU_A810_2637_CORE_FASTPATH=0`.
 
 Preserved unchanged:
