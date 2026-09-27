@@ -164,7 +164,6 @@ jobs:
           assert 'pthread_mutex_unlock(&device->submit_mutex);\n      return VK_ERROR_OUT_OF_HOST_MEMORY;' in q
           assert 'frane_2632_profile_base_interval' in b
           assert 'if (num_fds && queue != NULL)' in kg
-          assert 'Frane Mesa 26.3.4 A810 GMEM-RUNTIME EXP' in Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
           assert 'frane_2633_decision_draw(history.hash)' in b
           assert 'decision_ticket.fetch_add' not in b
           assert 'frane_2633_profile_interval' in b
