@@ -3,19 +3,27 @@
 
 Layered strictly on the proven 26.3.15 PREFETCH-SELECT build.
 
-Audit fixes / optimizations:
-  1) Preserve borrowed hot-cache rp_history_handle ownership through
-     find_or_create_rp_history(). 26.3.8 made find_rp_history() borrow the
-     permanent hot-cache pin, but find_or_create_rp_history() immediately
-     converted that handle to a raw pointer and reconstructed an owning handle,
-     reintroducing the atomic refcount inc/dec on the main render-pass path.
-  2) Actually reserve the render-pass history map up front on the guarded A810
-     core-fastpath. 26.3.7 documented this optimization but never implemented it.
-  3) Make diversity-aware texture prefetch selection choose the barycentric
-     mode by useful distinct fixed texture/sampler pairs, rather than choosing
-     a mode by raw candidate count and only applying diversity afterwards.
-  4) Promote both 26.3.15 experiments (diversity + quad prefetch) to default-on,
-     while preserving their same-binary opt-outs.
+Deep audit result:
+  * V29 already fixed the raw-pointer find_or_create lifetime/refcount issue,
+    and 26.3.8 correctly builds on that fix. Keep a hard regression guard for
+    the borrowed hot-cache path instead of patching code that is already right.
+  * 26.3.7 documented a render-pass-history reserve, but never implemented it.
+  * 26.3.15 diversity selection runs after barycentric-mode selection, while
+    bary selection still uses raw candidate count. With a capped prefetch
+    budget this can choose a duplicate-heavy mode over a more useful diverse
+    mode.
+  * The 64-slot direct-mapped, no-replacement hot RP cache is deliberately
+    collision-safe but startup/menu histories can occupy slots forever. A
+    modest 128-slot table reduces those permanent collisions without adding a
+    replacement/ABA lifetime problem.
+
+Optimizations:
+  1) grow the guarded A810 hot RP cache 64 -> 128 slots;
+  2) reserve 2x that count in rp_histories before first insert;
+  3) choose the diversity bary mode by useful distinct fixed tex/sampler pairs,
+     with raw candidate count as tie-breaker;
+  4) promote both 26.3.15 experiments (diversity + quad prefetch) default-on,
+     preserving same-binary opt-outs.
 
 No LRZ dirty suppression is restored. No new texture instruction becomes legal.
 No GMEM/SYSMEM decision thresholds, sync semantics, WSI policy, shader optimizer
@@ -41,33 +49,27 @@ def edit(rel, old, new, label):
 
 
 # ---------------------------------------------------------------------------
-# 1) Main CPU hot path: preserve borrowed ownership instead of dropping the
-#    handle to a raw pointer and reconstructing an owning handle.
+# 1) Reduce permanent direct-map collisions while preserving the simple
+#    no-replacement lifetime model. 128 slots is still tiny as a pointer/hash
+#    table, but gives startup/menu RPs less chance to block gameplay RPs.
 # ---------------------------------------------------------------------------
 edit(
-    "src/freedreno/vulkan/tu_autotune.cc",
-    """tu_autotune::rp_history_handle
-tu_autotune::find_or_create_rp_history(const rp_key &key)
-{
-   rp_history *existing = find_rp_history(key);
-   if (existing)
-      return *existing;
-""",
-    """tu_autotune::rp_history_handle
-tu_autotune::find_or_create_rp_history(const rp_key &key)
-{
-   rp_history_handle existing = find_rp_history(key);
-   if (existing)
-      return existing;
-""",
-    "preserve borrowed hot handle through find-or-create",
+    "src/freedreno/vulkan/tu_autotune.h",
+    """   static constexpr uint32_t FRANE_2638_HOT_RP_SLOTS = 64;
+   static_assert((FRANE_2638_HOT_RP_SLOTS &
+                  (FRANE_2638_HOT_RP_SLOTS - 1u)) == 0u);""",
+    """   static constexpr uint32_t FRANE_2638_HOT_RP_SLOTS = 128;
+   static_assert((FRANE_2638_HOT_RP_SLOTS &
+                  (FRANE_2638_HOT_RP_SLOTS - 1u)) == 0u);""",
+    "grow no-replacement hot RP cache 64 to 128 slots",
 )
 
 
 # ---------------------------------------------------------------------------
-# 2) 26.3.7 said the history map would be reserved, but the implementation
-#    deliberately left constructor tuning out. Do the small bounded reserve
-#    now: 2x the 64-slot hot cache = 128 buckets of startup headroom.
+# 2) 26.3.7 said the history map would be reserved, but deliberately left the
+#    constructor untouched. Reserve before any insertion. std::unordered_map
+#    rehash preserves references/pointers to elements, but avoiding startup
+#    rehashes still removes allocator/bucket churn from the early CPU path.
 # ---------------------------------------------------------------------------
 edit(
     "src/freedreno/vulkan/tu_autotune.cc",
@@ -95,7 +97,7 @@ edit(
 # textures in another bary mode. When diversity is enabled, rank bary modes by
 # the number of distinct fixed tex/sampler pairs that can actually fit in the
 # prefetch slots; raw candidate count remains the tie-breaker. Generic Mesa and
-# diversity-off behavior stay byte-for-byte policy-equivalent.
+# diversity-off behavior keep the original selection policy.
 # ---------------------------------------------------------------------------
 edit(
     "src/freedreno/ir3/ir3_nir_lower_tex_prefetch.c",
@@ -205,16 +207,18 @@ cmd = (V / "tu_cmd_buffer.cc").read_text()
 pipeline = (V / "tu_pipeline.cc").read_text()
 wsi = (V / "tu_wsi.cc").read_text()
 
-# Borrowed ownership must survive the main lookup path.
+# V29 already fixed find-or-create ownership. 26.3.8 must still be able to
+# return a borrowed handle through that path without reconstructing ownership.
 assert "rp_history_handle existing = find_rp_history(key);" in autotune
 assert "rp_history *existing = find_rp_history(key);" not in autotune
 assert "if (existing)\n      return existing;" in autotune
 assert "rp_history_handle(*cached, false)" in autotune
 assert "if (!history || !owns_ref)" in autotune
 
-# The previously documented reserve now really exists and is bounded.
+# Expanded hot cache + the previously missing constructor reserve.
+assert "FRANE_2638_HOT_RP_SLOTS = 128" in autotune_h
+assert "FRANE_2638_HOT_RP_SLOTS = 64" not in autotune_h
 assert "rp_histories.reserve(FRANE_2638_HOT_RP_SLOTS * 2u);" in autotune
-assert "FRANE_2638_HOT_RP_SLOTS = 64" in autotune_h
 
 # Default-on means default-on, but all opt-outs remain available.
 assert 'TU_A810_26315_PREFETCH_DIVERSITY", true' in compiler_c
