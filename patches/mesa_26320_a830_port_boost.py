@@ -167,16 +167,13 @@ new = """frane_2637_core_fastpath()
 if s.count(old) != 1:
     raise SystemExit("26.3.20 A830 source drift: core-fastpath switch")
 s = s.replace(old, new, 1)
-old_gate = """frane_2637_core_fastpath() &&
-       frane_a810_gpu(device) &&
-       frane_a810_lean_profiled()"""
-new_gate = """frane_2637_core_fastpath() &&
-       frane_26320_a830_gpu(device) &&
-       frane_a810_lean_profiled()"""
-if s.count(old_gate) != 1:
-    raise SystemExit("26.3.20 A830 source drift: core-fastpath device gate")
-s = s.replace(old_gate, new_gate, 1)
 autotune.write_text(s)
+regex_once(
+    autotune,
+    r"(const bool frane_hot\s*=\s*frane_2637_core_fastpath\(\)\s*&&\s*)frane_a810_gpu\(device\)",
+    r"\1frane_26320_a830_gpu(device)",
+    "26.3.7/8 hot-RP A830 device gate",
+)
 print("26.3.20 A830 PASS 26.3.7/8 hot-RP fastpath", flush=True)
 
 # Bounded stage NIR cache. 26.3.19's 32 MiB charged-byte cap and 2 MiB
