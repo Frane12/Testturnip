@@ -184,22 +184,7 @@ edit("src/freedreno/vulkan/tu_autotune.cc",
      old_find, new_find,
      "lock-free hot-RP lookup with safe permanent pin")
 
-edit("src/freedreno/vulkan/tu_autotune.cc",
-'''tu_autotune::tu_autotune(struct tu_device *device, VkResult &result)
-    : device(device), supported_mod_flags(get_supported_mod_flags(device)), active_config(get_env_config())
-{
-   tu_bo_suballocator_init(&suballoc, device, 128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE, "autotune_suballoc");''',
-'''tu_autotune::tu_autotune(struct tu_device *device, VkResult &result)
-    : device(device), supported_mod_flags(get_supported_mod_flags(device)), active_config(get_env_config())
-{
-   /* A small reserve avoids early unordered_map rehash spikes while the first
-    * level/game scene discovers its recurring render-pass histories. */
-   if (frane_2637_core_fastpath() &&
-       frane_a810_gpu(device) && frane_a810_lean_profiled())
-      rp_histories.reserve(256);
 
-   tu_bo_suballocator_init(&suballoc, device, 128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE, "autotune_suballoc");''',
-"reserve common A810 RP histories")
 
 edit("src/freedreno/vulkan/tu_device.cc",
      "Frane Mesa 26.3.6 A810 AUDIT-FIXES / Mesa ",
