@@ -196,7 +196,7 @@ edit("src/freedreno/vulkan/tu_device.cc",
 combined = "\n".join(
     (V / name).read_text()
     for name in ("tu_pipeline.cc", "tu_shader.cc", "tu_autotune.cc",
-                 "tu_device.cc", "tu_cmd_buffer.cc")
+                 "tu_device.cc", "tu_cmd_buffer.cc", "tu_wsi.cc")
 )
 for needle in (
     "FRANE_2635_STAGE_NIR_MAX_ENTRIES",
