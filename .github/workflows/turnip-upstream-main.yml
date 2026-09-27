@@ -1,8 +1,8 @@
-name: Frane Mesa 26.3.10 A810 UBO-LOCALITY EXP
+name: Frane Mesa 26.3.11 A810 SAFE-TEX-PREFETCH EXP
 
 on:
   push:
-    branches: ['frane-mesa-26.3.10-a810-ubo-locality-exp']
+    branches: ['frane-mesa-26.3.11-a810-safe-tex-prefetch-exp']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-10-a810-ubo-locality-exp
+  group: frane-mesa-26-3-11-a810-safe-tex-prefetch-exp
   cancel-in-progress: true
 
 jobs:
@@ -84,6 +84,10 @@ jobs:
           echo "26.3.10 A810 UBO locality budget model"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26310_ubo_locality.cpp -o /tmp/mesa-26310-ubo-locality
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26310-ubo-locality
+
+          echo "26.3.11 A810 safe texture prefetch model"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26311_safe_tex_prefetch.cpp -o /tmp/mesa-26311-safe-tex-prefetch
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26311-safe-tex-prefetch
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -132,6 +136,17 @@ jobs:
           cp mesa/src/freedreno/ir3/ir3_nir_analyze_ubo_ranges.c /tmp/v239-ir3-ubo.c
           cmp -s /tmp/v23-ir3-compiler.c /tmp/v239-ir3-compiler.c
           python3 patches/mesa_26310_a810_ubo_locality.py
+          cp mesa/src/freedreno/ir3/ir3_compiler.c /tmp/v2310-ir3-compiler.c
+          cp mesa/src/freedreno/ir3/ir3_compiler.h /tmp/v2310-ir3-compiler.h
+          cp mesa/src/freedreno/ir3/ir3_context.c /tmp/v2310-ir3-context.c
+          cp mesa/src/freedreno/ir3/ir3_nir.h /tmp/v2310-ir3-nir.h
+          cp mesa/src/freedreno/ir3/ir3_nir_lower_tex_prefetch.c /tmp/v2310-ir3-tex-prefetch.c
+          python3 patches/mesa_26311_a810_safe_tex_prefetch.py
+          ! cmp -s /tmp/v2310-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
+          ! cmp -s /tmp/v2310-ir3-compiler.h mesa/src/freedreno/ir3/ir3_compiler.h
+          ! cmp -s /tmp/v2310-ir3-context.c mesa/src/freedreno/ir3/ir3_context.c
+          ! cmp -s /tmp/v2310-ir3-nir.h mesa/src/freedreno/ir3/ir3_nir.h
+          ! cmp -s /tmp/v2310-ir3-tex-prefetch.c mesa/src/freedreno/ir3/ir3_nir_lower_tex_prefetch.c
           ! cmp -s /tmp/v239-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           ! cmp -s /tmp/v239-ir3-compiler.h mesa/src/freedreno/ir3/ir3_compiler.h
           ! cmp -s /tmp/v239-ir3-ubo.c mesa/src/freedreno/ir3/ir3_nir_analyze_ubo_ranges.c
@@ -142,7 +157,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.3.0-devel"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane Mesa 26.3.10 A810 UBO-LOCALITY EXP' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane Mesa 26.3.11 A810 SAFE-TEX-PREFETCH EXP' mesa/src/freedreno/vulkan/tu_device.cc
           ! grep -q 'TU_FRANE_PRESENT_MODE' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'V28-CLEAN: no driver present-mode override' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'frane-universal-v29-fast:' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -208,7 +223,7 @@ jobs:
           assert 'TU_GMEM_LAYOUT_FULL' in b
           assert 'return a830;' in b, 'old A810 custom BANDWIDTH runtime accidentally restored'
           assert 'algo_strv = "profiled";' in b
-          assert 'Frane Mesa 26.3.10 A810 UBO-LOCALITY EXP' in Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
+          assert 'Frane Mesa 26.3.11 A810 SAFE-TEX-PREFETCH EXP' in Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
           ir3c=Path('mesa/src/freedreno/ir3/ir3_compiler.c').read_text()
           ir3h=Path('mesa/src/freedreno/ir3/ir3_compiler.h').read_text()
           ubo=Path('mesa/src/freedreno/ir3/ir3_nir_analyze_ubo_ranges.c').read_text()
@@ -222,6 +237,22 @@ jobs:
           pre_ir3c=Path('/tmp/v239-ir3-compiler.c').read_text()
           assert ir3c.count('reg_efficiency') == pre_ir3c.count('reg_efficiency')
           assert ir3c.count('max_unroll_iterations') == pre_ir3c.count('max_unroll_iterations')
+          ir3ctx=Path('mesa/src/freedreno/ir3/ir3_context.c').read_text()
+          ir3lower=Path('mesa/src/freedreno/ir3/ir3_nir_lower_tex_prefetch.c').read_text()
+          ir3nirh=Path('mesa/src/freedreno/ir3/ir3_nir.h').read_text()
+          assert 'TU_A810_26311_SAFE_TEX_PREFETCH' in ir3c
+          assert 'frane_26311_safe_tex_prefetch' in ir3h
+          assert '&so->prefetch_bary_type, 1u, false' in ir3ctx
+          assert '&so->prefetch_bary_type, ~0u, true' in ir3ctx
+          assert 'converted < max_prefetches' in ir3lower
+          assert 'if (!allow_bindless)' in ir3lower
+          assert 'ok_tex_samp(tex, allow_bindless)' in ir3lower
+          assert 'uint32_t max_prefetches' in ir3nirh
+          assert 'bool allow_bindless' in ir3nirh
+          devs=Path('mesa/src/freedreno/common/freedreno_devices.py').read_text()
+          assert 'GPUId(chip_id=0xffff44010000, name="Adreno (TM) 810")' in devs
+          a810_pos=devs.index('GPUId(chip_id=0xffff44010000, name="Adreno (TM) 810")')
+          assert 'has_fs_tex_prefetch = True' not in devs[max(0,a810_pos-2500):a810_pos+1800]
           cmd=Path('mesa/src/freedreno/vulkan/tu_cmd_buffer.cc').read_text()
           assert 'TU_A810_2639_GMEM_DIM_GATING' in cmd
           assert 'frane_2639_get_gmem_dim_usage' in cmd
@@ -255,9 +286,9 @@ jobs:
           assert 'creation_feedback ? stage_feedbacks : NULL' in pipeline
           assert 'stage_feedbacks ? os_time_get_nano() : 0' in shader
           assert 'TU_A810_GMEM_RUNTIME' in b and 'frane_2634_decide_gmem_runtime' in b
-          print('Mesa 26.3.10 UBO-LOCALITY + preserved 26.3.9 GMEM-DIM / 26.3.8 hotpath / shader pipeline / GMEM / sync fixes verified')
+          print('Mesa 26.3.11 SAFE-TEX-PREFETCH + preserved 26.3.10 UBO / 26.3.9 GMEM-DIM / hotpath / shader pipeline / sync verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py patches/mesa_2631_exp_cleanup.py patches/mesa_2632_a810_turbo.py patches/mesa_2633_a810_profile_turbo.py patches/mesa_2634_a810_gmem_runtime.py patches/mesa_2635_shader_pipeline.py patches/mesa_2636_audit_fixes.py patches/mesa_2637_a810_core_fastpath.py patches/mesa_2638_a810_hotpath_v2.py patches/mesa_2639_a810_gmem_dimensions.py patches/mesa_26310_a810_ubo_locality.py tests/mesa_2636_pipeline_cleanup.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py patches/mesa_2631_exp_cleanup.py patches/mesa_2632_a810_turbo.py patches/mesa_2633_a810_profile_turbo.py patches/mesa_2634_a810_gmem_runtime.py patches/mesa_2635_shader_pipeline.py patches/mesa_2636_audit_fixes.py patches/mesa_2637_a810_core_fastpath.py patches/mesa_2638_a810_hotpath_v2.py patches/mesa_2639_a810_gmem_dimensions.py patches/mesa_26310_a810_ubo_locality.py patches/mesa_26311_a810_safe_tex_prefetch.py tests/mesa_2636_pipeline_cleanup.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -286,7 +317,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -295,19 +326,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.10 A810 UBO-LOCALITY EXP',
-            'driverVersion': f'Frane Mesa 26.3.10 A810 UBO-LOCALITY EXP (base {version})', 'description': 'A810 UBO locality experiment: budget-safe nearby-range coalescing with 0/32/64/128-byte A/B profiles; preserves 26.3.9 rendering and hotpath behavior',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.10-a810-ubo-locality-eeca16aa',
+            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.11 A810 SAFE-TEX-PREFETCH EXP',
+            'driverVersion': f'Frane Mesa 26.3.11 A810 SAFE-TEX-PREFETCH EXP (base {version})', 'description': 'A810 safe FS texture pre-dispatch experiment: max one non-bindless legal 2D prefetch; preserves 26.3.10 UBO locality and prior render paths',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.11-a810-safe-tex-prefetch-eeca16aa',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip') as z:
+          with zipfile.ZipFile('Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -317,41 +348,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip verified')
+          print('Driver Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip and full source diff
+          sha256sum Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP
+          name: Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP
           path: |
-            Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip
+            Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_MESA_26_3_10_A810_UBO_LOCALITY.md
+            EXPERIMENT_MESA_26_3_11_A810_SAFE_TEX_PREFETCH.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.10-a810-ubo-locality-exp'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.11-a810-safe-tex-prefetch-exp'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view frane-mesa-26.3.10-a810-ubo-locality-exp >/dev/null 2>&1; then
-            gh release upload frane-mesa-26.3.10-a810-ubo-locality-exp \
-              Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip \
+          if gh release view frane-mesa-26.3.11-a810-safe-tex-prefetch-exp >/dev/null 2>&1; then
+            gh release upload frane-mesa-26.3.11-a810-safe-tex-prefetch-exp \
+              Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit frane-mesa-26.3.10-a810-ubo-locality-exp --target "$GITHUB_SHA" \
-              --title 'Frane Mesa 26.3.10 A810 UBO-LOCALITY EXP (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_10_A810_UBO_LOCALITY.md
+            gh release edit frane-mesa-26.3.11-a810-safe-tex-prefetch-exp --target "$GITHUB_SHA" \
+              --title 'Frane Mesa 26.3.11 A810 SAFE-TEX-PREFETCH EXP (experimental)' \
+              --notes-file EXPERIMENT_MESA_26_3_11_A810_SAFE_TEX_PREFETCH.md
           else
-            gh release create frane-mesa-26.3.10-a810-ubo-locality-exp \
-              Frane-Mesa-26.3.10-A810-UBO-LOCALITY-EXP.zip \
+            gh release create frane-mesa-26.3.11-a810-safe-tex-prefetch-exp \
+              Frane-Mesa-26.3.11-A810-SAFE-TEX-PREFETCH-EXP.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Mesa 26.3.10 A810 UBO-LOCALITY EXP (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_10_A810_UBO_LOCALITY.md
+              --title 'Frane Mesa 26.3.11 A810 SAFE-TEX-PREFETCH EXP (experimental)' \
+              --notes-file EXPERIMENT_MESA_26_3_11_A810_SAFE_TEX_PREFETCH.md
           fi
