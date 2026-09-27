@@ -507,11 +507,13 @@ print("26.3.17 PASS add A810 DRAW-LEAN policy", flush=True)
 
 edit(
     "src/freedreno/vulkan/tu_cmd_buffer.cc",
-    """   tu_cs_emit_qw(cs, 0);
+    """   tu_cs_emit(cs, CP_SET_DRAW_STATE__1_ADDR_LO(0));
+   tu_cs_emit(cs, CP_SET_DRAW_STATE__2_ADDR_HI(0));
 
    cmd->state.dirty |= TU_CMD_DIRTY_DRAW_STATE;
 }""",
-    """   tu_cs_emit_qw(cs, 0);
+    """   tu_cs_emit(cs, CP_SET_DRAW_STATE__1_ADDR_LO(0));
+   tu_cs_emit(cs, CP_SET_DRAW_STATE__2_ADDR_HI(0));
 
    cmd->state.dirty |= TU_CMD_DIRTY_DRAW_STATE;
    cmd->state.frane_26317_draw_states_known_disabled =
