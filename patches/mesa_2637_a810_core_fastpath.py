@@ -214,4 +214,4 @@ assert src.index("refcount.fetch_add(1") < src.index(
 assert src.index("frane_2637_hot_pinned.store", src.index("find_rp_history")) < \
        src.index("hot_slot->hash.store", src.index("find_rp_history"))
 
-print("Frane Mesa 26.3.7 A810 CORE-FASTPATH EXP applied", flush=True)
+# Keep this layer focused on the repeated RP lookup/release hot path; no constructor tuning.\nprint("Frane Mesa 26.3.7 A810 CORE-FASTPATH EXP applied", flush=True)
