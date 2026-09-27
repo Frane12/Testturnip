@@ -9,7 +9,7 @@ static frane_26318_smart_gmem_input base_input()
    frane_26318_smart_gmem_input in {};
    in.layout.physical_gmem = 576ull * 1024ull;
    in.layout.usable_gmem = 448ull * 1024ull;
-   in.layout.pixels_per_tile = 65536;
+   in.layout.pixels_per_tile = 131072;
    in.layout.pass_pixels = 1280ull * 720ull;
    in.layout.drawcalls = 64;
    in.sysmem_bandwidth_per_pixel = 24;
