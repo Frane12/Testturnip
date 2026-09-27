@@ -234,6 +234,7 @@ jobs:
           endian = 'little'
           EOF
       - name: Configure pinned Mesa main Android Turnip
+        # Mesa main explicitly rejects Meson b_lto; keep this A/B test source-only.
         run: |
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
