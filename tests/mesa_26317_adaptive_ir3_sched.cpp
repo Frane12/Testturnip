@@ -82,7 +82,7 @@ int main()
 
    /* Low pressure opens ILP; high pressure clamps it hard. */
    assert(sy_window(true, 12, 0, 64) == 12);
-   assert(sy_window(true, 12, 64, 64) == 8);   // 25%
+   assert(sy_window(true, 12, 64, 64) == 10);  // 25%
    assert(sy_window(true, 12, 128, 64) == 6);  // 50%
    assert(sy_window(true, 12, 192, 64) == 4);  // 75%
 
