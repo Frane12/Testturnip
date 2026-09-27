@@ -41,8 +41,8 @@ def edit(rel, old, new, label):
 
 edit(
     "src/freedreno/ir3/ir3_compiler.c",
-    '#include "util/u_call_once.h"\n#include "util/ralloc.h"\n',
-    '#include "util/u_call_once.h"\n#include "util/u_debug.h"\n#include "util/ralloc.h"\n',
+    '#include "util/u_call_once.h"\n#include "util/os_misc.h"\n',
+    '#include "util/u_call_once.h"\n#include "util/u_debug.h"\n#include "util/os_misc.h"\n',
     "explicit debug option include",
 )
 
@@ -68,12 +68,10 @@ edit(
 
 edit(
     "src/freedreno/ir3/ir3_compiler.c",
-    """   compiler->options = *options;
-   compiler->info = dev_info;
+    """      ir3_shader_debug |= IR3_DBG_NODESCPREFETCH;
 
    /* TODO see if older GPU's were different here */""",
-    """   compiler->options = *options;
-   compiler->info = dev_info;
+    """      ir3_shader_debug |= IR3_DBG_NODESCPREFETCH;
 
    /* 26.3.10 A810 UBO-LOCALITY.
     *
