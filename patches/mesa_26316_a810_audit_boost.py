@@ -67,25 +67,30 @@ edit(
 
 # ---------------------------------------------------------------------------
 # 2) 26.3.7 said the history map would be reserved, but deliberately left the
-#    constructor untouched. Reserve before any insertion. std::unordered_map
-#    rehash preserves references/pointers to elements, but avoiding startup
-#    rehashes still removes allocator/bucket churn from the early CPU path.
+#    constructor untouched. Insert immediately after tu_bo_suballocator_init().
+#    Use constructor-local anchors rather than formatting-sensitive multiline
+#    text because earlier port layers may wrap this call differently.
 # ---------------------------------------------------------------------------
-edit(
-    "src/freedreno/vulkan/tu_autotune.cc",
-    """{
-   tu_bo_suballocator_init(&suballoc, device, 128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE, "autotune_suballoc");
-
-   if (supports_preempt_latency_tracking()) {""",
-    """{
-   tu_bo_suballocator_init(&suballoc, device, 128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE, "autotune_suballoc");
+p = V / "tu_autotune.cc"
+src = p.read_text()
+ctor_anchor = "tu_autotune::tu_autotune(struct tu_device *device, VkResult &result)"
+if src.count(ctor_anchor) != 1:
+    raise SystemExit("26.3.16 AUDIT-BOOST source drift: autotune constructor")
+ctor = src.index(ctor_anchor)
+suballoc = src.index("tu_bo_suballocator_init(", ctor)
+supports = src.index("supports_preempt_latency_tracking()", suballoc)
+semicolon = src.index(";", suballoc) + 1
+if not (ctor < suballoc < semicolon < supports):
+    raise SystemExit("26.3.16 AUDIT-BOOST source drift: constructor reserve bounds")
+reserve = """
 
    if (frane_2637_core_fastpath() && frane_a810_gpu(device))
-      rp_histories.reserve(FRANE_2638_HOT_RP_SLOTS * 2u);
-
-   if (supports_preempt_latency_tracking()) {""",
-    "reserve A810 render-pass history map before first insert",
-)
+      rp_histories.reserve(FRANE_2638_HOT_RP_SLOTS * 2u);"""
+if "rp_histories.reserve(FRANE_2638_HOT_RP_SLOTS * 2u);" in src:
+    raise SystemExit("26.3.16 AUDIT-BOOST source drift: reserve already present")
+src = src[:semicolon] + reserve + src[semicolon:]
+p.write_text(src)
+print("26.3.16 AUDIT-BOOST PASS reserve A810 render-pass history map before first insert", flush=True)
 
 
 # ---------------------------------------------------------------------------
