@@ -314,7 +314,7 @@ jobs:
           assert 'depth_active ? bin_w : 0' in cmd
           assert 'stencil_active ? bin_w : 0' in cmd
           assert 'TU_A810_2637_CORE_FASTPATH' in b
-          assert 'FRANE_2638_HOT_RP_SLOTS = 64' in Path('mesa/src/freedreno/vulkan/tu_autotune.h').read_text()
+          assert 'FRANE_2638_HOT_RP_SLOTS = 128' in Path('mesa/src/freedreno/vulkan/tu_autotune.h').read_text()
           assert 'FRANE_2637_HOT_RP_SLOTS' not in Path('mesa/src/freedreno/vulkan/tu_autotune.h').read_text()
           assert 'frane_2637_hot_pinned' in b
           hot=b[b.index('find_rp_history'):b.index('find_or_create_rp_history')]
@@ -363,7 +363,7 @@ jobs:
           assert 'creation_feedback ? stage_feedbacks : NULL' in pipeline
           assert 'stage_feedbacks ? os_time_get_nano() : 0' in shader
           assert 'TU_A810_GMEM_RUNTIME' in b and 'frane_2634_decide_gmem_runtime' in b
-          print('Mesa 26.3.16 AUDIT-BOOST + borrowed hot-handle preservation / history reserve / diversity-aware bary selection / default quad+diversity / preserved LRZ-safe / UBO / GMEM-DIM / shader pipeline / sync verified')
+          print('Mesa 26.3.16 AUDIT-BOOST + verified borrowed hot-handle path / 128-slot hot cache / history reserve / diversity-aware bary selection / default quad+diversity / preserved LRZ-safe / UBO / GMEM-DIM / shader pipeline / sync verified')
           PYCODE
           python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py patches/mesa_2631_exp_cleanup.py patches/mesa_2632_a810_turbo.py patches/mesa_2633_a810_profile_turbo.py patches/mesa_2634_a810_gmem_runtime.py patches/mesa_2635_shader_pipeline.py patches/mesa_2636_audit_fixes.py patches/mesa_2637_a810_core_fastpath.py patches/mesa_2638_a810_hotpath_v2.py patches/mesa_2639_a810_gmem_dimensions.py patches/mesa_26310_a810_ubo_locality.py patches/mesa_26311_a810_safe_tex_prefetch.py patches/mesa_26312_a810_dual_tex_prefetch.py patches/mesa_26313_a810_lrz_fastpath.py patches/mesa_26314_a810_lrz_safe_triple_prefetch.py patches/mesa_26315_a810_prefetch_select.py patches/mesa_26316_a810_audit_boost.py tests/mesa_2636_pipeline_cleanup.py
       - name: Prepare Android ARM64 cross file
@@ -404,7 +404,7 @@ jobs:
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1, 'name': 'Frane Mesa 26.3.16 A810 AUDIT-BOOST',
-            'driverVersion': f'Frane Mesa 26.3.16 A810 AUDIT-BOOST (base {version})', 'description': 'A810 audited hot-path boost: borrowed render-pass handle preserved, history map reserved, diversity-aware bary selection fixed, diversity+quad prefetch default-on',
+            'driverVersion': f'Frane Mesa 26.3.16 A810 AUDIT-BOOST (base {version})', 'description': 'A810 audited hot-path boost: 128-slot hot render-pass cache, history map reserved, diversity-aware bary selection fixed, diversity+quad prefetch default-on',
             'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.16-a810-audit-boost-eeca16aa',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
