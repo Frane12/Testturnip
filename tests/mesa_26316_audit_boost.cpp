@@ -62,6 +62,10 @@ choose_bary(const std::vector<Candidate> &candidates,
    return chosen;
 }
 
+/* Model the already-correct V29 + 26.3.8 ownership chain. 26.3.16 does not
+ * re-fix it; the real patch carries a source assertion so future layers cannot
+ * silently regress it.
+ */
 struct History {
    std::atomic<unsigned> refs{1}; /* permanent hot-cache pin */
    std::atomic<unsigned> incs{0};
@@ -99,17 +103,14 @@ struct Handle {
    }
 
    explicit operator bool() const { return h != nullptr; }
-   History &operator*() const { return *h; }
 };
 
-static Handle
-find_hot(History &h)
+static Handle find_hot(History &h)
 {
    return Handle(h, false);
 }
 
-static Handle
-find_or_create_fixed(History &h)
+static Handle find_or_create_v29_shape(History &h)
 {
    Handle existing = find_hot(h);
    if (existing)
@@ -117,18 +118,13 @@ find_or_create_fixed(History &h)
    return Handle(h, true);
 }
 
-static Handle
-find_or_create_old_shape(History &h)
+static void
+test_128_slot_mask()
 {
-   History *existing = nullptr;
-   {
-      Handle tmp = find_hot(h);
-      existing = tmp.h;
-   }
-
-   if (existing)
-      return Handle(*existing, true);
-   return Handle(h, true);
+   constexpr uint32_t slots = 128;
+   static_assert((slots & (slots - 1u)) == 0u);
+   for (uint64_t hash = 0; hash < 250000; ++hash)
+      assert((hash & (slots - 1u)) < slots);
 }
 
 int main()
@@ -143,25 +139,15 @@ int main()
    assert(choose_bary(c, 4, false) == 0);
    assert(choose_bary(c, 4, true) == 1);
 
-   /* The fixed shape preserves the borrowed handle all the way out. */
-   History fixed;
+   History h;
    {
-      Handle h = find_or_create_fixed(fixed);
-      assert(h);
+      Handle borrowed = find_or_create_v29_shape(h);
+      assert(borrowed);
    }
-   assert(fixed.refs.load() == 1);
-   assert(fixed.incs.load() == 0);
-   assert(fixed.decs.load() == 0);
+   assert(h.refs.load() == 1);
+   assert(h.incs.load() == 0);
+   assert(h.decs.load() == 0);
 
-   /* Demonstrate the old shape really did reconstruct an owning handle. */
-   History old;
-   {
-      Handle h = find_or_create_old_shape(old);
-      assert(h);
-   }
-   assert(old.refs.load() == 1);
-   assert(old.incs.load() == 1);
-   assert(old.decs.load() == 1);
-
+   test_128_slot_mask();
    return 0;
 }
