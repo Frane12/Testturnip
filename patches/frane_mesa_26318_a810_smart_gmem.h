@@ -170,7 +170,7 @@ frane_26318_decide_smart_gmem(bool enabled,
 
    /* A purely structural prior is never allowed to lock SYSMEM exploration
     * out completely. */
-   effective = MAX2(effective, 8u);
+   effective = std::max(effective, 8u);
 
    out.override_mode = true;
    out.effective_sysmem_probability = effective;
