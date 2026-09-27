@@ -22,12 +22,14 @@ frane_2631_relative_ms(uint64_t now_ns, uint64_t abs_timeout_ns)
    if (abs_timeout_ns >= INT64_MAX)
       return -1;
 
-   const uint64_t now_ms = now_ns / 1000000ull;
-   const uint64_t end_ms = abs_timeout_ns / 1000000ull;
-   if (end_ms <= now_ms)
+   if (abs_timeout_ns <= now_ns)
       return 0;
 
-   const uint64_t delta_ms = end_ms - now_ms;
+   /* 26.3.6: ceil the remaining interval, not two absolute timestamps.
+    * Division before addition also avoids overflow near the sentinel. */
+   const uint64_t remaining_ns = abs_timeout_ns - now_ns;
+   const uint64_t delta_ms = remaining_ns / 1000000ull +
+                             (remaining_ns % 1000000ull != 0);
    return delta_ms > (uint64_t)INT_MAX ? INT_MAX : (int)delta_ms;
 }
 

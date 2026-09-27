@@ -24,6 +24,12 @@ int main()
 
    assert(frane_2631_relative_ms(5'000'000ull, 4'000'000ull) == 0);
    assert(frane_2631_relative_ms(5'000'000ull, 9'000'000ull) == 4);
+   assert(frane_2631_relative_ms(10'000'000ull, 10'900'000ull) == 1);
+   assert(frane_2631_relative_ms(10'999'999ull, 11'000'000ull) == 1);
+   assert(frane_2631_relative_ms(10'999'999ull, 12'000'000ull) == 2);
+   assert(frane_2631_relative_ms(10'000'000ull, 10'000'000ull) == 0);
+   assert(frane_2631_relative_ms(UINT64_MAX, 100) == 0);
+   assert(frane_2631_relative_ms(INT64_MAX - 2ull, INT64_MAX - 1ull) == 1);
    assert(frane_2631_relative_ms(0, UINT64_MAX) == -1);
    assert(frane_2631_relative_ms(0, uint64_t(INT_MAX + 1000ull) * 1000000ull) == INT_MAX);
 
