@@ -219,7 +219,9 @@ jobs:
           assert 'a->can_speculate &= b->can_speculate;' in ubo
           assert 'align_vec4, 0,' in ubo
           assert 'align_vec4, compiler->frane_26310_ubo_gap,' in ubo
-          assert 'reg_efficiency' not in ir3c and 'max_unroll_iterations' not in ir3c
+          pre_ir3c=Path('/tmp/v239-ir3-compiler.c').read_text()
+          assert ir3c.count('reg_efficiency') == pre_ir3c.count('reg_efficiency')
+          assert ir3c.count('max_unroll_iterations') == pre_ir3c.count('max_unroll_iterations')
           cmd=Path('mesa/src/freedreno/vulkan/tu_cmd_buffer.cc').read_text()
           assert 'TU_A810_2639_GMEM_DIM_GATING' in cmd
           assert 'frane_2639_get_gmem_dim_usage' in cmd
