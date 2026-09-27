@@ -1,8 +1,8 @@
-name: Frane Mesa 26.3.19 A810 MEMORY-AUDIT
+name: Frane Mesa 26.3.20 A810 GMEM-TURBO EXP
 
 on:
   push:
-    branches: ['frane-mesa-26.3.19-a810-memory-audit']
+    branches: ['frane-mesa-26.3.20-a810-gmem-turbo-exp']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-19-a810-memory-audit
+  group: frane-mesa-26-3-20-a810-gmem-turbo-exp
   cancel-in-progress: true
 
 jobs:
@@ -116,6 +116,10 @@ jobs:
           echo "26.3.18 A810 SMART-GMEM policy"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26318_smart_gmem.cpp -o /tmp/mesa-26318-smart-gmem
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26318-smart-gmem
+
+          echo "26.3.20 A810 GMEM-TURBO policy"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26320_gmem_turbo.cpp -o /tmp/mesa-26320-gmem-turbo
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26320-gmem-turbo
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -417,6 +421,19 @@ jobs:
           git -C mesa add -N src/freedreno/vulkan/frane_mesa_26319_memory_audit.h
           git -C mesa diff --check
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and test 26.3.20 A810 GMEM-TURBO
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26320_a810_gmem_turbo.py
+          python3 patches/mesa_26320_a810_gmem_turbo.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26320_gmem_turbo.cpp -o /tmp/mesa-26320-gmem-turbo-post
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26320-gmem-turbo-post
+          git -C mesa add -N src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          git -C mesa diff --check
+          grep -q 'Frane Mesa 26.3.20 A810 GMEM-TURBO EXP' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A810_26320_GMEM_TURBO' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A810_26317_TEX_WINDOW_MAX", 12' mesa/src/freedreno/ir3/ir3_compiler.c
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -445,7 +462,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -454,19 +471,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.19 A810 MEMORY-AUDIT',
-            'driverVersion': f'Frane Mesa 26.3.19 A810 MEMORY-AUDIT (base {version})', 'description': 'A810 memory audit: bounded NIR cache, fresh timing confidence, hot-cache publication fix; retains SMART-GMEM and adaptive IR3',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.19-a810-memory-audit-eeca16aa',
+            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.20 A810 GMEM-TURBO EXP',
+            'driverVersion': f'Frane Mesa 26.3.20 A810 GMEM-TURBO EXP (base {version})', 'description': 'A810 GMEM-TURBO: longer learned GMEM hold and faster cold-start sampling; retains 26.3.19 memory audit, LRZ safety and adaptive IR3 window 12',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.20-a810-gmem-turbo-eeca16aa',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip') as z:
+          with zipfile.ZipFile('Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -476,41 +493,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip verified')
+          print('Driver Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip and full source diff
+          sha256sum Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Mesa-26.3.19-A810-MEMORY-AUDIT
+          name: Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP
           path: |
-            Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip
+            Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_MESA_26_3_19_A810_MEMORY_AUDIT.md
+            EXPERIMENT_MESA_26_3_20_A810_GMEM_TURBO.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.19-a810-memory-audit'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.20-a810-gmem-turbo-exp'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view frane-mesa-26.3.19-a810-memory-audit >/dev/null 2>&1; then
-            gh release upload frane-mesa-26.3.19-a810-memory-audit \
-              Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip \
+          if gh release view frane-mesa-26.3.20-a810-gmem-turbo-exp >/dev/null 2>&1; then
+            gh release upload frane-mesa-26.3.20-a810-gmem-turbo-exp \
+              Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit frane-mesa-26.3.19-a810-memory-audit --target "$GITHUB_SHA" \
-              --title 'Frane Mesa 26.3.19 A810 MEMORY-AUDIT (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_19_A810_MEMORY_AUDIT.md
+            gh release edit frane-mesa-26.3.20-a810-gmem-turbo-exp --target "$GITHUB_SHA" \
+              --title 'Frane Mesa 26.3.20 A810 GMEM-TURBO EXP (experimental)' \
+              --notes-file EXPERIMENT_MESA_26_3_20_A810_GMEM_TURBO.md
           else
-            gh release create frane-mesa-26.3.19-a810-memory-audit \
-              Frane-Mesa-26.3.19-A810-MEMORY-AUDIT.zip \
+            gh release create frane-mesa-26.3.20-a810-gmem-turbo-exp \
+              Frane-Mesa-26.3.20-A810-GMEM-TURBO-EXP.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Mesa 26.3.19 A810 MEMORY-AUDIT (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_19_A810_MEMORY_AUDIT.md
+              --title 'Frane Mesa 26.3.20 A810 GMEM-TURBO EXP (experimental)' \
+              --notes-file EXPERIMENT_MESA_26_3_20_A810_GMEM_TURBO.md
           fi
