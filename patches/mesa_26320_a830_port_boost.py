@@ -105,6 +105,9 @@ frane_a810_gmem_runtime_enabled(const struct tu_device *device)
           id == UINT64_C(0xffff44010000);
 }""",
     """static bool
+frane_26320_a830_gpu(const struct tu_device *device);
+
+static bool
 frane_26320_a830_gmem_runtime_enabled(const struct tu_device *device)
 {
    static const bool enabled =
