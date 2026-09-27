@@ -6,6 +6,7 @@ Downstream experimental build on 26.3.18 SMART-GMEM, commit 8ac32c7e65b6df0f6e88
 - Atomic byte reservations prevent concurrent compilers exceeding the budget. Failed allocation and duplicate insertion refund their charge. Cache rejection leaves shader compilation working normally.
 - GMEM confidence increases require a fresh sample from both paths. Adverse evidence can lower confidence immediately. Counter resets discard old confidence.
 - Hot-cache hits validate the immutable history hash and the published pin, fixing the zero-hash window between pointer publication and slot-hash publication.
+- KGSL poll-array stack/heap selection avoids unsigned count+1 wraparound at UINT32_MAX.
 - SMART-GMEM no longer evaluates layout twice. Disabled adaptive scheduling skips an unused live-effect scan.
 
 Default SMART-GMEM, adaptive IR3 scheduler with TEX window 12, and previous rendering settings are preserved. No FPS improvement is claimed without hardware measurement. No new variables are required. Existing opt-outs remain available.

@@ -8,6 +8,10 @@ aut=Path('mesa/src/freedreno/vulkan/tu_autotune.cc').read_text()
 a=aut.index('      if (cached &&',aut.index('tu_autotune::find_rp_history'))
 b=aut.index('         return rp_history_handle',a)
 hit=aut[a:b].strip()
+kg=Path('mesa/src/freedreno/vulkan/tu_knl_kgsl.cc').read_text()
+a=kg.index('   if ((convert_ts_to_fd || num_fds > 0) &&')
+b=kg.index(' {',a)
+heap=kg[a:b].strip()
 pre=r'''
 #include <cassert>
 #include <cstdint>
@@ -69,8 +73,16 @@ int main() {
  assert(matches());
  history.hash=0;key.hash=0;
  assert(matches());
+ const uint32_t STACK_POLL_FDS=16;
+ bool convert_ts_to_fd=false; uint32_t num_fds=1, count=0;
+ auto needs_heap=[&] { HEAP return true; return false; };
+ count=15; assert(!needs_heap());
+ count=16; assert(needs_heap());
+ count=UINT32_MAX; assert(needs_heap());
+ num_fds=0; assert(!needs_heap());
+ convert_ts_to_fd=true; assert(needs_heap());
 }
-'''.replace('HIT',hit)
+'''.replace('HIT',hit).replace('HEAP',heap)
 with tempfile.TemporaryDirectory() as d:
  p=Path(d)/'source.cpp';p.write_text(pre+helper+post)
  exe=Path(d)/'source-test'

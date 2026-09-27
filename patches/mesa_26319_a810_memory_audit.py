@@ -73,3 +73,6 @@ edit('vulkan/tu_autotune.cc', '''            } else {
 edit('ir3/ir3_sched.c', '      int live_growth = live_effect(n->instr);', '      int live_growth = ctx->compiler->frane_26317_adaptive_sched ?\n         live_effect(n->instr) : 0;')
 edit('vulkan/tu_device.cc', 'Frane Mesa 26.3.18 A810 SMART-GMEM EXP / Mesa ', 'Frane Mesa 26.3.19 A810 MEMORY-AUDIT / Mesa ')
 print('26.3.19 memory audit applied')
+edit('vulkan/tu_knl_kgsl.cc',
+     '(convert_ts_to_fd || num_fds > 0) && count + 1u > STACK_POLL_FDS',
+     '(convert_ts_to_fd || num_fds > 0) && count >= STACK_POLL_FDS')
