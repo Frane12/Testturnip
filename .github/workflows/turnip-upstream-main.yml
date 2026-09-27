@@ -235,7 +235,7 @@ jobs:
           EOF
       - name: Configure pinned Mesa main Android Turnip
         run: |
-          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true -Db_lto=true -Db_lto_mode=thin
+          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
       - name: Package Winlator AdrenoTools Frane-Mesa-26.3.7-A810-CORE-FASTPATH-EXP.zip and provenance
@@ -248,7 +248,7 @@ jobs:
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1, 'name': 'Frane Mesa 26.3.7 A810 CORE-FASTPATH EXP',
-            'driverVersion': f'Frane Mesa 26.3.7 A810 CORE-FASTPATH EXP (base {version})', 'description': 'A810 FPS experiment: 16-slot pinned hot render-pass cache bypasses repeated autotune map locking/clock reads; ThinLTO; preserves 26.3.6 shader/NIR/GMEM/sync behavior',
+            'driverVersion': f'Frane Mesa 26.3.7 A810 CORE-FASTPATH EXP (base {version})', 'description': 'A810 FPS experiment: 16-slot pinned hot render-pass cache bypasses repeated autotune map locking/clock reads; preserves 26.3.6 shader/NIR/GMEM/sync behavior',
             'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.7-a810-core-fastpath-eeca16aa',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
