@@ -211,25 +211,25 @@ print("26.3.20 A830 PASS bounded stage-NIR cache", flush=True)
 # IR3 A810 feature block -> exact A830. The generated policy fields are already
 # GPU-neutral; only this constructor gate and the A/B variable names were A810.
 compiler = IR3 / "ir3_compiler.c"
-replace_once(
+regex_once(
     compiler,
-    """   const bool frane_is_a810 =
-       frane_chip_id == UINT64_C(0x44010000) ||
-       frane_chip_id == UINT64_C(0xffff44010000);
-   if (frane_is_a810) {""",
-    """   const bool frane_is_a830 =
+    r"""const bool frane_is_a810\s*=\s*
+       frane_chip_id\s*==\s*UINT64_C\(0x44010000\)\s*\|\|\s*
+       frane_chip_id\s*==\s*UINT64_C\(0xffff44010000\);\s*
+       if\s*\(frane_is_a810\)\s*\{""",
+    """const bool frane_is_a830 =
        frane_chip_id == UINT64_C(0x44050000) ||
        frane_chip_id == UINT64_C(0x44050001) ||
        frane_chip_id == UINT64_C(0xffff44050000);
    if (frane_is_a830) {""",
     "IR3 experimental feature block -> A830",
 )
-s = compiler.read_text()
-count = s.count("TU_A810_263")
+s_ir3 = compiler.read_text()
+count = s_ir3.count("TU_A810_263")
 if count < 6:
     raise SystemExit(
         f"26.3.20 A830 source drift: expected several IR3 A810 envs, saw {count}")
-compiler.write_text(s.replace("TU_A810_263", "TU_A830_263"))
+compiler.write_text(s_ir3.replace("TU_A810_263", "TU_A830_263"))
 print(f"26.3.20 A830 PASS IR3 A/B variables retargeted={count}", flush=True)
 
 # 26.3.9 GMEM-dimension gating: same layout metadata, now exact A830 only.
