@@ -280,14 +280,27 @@ edit("src/freedreno/vulkan/tu_pipeline.cc",
       creation_feedback ? os_time_get_nano() : 0;''',
 "graphics pipeline clock only when creation feedback is requested")
 
+# Declarations must precede the existing "if (!must_compile) goto done;".
+# C++ forbids that goto from bypassing initialized locals.
+edit("src/freedreno/vulkan/tu_pipeline.cc",
+'''   struct tu_nir_shaders *nir_shaders = NULL;
+   if (!must_compile)
+      goto done;''',
+'''   unsigned char stage_nir_blake3[MESA_SHADER_STAGES][BLAKE3_KEY_LEN + 1] = {};
+   bool frane_stage_nir_enabled = false;
+
+   struct tu_nir_shaders *nir_shaders = NULL;
+   if (!must_compile)
+      goto done;''',
+"hoist stage NIR locals before goto-done path")
+
 # Stage NIR keys are computed after all graphics-specific tu_shader_key fields
 # (multiview/FDM/etc.) are finalized.
 edit("src/freedreno/vulkan/tu_pipeline.cc",
 '''   unsigned char pipeline_blake3[BLAKE3_KEY_LEN];
    tu_hash_shaders(pipeline_blake3, builder->create_flags, stage_infos, nir,
                    &builder->layout, keys, builder->state);''',
-'''   unsigned char stage_nir_blake3[MESA_SHADER_STAGES][BLAKE3_KEY_LEN + 1] = {};
-   const bool frane_stage_nir_enabled =
+'''   frane_stage_nir_enabled =
       builder->device->frane_stage_nir_cache != NULL && !executable_info;
 
    if (frane_stage_nir_enabled) {
@@ -359,7 +372,7 @@ new = '''      frane_2635_stage_probe_state frane_probe {};
       }
 
       cache_hit = frane_probe.all_hit;
-      const bool application_cache_hit = frane_probe.application_hit;
+      bool application_cache_hit = frane_probe.application_hit;
       const uint64_t frane_shader_cache_hit_mask = frane_probe.hit_mask;'''
 edit("src/freedreno/vulkan/tu_pipeline.cc", old, new,
      "probe all shader stages and retain partial cache hits")
