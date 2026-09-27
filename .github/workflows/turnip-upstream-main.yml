@@ -1,8 +1,8 @@
-name: Frane Mesa 26.3.16 A810 AUDIT-BOOST
+name: Frane Mesa 26.3.17 A810 PREFETCH-V2 DRAW-LEAN
 
 on:
   push:
-    branches: ['frane-mesa-26.3.16-a810-audit-boost']
+    branches: ['frane-mesa-26.3.17-a810-prefetch-draw-lean']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-16-a810-audit-boost
+  group: frane-mesa-26-3-17-a810-prefetch-draw-lean
   cancel-in-progress: true
 
 jobs:
@@ -108,6 +108,10 @@ jobs:
           echo "26.3.16 A810 audit-boost policy"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26316_audit_boost.cpp -o /tmp/mesa-26316-audit-boost
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26316-audit-boost
+
+          echo "26.3.17 A810 prefetch-v2 + draw-lean policy"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26317_prefetch_draw_lean.cpp -o /tmp/mesa-26317-prefetch-draw-lean
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26317-prefetch-draw-lean
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -183,6 +187,7 @@ jobs:
           cp mesa/src/freedreno/ir3/ir3_nir_lower_tex_prefetch.c /tmp/v2314-ir3-tex-prefetch.c
           python3 patches/mesa_26315_a810_prefetch_select.py
           python3 patches/mesa_26316_a810_audit_boost.py
+          python3 patches/mesa_26317_a810_prefetch_draw_lean.py
           ! cmp -s /tmp/v2314-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
           ! cmp -s /tmp/v2314-ir3-compiler.h mesa/src/freedreno/ir3/ir3_compiler.h
           ! cmp -s /tmp/v2314-ir3-context.c mesa/src/freedreno/ir3/ir3_context.c
@@ -206,7 +211,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.3.0-devel"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane Mesa 26.3.16 A810 AUDIT-BOOST' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane Mesa 26.3.17 A810 PREFETCH-V2 DRAW-LEAN' mesa/src/freedreno/vulkan/tu_device.cc
           ! grep -q 'TU_FRANE_PRESENT_MODE' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'V28-CLEAN: no driver present-mode override' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'frane-universal-v29-fast:' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -272,7 +277,7 @@ jobs:
           assert 'TU_GMEM_LAYOUT_FULL' in b
           assert 'return a830;' in b, 'old A810 custom BANDWIDTH runtime accidentally restored'
           assert 'algo_strv = "profiled";' in b
-          assert 'Frane Mesa 26.3.16 A810 AUDIT-BOOST' in Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
+          assert 'Frane Mesa 26.3.17 A810 PREFETCH-V2 DRAW-LEAN' in Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
           ir3c=Path('mesa/src/freedreno/ir3/ir3_compiler.c').read_text()
           ir3h=Path('mesa/src/freedreno/ir3/ir3_compiler.h').read_text()
           ubo=Path('mesa/src/freedreno/ir3/ir3_nir_analyze_ubo_ranges.c').read_text()
@@ -348,6 +353,20 @@ jobs:
           assert 'rp_history_handle existing = find_rp_history(key);' in b
           assert 'rp_history *existing = find_rp_history(key);' not in b
           assert 'rp_histories.reserve(FRANE_2638_HOT_RP_SLOTS * 2u);' in b
+          assert 'TU_A810_26317_PREFETCH_SCORE", true' in ir3c
+          assert 'TU_A810_26317_ADAPTIVE_PREFETCH_CAP", true' in ir3c
+          assert 'frane_26317_prefetch_score' in ir3h
+          assert 'frane_26317_adaptive_prefetch_cap' in ir3h
+          assert 'frane_26317_prefetch_score' in ir3ctx
+          assert 'frane_26317_adaptive_prefetch_cap' in ir3ctx
+          assert 'frane_26317_prefetch_score' in ir3lower
+          assert 'frane_26317_prefetch_cap' in ir3lower
+          assert 'nir_foreach_use(use, &tex->def)' in ir3lower
+          assert 'effective_prefetches' in ir3lower
+          assert 'TU_A810_26317_DRAW_STATE_LEAN' in cmd
+          assert 'frane_26317_draw_states_known_disabled' in cmd
+          assert 'if (live(state))' in cmd
+          assert '3 * (TU_DRAW_STATE_COUNT - 2)' in cmd
           shader=Path('mesa/src/freedreno/vulkan/tu_shader.cc').read_text()
           device_h=Path('mesa/src/freedreno/vulkan/tu_device.h').read_text()
           assert 'frane_2635_record_stage_probe' in pipeline
@@ -363,9 +382,9 @@ jobs:
           assert 'creation_feedback ? stage_feedbacks : NULL' in pipeline
           assert 'stage_feedbacks ? os_time_get_nano() : 0' in shader
           assert 'TU_A810_GMEM_RUNTIME' in b and 'frane_2634_decide_gmem_runtime' in b
-          print('Mesa 26.3.16 AUDIT-BOOST + verified borrowed hot-handle path / 128-slot hot cache / history reserve / diversity-aware bary selection / default quad+diversity / preserved LRZ-safe / UBO / GMEM-DIM / shader pipeline / sync verified')
+          print('Mesa 26.3.17 PREFETCH-V2 DRAW-LEAN + early-use scoring / adaptive 2-3-4 cap / proven-disabled draw-state compaction / preserved 26.3.16 hot cache / LRZ-safe / GMEM / sync verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py patches/mesa_2631_exp_cleanup.py patches/mesa_2632_a810_turbo.py patches/mesa_2633_a810_profile_turbo.py patches/mesa_2634_a810_gmem_runtime.py patches/mesa_2635_shader_pipeline.py patches/mesa_2636_audit_fixes.py patches/mesa_2637_a810_core_fastpath.py patches/mesa_2638_a810_hotpath_v2.py patches/mesa_2639_a810_gmem_dimensions.py patches/mesa_26310_a810_ubo_locality.py patches/mesa_26311_a810_safe_tex_prefetch.py patches/mesa_26312_a810_dual_tex_prefetch.py patches/mesa_26313_a810_lrz_fastpath.py patches/mesa_26314_a810_lrz_safe_triple_prefetch.py patches/mesa_26315_a810_prefetch_select.py patches/mesa_26316_a810_audit_boost.py tests/mesa_2636_pipeline_cleanup.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py patches/mesa_2631_exp_cleanup.py patches/mesa_2632_a810_turbo.py patches/mesa_2633_a810_profile_turbo.py patches/mesa_2634_a810_gmem_runtime.py patches/mesa_2635_shader_pipeline.py patches/mesa_2636_audit_fixes.py patches/mesa_2637_a810_core_fastpath.py patches/mesa_2638_a810_hotpath_v2.py patches/mesa_2639_a810_gmem_dimensions.py patches/mesa_26310_a810_ubo_locality.py patches/mesa_26311_a810_safe_tex_prefetch.py patches/mesa_26312_a810_dual_tex_prefetch.py patches/mesa_26313_a810_lrz_fastpath.py patches/mesa_26314_a810_lrz_safe_triple_prefetch.py patches/mesa_26315_a810_prefetch_select.py patches/mesa_26316_a810_audit_boost.py patches/mesa_26317_a810_prefetch_draw_lean.py tests/mesa_2636_pipeline_cleanup.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -394,7 +413,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -403,19 +422,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.16 A810 AUDIT-BOOST',
-            'driverVersion': f'Frane Mesa 26.3.16 A810 AUDIT-BOOST (base {version})', 'description': 'A810 audited hot-path boost: 128-slot hot render-pass cache, history map reserved, diversity-aware bary selection fixed, diversity+quad prefetch default-on',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.16-a810-audit-boost-eeca16aa',
+            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.17 A810 PREFETCH-V2 DRAW-LEAN',
+            'driverVersion': f'Frane Mesa 26.3.17 A810 PREFETCH-V2 DRAW-LEAN (base {version})', 'description': 'A810 combined experiment: early-use scored/adaptive texture prefetch plus proven-disabled draw-state restore compaction',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.17-a810-prefetch-v2-draw-lean-eeca16aa',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip') as z:
+          with zipfile.ZipFile('Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -425,41 +444,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip verified')
+          print('Driver Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip and full source diff
+          sha256sum Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Mesa-26.3.16-A810-AUDIT-BOOST
+          name: Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN
           path: |
-            Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip
+            Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_MESA_26_3_16_A810_AUDIT_BOOST.md
+            EXPERIMENT_MESA_26_3_17_A810_PREFETCH_DRAW_LEAN.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.16-a810-audit-boost'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.17-a810-prefetch-draw-lean'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view frane-mesa-26.3.16-a810-audit-boost >/dev/null 2>&1; then
-            gh release upload frane-mesa-26.3.16-a810-audit-boost \
-              Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip \
+          if gh release view frane-mesa-26.3.17-a810-prefetch-draw-lean >/dev/null 2>&1; then
+            gh release upload frane-mesa-26.3.17-a810-prefetch-draw-lean \
+              Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit frane-mesa-26.3.16-a810-audit-boost --target "$GITHUB_SHA" \
-              --title 'Frane Mesa 26.3.16 A810 AUDIT-BOOST (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_16_A810_AUDIT_BOOST.md
+            gh release edit frane-mesa-26.3.17-a810-prefetch-draw-lean --target "$GITHUB_SHA" \
+              --title 'Frane Mesa 26.3.17 A810 PREFETCH-V2 DRAW-LEAN (experimental)' \
+              --notes-file EXPERIMENT_MESA_26_3_17_A810_PREFETCH_DRAW_LEAN.md
           else
-            gh release create frane-mesa-26.3.16-a810-audit-boost \
-              Frane-Mesa-26.3.16-A810-AUDIT-BOOST.zip \
+            gh release create frane-mesa-26.3.17-a810-prefetch-draw-lean \
+              Frane-Mesa-26.3.17-A810-PREFETCH-V2-DRAW-LEAN.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Mesa 26.3.16 A810 AUDIT-BOOST (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_16_A810_AUDIT_BOOST.md
+              --title 'Frane Mesa 26.3.17 A810 PREFETCH-V2 DRAW-LEAN (experimental)' \
+              --notes-file EXPERIMENT_MESA_26_3_17_A810_PREFETCH_DRAW_LEAN.md
           fi
