@@ -300,7 +300,7 @@ jobs:
           assert 'frane_26312_dual_tex_prefetch' in ir3h
           assert 'compiler->frane_26312_dual_tex_prefetch ? 2u : 1u' in ir3ctx
           assert '&so->prefetch_bary_type, ~0u, true' in ir3ctx
-          assert 'converted < max_prefetches' in ir3lower
+          assert 'converted < effective_prefetches' in ir3lower
           assert 'if (!allow_bindless)' in ir3lower
           assert 'ok_tex_samp(tex, allow_bindless)' in ir3lower
           assert 'uint32_t max_prefetches' in ir3nirh
