@@ -213,6 +213,7 @@ new=r'''      uint32_t gmem_size = phys_dev->usable_gmem_size_gmem;
       uint32_t gmem_blocks = total_gmem_blocks;
       uint32_t offset = 0;
       uint32_t pixels = ~0u;
+      uint32_t i;
 
       if (use_balanced) {
          for (uint32_t i = 0; i < num_gmem_alloc; i++) {
