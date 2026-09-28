@@ -1,8 +1,8 @@
-name: Frane Mesa 26.3.28 A810 GMEM-DS-STEP2 EXP
+name: Frane Mesa 26.3.29 A810 STENCIL-LS-BISECT EXP
 
 on:
   push:
-    branches: ['frane-mesa-26.3.28-a810-gmem-ds-step2']
+    branches: ['frane-mesa-26.3.29-a810-stencil-ls-bisect']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-28-a810-gmem-ds-step2
+  group: frane-mesa-26-3-29-a810-stencil-ls-bisect
   cancel-in-progress: true
 
 jobs:
@@ -510,6 +510,16 @@ jobs:
           grep -q 'Frane Mesa 26.3.28 A810 GMEM-DS-STEP2 EXP' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'TU_A810_26328_GMEM_SIMPLE_DS", true' mesa/src/freedreno/vulkan/tu_autotune.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.29 A810 stencil load/store bisect
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26329_a810_stencil_ls_bisect.py tests/mesa_26329_stencil_ls_bisect.py
+          python3 patches/mesa_26329_a810_stencil_ls_bisect.py
+          python3 tests/mesa_26329_stencil_ls_bisect.py
+          git -C mesa diff --check
+          grep -q 'Frane Mesa 26.3.29 A810 STENCIL-LS-BISECT EXP' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A810_26329_GMEM_STENCIL_LOADSTORE", false' mesa/src/freedreno/vulkan/tu_autotune.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -538,7 +548,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.28-A810-GMEM-DS-STEP2-EXP.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -547,20 +557,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.28 A810 GMEM-DS-STEP2 EXP',
-            'driverVersion': f'Frane Mesa 26.3.28 A810 GMEM-DS-STEP2 EXP (base {version})', 'description': 'A810 GMEM safety step2: simple combined depth+stencil GMEM re-enabled; resolve/feedback/MSAA remain blocked',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.28-a810-gmem-ds-step2-eda9aceb',
+            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.29 A810 STENCIL-LS-BISECT EXP',
+            'driverVersion': f'Frane Mesa 26.3.29 A810 STENCIL-LS-BISECT EXP (base {version})', 'description': 'A810 GMEM A/B: combined DS stays enabled while stencil load/store is default-safe SYSMEM fallback; resolve/feedback/MSAA remain blocked',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.29-a810-stencil-ls-bisect-eda9aceb',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Mesa-26.3.27-A810-GMEM-DEPTH-STEP1-EXP.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Mesa-26.3.27-A810-GMEM-DEPTH-STEP1-EXP.zip') as z:
+          with zipfile.ZipFile('Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -570,33 +580,33 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Mesa-26.3.27-A810-GMEM-DEPTH-STEP1-EXP.zip verified')
+          print('Driver Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Mesa-26.3.27-A810-GMEM-DEPTH-STEP1-EXP.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Publish direct-download GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          TAG="a810-26.3.28-gmem-ds-step2"
+          TAG="a810-26.3.29-stencil-ls-bisect"
           gh release delete "$TAG" -y --cleanup-tag || true
           gh release create "$TAG" \
-            Frane-Mesa-26.3.27-A810-GMEM-DEPTH-STEP1-EXP.zip \
+            Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP.zip \
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "A810 26.3.28 GMEM Depth-Stencil Step 2" \
-            --notes "A810 GMEM safety expansion step 2: simple combined depth+stencil GMEM enabled by default; resolves, feedback and MSAA remain blocked. Android ARM64 CI build."
-      - name: Upload compiled Frane-Mesa-26.3.27-A810-GMEM-DEPTH-STEP1-EXP.zip and full source diff
+            --title "A810 26.3.29 Stencil Load-Store Bisect" \
+            --notes "A810 GMEM A/B bisect: combined depth+stencil remains enabled, stencil load/store defaults to SYSMEM fallback. Set TU_A810_26329_GMEM_STENCIL_LOADSTORE=1 to restore V28-like behavior. Android ARM64 CI build."
+      - name: Upload compiled Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Mesa-26.3.27-A810-GMEM-DEPTH-STEP1-EXP
+          name: Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP
           path: |
-            Frane-Mesa-26.3.27-A810-GMEM-DEPTH-STEP1-EXP.zip
+            Frane-Mesa-26.3.29-A810-STENCIL-LS-BISECT-EXP.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_MESA_26_3_28_A810_GMEM_DS_STEP2.md
+            EXPERIMENT_MESA_26_3_29_A810_STENCIL_LS_BISECT.md
