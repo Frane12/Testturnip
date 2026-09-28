@@ -5,7 +5,7 @@ d=Path("mesa/src/freedreno/vulkan/tu_device.cc").read_text()
 for x in [
  'TU_A810_26326_GMEM_SAFETY", true',
  'TU_A810_26327_GMEM_SIMPLE_DEPTH", true',
- 'vk_format_is_stencil(att.format)',
+ 'vk_format_has_stencil(att.format)',
  'vk_format_has_depth(att.format) && !allow_simple_depth',
  'subpass.resolve_depth_stencil',
  'subpass.feedback_loop_ds',
