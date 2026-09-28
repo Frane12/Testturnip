@@ -56,7 +56,7 @@ edit(
           att.load_stencil || att.store_stencil)
          return false;
 
-      if (att.gmem && vk_format_is_stencil(att.format))
+      if (att.gmem && vk_format_has_stencil(att.format))
          return false;
 
       if (att.gmem && vk_format_has_depth(att.format) && !allow_simple_depth)
@@ -75,7 +75,7 @@ edit(
 a=(R/"tu_autotune.cc").read_text()
 d=(R/"tu_device.cc").read_text()
 assert 'TU_A810_26327_GMEM_SIMPLE_DEPTH", true' in a
-assert 'vk_format_is_stencil(att.format)' in a
+assert 'vk_format_has_stencil(att.format)' in a
 assert 'vk_format_has_depth(att.format) && !allow_simple_depth' in a
 assert 'subpass.resolve_depth_stencil' in a
 assert 'subpass.feedback_loop_ds' in a
