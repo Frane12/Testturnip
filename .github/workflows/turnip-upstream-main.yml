@@ -1,8 +1,8 @@
-name: Frane Mesa 26.3.13 A810 LRZ-FASTPATH EXP
+name: Frane A810 V3 LRZ-LIFECYCLE V1
 
 on:
   push:
-    branches: ['frane-mesa-26.3.13-a810-lrz-fastpath-exp']
+    branches: ['experiment/a810-v3-lrz-lifecycle-v1']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-13-a810-lrz-fastpath-exp
+  group: a810-v3-lrz-lifecycle-v1
   cancel-in-progress: true
 
 jobs:
@@ -96,6 +96,10 @@ jobs:
           echo "26.3.13 A810 LRZ fastpath policy"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26313_lrz_fastpath.cpp -o /tmp/mesa-26313-lrz-fastpath
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26313-lrz-fastpath
+
+          echo "A810 V3 LRZ lifecycle no-depth model"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/a810_v3_lrz_lifecycle_v1.cpp -o /tmp/a810-v3-lrz-lifecycle-v1
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-v3-lrz-lifecycle-v1
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -113,7 +117,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.3.0-devel"
           git rev-parse HEAD | tee frane-commit.txt
           cat mesa/VERSION
-      - name: Apply V28 CLEAN baseline + V29 FAST NOAI changes
+      - name: Apply V3 baseline + A810 LRZ lifecycle V1
         run: |
           set -eu
           python3 patches/port_mesa_2623.py a810
@@ -157,6 +161,7 @@ jobs:
           cp mesa/src/freedreno/vulkan/tu_pipeline.cc /tmp/v2312-tu-pipeline.cc
           cp mesa/src/freedreno/vulkan/tu_cmd_buffer.cc /tmp/v2312-tu-cmd-buffer.cc
           python3 patches/mesa_26313_a810_lrz_fastpath.py
+          python3 patches/a810_v3_lrz_lifecycle_v1.py
           ! cmp -s /tmp/v2312-tu-pipeline.cc mesa/src/freedreno/vulkan/tu_pipeline.cc
           ! cmp -s /tmp/v2312-tu-cmd-buffer.cc mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
           ! cmp -s /tmp/v2311-ir3-compiler.c mesa/src/freedreno/ir3/ir3_compiler.c
@@ -177,7 +182,7 @@ jobs:
           test "$(cat mesa/VERSION)" = "26.3.0-devel"
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
-          grep -q 'Frane Mesa 26.3.13 A810 LRZ-FASTPATH EXP' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Frane A810 V3 LRZ-LIFECYCLE V1' mesa/src/freedreno/vulkan/tu_device.cc
           ! grep -q 'TU_FRANE_PRESENT_MODE' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'V28-CLEAN: no driver present-mode override' mesa/src/freedreno/vulkan/tu_wsi.cc
           grep -q 'frane-universal-v29-fast:' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -243,7 +248,7 @@ jobs:
           assert 'TU_GMEM_LAYOUT_FULL' in b
           assert 'return a830;' in b, 'old A810 custom BANDWIDTH runtime accidentally restored'
           assert 'algo_strv = "profiled";' in b
-          assert 'Frane Mesa 26.3.13 A810 LRZ-FASTPATH EXP' in Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
+          assert 'Frane A810 V3 LRZ-LIFECYCLE V1' in Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
           ir3c=Path('mesa/src/freedreno/ir3/ir3_compiler.c').read_text()
           ir3h=Path('mesa/src/freedreno/ir3/ir3_compiler.h').read_text()
           ubo=Path('mesa/src/freedreno/ir3/ir3_nir_analyze_ubo_ranges.c').read_text()
@@ -302,6 +307,11 @@ jobs:
           assert 'av->fs.depth_layout == bv->fs.depth_layout' in cmd
           assert 'a->fs.dynamic_input_attachments_used ==' in cmd
           assert 'if (!same_lrz_signature)' in cmd
+          lrz=Path('mesa/src/freedreno/vulkan/tu_lrz.cc').read_text()
+          assert 'TU_A810_V3_LRZ_LIFECYCLE' in lrz
+          assert 'frane_a810_v3_lrz_lifecycle' in lrz
+          assert 'if (frane_a810_v3_lrz_lifecycle(cmd) && !cmd->state.lrz.image_view)' in lrz
+          assert 'if (!frane_lifecycle)' in lrz and 'if (frane_lifecycle)' in lrz
           shader=Path('mesa/src/freedreno/vulkan/tu_shader.cc').read_text()
           device_h=Path('mesa/src/freedreno/vulkan/tu_device.h').read_text()
           assert 'frane_2635_record_stage_probe' in pipeline
@@ -319,7 +329,7 @@ jobs:
           assert 'TU_A810_GMEM_RUNTIME' in b and 'frane_2634_decide_gmem_runtime' in b
           print('Mesa 26.3.13 LRZ-FASTPATH + preserved dual-prefetch / UBO / GMEM-DIM / hotpath / shader pipeline / sync verified')
           PYCODE
-          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py patches/mesa_2631_exp_cleanup.py patches/mesa_2632_a810_turbo.py patches/mesa_2633_a810_profile_turbo.py patches/mesa_2634_a810_gmem_runtime.py patches/mesa_2635_shader_pipeline.py patches/mesa_2636_audit_fixes.py patches/mesa_2637_a810_core_fastpath.py patches/mesa_2638_a810_hotpath_v2.py patches/mesa_2639_a810_gmem_dimensions.py patches/mesa_26310_a810_ubo_locality.py patches/mesa_26311_a810_safe_tex_prefetch.py patches/mesa_26312_a810_dual_tex_prefetch.py patches/mesa_26313_a810_lrz_fastpath.py tests/mesa_2636_pipeline_cleanup.py
+          python3 -m py_compile patches/port_upstream_main.py patches/port_mesa_2623.py patches/v22_a810_lean_profiled.py patches/v23_a810_wsi.py patches/v24_a810_lean_hotpath.py patches/v25_a810_power_perf.py patches/v26_a810_adaptive_cache.py patches/v28_universal_adaptive_main.py patches/v28_clean_runtime_wsi.py patches/v29_fast_noai.py patches/mesa_2631_exp_cleanup.py patches/mesa_2632_a810_turbo.py patches/mesa_2633_a810_profile_turbo.py patches/mesa_2634_a810_gmem_runtime.py patches/mesa_2635_shader_pipeline.py patches/mesa_2636_audit_fixes.py patches/mesa_2637_a810_core_fastpath.py patches/mesa_2638_a810_hotpath_v2.py patches/mesa_2639_a810_gmem_dimensions.py patches/mesa_26310_a810_ubo_locality.py patches/mesa_26311_a810_safe_tex_prefetch.py patches/mesa_26312_a810_dual_tex_prefetch.py patches/mesa_26313_a810_lrz_fastpath.py patches/a810_v3_lrz_lifecycle_v1.py tests/mesa_2636_pipeline_cleanup.py
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -348,7 +358,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip and provenance
+      - name: Package Winlator AdrenoTools Frane-A810-V3-LRZ-LIFECYCLE-V1.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -357,19 +367,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.13 A810 LRZ-FASTPATH EXP',
-            'driverVersion': f'Frane Mesa 26.3.13 A810 LRZ-FASTPATH EXP (base {version})', 'description': 'A810 conservative LRZ fastpath: sparse color attachment classification plus equivalent-FS LRZ state rebuild suppression; dual texture prefetch retained',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.13-a810-lrz-fastpath-eeca16aa',
+            'schemaVersion': 1, 'name': 'Frane A810 V3 LRZ-LIFECYCLE V1',
+            'driverVersion': f'Frane A810 V3 LRZ-LIFECYCLE V1 (base {version})', 'description': 'V3 LRZ fastpath plus A810 no-depth LRZ lifecycle bypass; depth-active LRZ behavior retained',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': 'a810-v3-lrz-lifecycle-v1-eeca16aa',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Frane-A810-V3-LRZ-LIFECYCLE-V1.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip') as z:
+          with zipfile.ZipFile('Frane-A810-V3-LRZ-LIFECYCLE-V1.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -379,41 +389,41 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip verified')
+          print('Driver Frane-A810-V3-LRZ-LIFECYCLE-V1.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip and full source diff
+          sha256sum Frane-A810-V3-LRZ-LIFECYCLE-V1.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Frane-A810-V3-LRZ-LIFECYCLE-V1.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP
+          name: Frane-A810-V3-LRZ-LIFECYCLE-V1
           path: |
-            Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip
+            Frane-A810-V3-LRZ-LIFECYCLE-V1.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_MESA_26_3_13_A810_LRZ_FASTPATH.md
+            EXPERIMENT_A810_V3_LRZ_LIFECYCLE_V1.md
       - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.13-a810-lrz-fastpath-exp'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/experiment/a810-v3-lrz-lifecycle-v1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view frane-mesa-26.3.13-a810-lrz-fastpath-exp >/dev/null 2>&1; then
-            gh release upload frane-mesa-26.3.13-a810-lrz-fastpath-exp \
-              Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip \
+          if gh release view a810-v3-lrz-lifecycle-v1 >/dev/null 2>&1; then
+            gh release upload a810-v3-lrz-lifecycle-v1 \
+              Frane-A810-V3-LRZ-LIFECYCLE-V1.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --clobber
-            gh release edit frane-mesa-26.3.13-a810-lrz-fastpath-exp --target "$GITHUB_SHA" \
-              --title 'Frane Mesa 26.3.13 A810 LRZ-FASTPATH EXP (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_13_A810_LRZ_FASTPATH.md
+            gh release edit a810-v3-lrz-lifecycle-v1 --target "$GITHUB_SHA" \
+              --title 'Frane A810 V3 LRZ-LIFECYCLE V1 (experimental)' \
+              --notes-file EXPERIMENT_A810_V3_LRZ_LIFECYCLE_V1.md
           else
-            gh release create frane-mesa-26.3.13-a810-lrz-fastpath-exp \
-              Frane-Mesa-26.3.13-A810-LRZ-FASTPATH-EXP.zip \
+            gh release create a810-v3-lrz-lifecycle-v1 \
+              Frane-A810-V3-LRZ-LIFECYCLE-V1.zip \
               mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
               --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Mesa 26.3.13 A810 LRZ-FASTPATH EXP (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_13_A810_LRZ_FASTPATH.md
+              --title 'Frane A810 V3 LRZ-LIFECYCLE V1 (experimental)' \
+              --notes-file EXPERIMENT_A810_V3_LRZ_LIFECYCLE_V1.md
           fi
