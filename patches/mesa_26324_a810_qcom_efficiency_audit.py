@@ -203,7 +203,8 @@ assert 'MIN2(8u, MAX2(4u, window))' in device
 assert 'cmd->state.dirty |= TU_CMD_DIRTY_LRZ | TU_CMD_DIRTY_FS;' in cmd
 assert 'frane_26313_same_lrz_fs_signature' not in cmd
 assert 'TU_A810_26313_LRZ_FASTPATH' in pipeline
-assert 'frane_26321_selected_tile_count' in autotune
+assert 'runtime_input.layout.selected_tile_count' in autotune
+assert 'tiling->vsc.tile_count.width' in autotune
 assert 'TU_A810_26322_LIVE_AUTOTUNE' in autotune
 
 print("26.3.24 A810 QCOM-EFFICIENCY-AUDIT applied", flush=True)
