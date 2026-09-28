@@ -42,8 +42,8 @@ def edit(rel, old, new, label):
 
 edit(
     "src/freedreno/vulkan/tu_lrz.cc",
-    '#include "tu_tracepoints.h"\n#include "tu_trace_bin_layout.h"\n',
-    '#include "tu_tracepoints.h"\n#include "tu_trace_bin_layout.h"\n#include "util/u_debug.h"\n',
+    '#include "tu_lrz.h"\n',
+    '#include "tu_lrz.h"\n\n#include "util/u_debug.h"\n',
     "include debug option helper",
 )
 
