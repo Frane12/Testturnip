@@ -533,6 +533,19 @@ jobs:
       - name: Record package checksums
         run: |
           sha256sum Frane-Mesa-26.3.24-A810-QCOM-EFFICIENCY-AUDIT-EXP.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Publish direct-download GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="a810-26.3.24-qcom-efficiency-audit"
+          gh release delete "$TAG" -y --cleanup-tag || true
+          gh release create "$TAG" \
+            Frane-Mesa-26.3.24-A810-QCOM-EFFICIENCY-AUDIT-EXP.zip \
+            SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "A810 26.3.24 QCOM Efficiency Audit" \
+            --notes "A810-only experimental Turnip build. Measured-first SMART-GMEM, GMEM-TURBO opt-in, scheduler window bounded to 4..8. Android ARM64 CI build."
       - name: Upload compiled Frane-Mesa-26.3.24-A810-QCOM-EFFICIENCY-AUDIT-EXP.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
