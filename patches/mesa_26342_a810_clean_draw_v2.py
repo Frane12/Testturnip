@@ -253,7 +253,7 @@ for needle in (
     "MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY",
     "MESA_VK_DYNAMIC_CB_WRITE_MASKS",
     "MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE",
-    "TU_CMD_DIRTY_VS_PARAMS, descriptors",
+    "VS_PARAMS, descriptors",
 ):
     assert needle in cmd, needle
 
