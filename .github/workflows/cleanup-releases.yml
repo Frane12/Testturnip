@@ -1,0 +1,55 @@
+name: Cleanup old experimental releases
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - .github/workflows/cleanup-releases.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep only milestone releases
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const keep = new Set([
+              'v25-a810-power-perf',
+              'v29-fast-noai-mesa-main',
+              'frane-mesa-26.3.20-a830-port-boost',
+              'a810-v35-shortname',
+              'a810-v37-gmem-mask-lab',
+              'a810-v38-gmem-search'
+            ]);
+
+            const releases = await github.paginate(
+              github.rest.repos.listReleases,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              }
+            );
+
+            core.info(`Found ${releases.length} releases.`);
+
+            for (const release of releases) {
+              if (keep.has(release.tag_name)) {
+                core.info(`KEEP: ${release.tag_name}`);
+                continue;
+              }
+
+              core.info(`DELETE RELEASE: ${release.tag_name}`);
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id
+              });
+            }
+
+            core.info('Release cleanup complete. Git tags were intentionally preserved.');
