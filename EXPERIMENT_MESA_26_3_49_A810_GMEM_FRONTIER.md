@@ -46,18 +46,16 @@ Control probe cadence: **1/2048**.
 
 ## Important isolation rule
 
-V49 does **not** relax the V26 GMEM correctness classifier. Unsafe passes still
-fall back to SYSMEM after the V49 decision.
+V49 does **not** relax the existing GMEM correctness classifier. Unsafe passes
+still fall back to SYSMEM after the V49 decision.
 
-Depth/stencil is therefore a separate second experiment. Only after the best
-frontier mode is identified should we try:
-
-```
-TU_A810_26326_GMEM_ALLOW_DEPTH=1
-```
-
-That lets us tell whether a gain came from mode-selection persistence or from
-admitting depth GMEM, rather than mixing both variables.
+The depth/stencil policy is inherited unchanged from the validated V27-V32
+stack: simple depth, simple combined depth/stencil and packed depth/stencil are
+already enabled by default, while stencil load/store remains conservative.
+Keep those knobs unchanged while sweeping FRONTIER_MODE so the result isolates
+render-mode persistence. If a frontier mode introduces visual corruption, the
+existing depth/DS knobs can then be disabled one at a time as a separate
+bisect, rather than mixing both variables in the first test.
 
 ## Suggested Crysis order
 
