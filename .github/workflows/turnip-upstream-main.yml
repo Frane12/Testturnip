@@ -1,8 +1,8 @@
-name: Turnip A810 V41 CLEAN-DRAW-FASTPATH
+name: Drnas Turnip A830 V1 GMEM-FIRST-PASS
 
 on:
   push:
-    branches: ['frane-mesa-26.3.41-a810-clean-draw-fastpath']
+    branches: ['drnas-a830-v1-gmem']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-41-a810-clean-draw-fastpath
+  group: drnas-a830-v1-gmem
   cancel-in-progress: true
 
 jobs:
@@ -649,6 +649,26 @@ jobs:
           grep -q 'frane_26341_draw_bandwidth' mesa/src/freedreno/vulkan/tu_cmd_buffer.h
           grep -q 'TU_A810_26339_GMEM_PRESSURE_BOUND", true' mesa/src/freedreno/vulkan/tu_pass.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply Drnas A830 V1 retarget + GMEM first pass
+        run: |
+          set -eu
+          python3 -m py_compile patches/drnas_a830_v1.py
+          python3 patches/drnas_a830_v1.py
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip A830 V1 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A830_V1_26333_GMEM_HYBRID_PACK", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_A830_V1_26334_GMEM_LIFETIME_TILE_PACK", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_A830_V1_26337_GMEM_MASK_PACK", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_A830_V1_26338_GMEM_SEARCH", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_A830_V1_26339_GMEM_PRESSURE_BOUND", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_A830_V1_26339_GMEM_SEARCH_BUDGET", 4096' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_A830_V1_26341_INITIATOR_CACHE", true' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'TU_A830_V1_26341_BANDWIDTH_CACHE", true' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'TU_A810_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
+          ! grep -q 'TU_A830_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
+          grep -q 'TU_A810_SAMPLED_DEPTH_DIAG' mesa/src/freedreno/vulkan/tu_image.cc
+          ! grep -q 'TU_A830_SAMPLED_DEPTH_DIAG' mesa/src/freedreno/vulkan/tu_image.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -677,7 +697,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Turnip-A810-V41.zip and provenance
+      - name: Package Winlator AdrenoTools Drnas-Turnip-A830-V1.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -686,20 +706,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Turnip A810 V41',
-            'driverVersion': 'Turnip A810 V41', 'description': 'A810 CLEAN-DRAW-FASTPATH: V39 golden GMEM baseline plus cached invariant draw initiator and per-draw autotune bandwidth on clean draws',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.41-a810-clean-draw-fastpath-eda9aceb',
+            'schemaVersion': 1, 'name': 'Drnas Turnip A830 V1',
+            'driverVersion': 'Drnas Turnip A830 V1', 'description': 'A830 first pass: V41 portable stack plus PROFILED default, V33/V34/V37/V38/V39 GMEM allocator/search retarget and V41 clean-draw caches',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.41-a830-v1-gmem-eda9aceb',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Turnip-A810-V41.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-A830-V1.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Turnip-A810-V41.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-A830-V1.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -709,31 +729,31 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Turnip-A810-V41.zip verified')
+          print('Driver Drnas-Turnip-A830-V1.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Turnip-A810-V41.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-A830-V1.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Publish direct-download GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          TAG="a810-v41-clean-draw-fastpath"
+          TAG="drnas-a830-v1-gmem"
           gh release delete "$TAG" -y --cleanup-tag || true
           gh release create "$TAG" \
-            Turnip-A810-V41.zip \
+            Drnas-Turnip-A830-V1.zip \
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "Turnip A810 V41 CLEAN-DRAW-FASTPATH" \
+            --title "Drnas Turnip A830 V1 — GMEM first pass" \
             --prerelease \
-            --notes "Experimental V41 branched from golden V39: caches the invariant CP_DRAW_INDX_OFFSET base and exact per-draw autotune bandwidth on completely clean A810 draws. Any graphics/dynamic state dirtiness rebuilds both caches. Disable TU_A810_26341_INITIATOR_CACHE=0 and TU_A810_26341_BANDWIDTH_CACHE=0 for the V39 logic on these paths."
-      - name: Upload compiled Turnip-A810-V41.zip and full source diff
+            --notes-file DRNAS_A830_V1.md
+      - name: Upload compiled Drnas-Turnip-A830-V1.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Turnip-A810-V41
+          name: Drnas-Turnip-A830-V1
           path: |
-            Turnip-A810-V41.zip
+            Drnas-Turnip-A830-V1.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -741,3 +761,4 @@ jobs:
             SHA256SUMS.txt
             EXPERIMENT_MESA_26_3_39_A810_GMEM_PRESSURE.md
             EXPERIMENT_MESA_26_3_41_A810_CLEAN_DRAW_FASTPATH.md
+            DRNAS_A830_V1.md
