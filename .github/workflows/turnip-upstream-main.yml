@@ -1,8 +1,8 @@
-name: Turnip A810 V39 GMEM-PRESSURE
+name: Turnip A810 V40 VB-REBIND-FASTPATH
 
 on:
   push:
-    branches: ['frane-mesa-26.3.39-a810-gmem-pressure']
+    branches: ['frane-mesa-26.3.40-a810-vb-rebind-fastpath']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-39-a810-gmem-pressure
+  group: frane-mesa-26-3-40-a810-vb-rebind-fastpath
   cancel-in-progress: true
 
 jobs:
@@ -46,6 +46,10 @@ jobs:
           /tmp/mesa-2632-turbo-test
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_2633_a810_profile_turbo.cpp -o /tmp/mesa-2633-profile-turbo-test
           /tmp/mesa-2633-profile-turbo-test
+
+          echo "26.3.40 A810 exact VB rebind fastpath model"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26340_vb_rebind.cpp -o /tmp/mesa-26340-vb-rebind-test
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26340-vb-rebind-test
 
           echo "26.3.4 deterministic ASan+UBSan"
           g++ -std=c++17 -O0 -g -Wall -Wextra -Werror -fsanitize=address,undefined tests/mesa_2634_a810_gmem_runtime.cpp -o /tmp/mesa-2634-gmem-test-asan
@@ -632,6 +636,17 @@ jobs:
           grep -q 'frane_gmem_search_future_upper' mesa/src/freedreno/vulkan/tu_pass.cc
           grep -q 'FRANE_26338_GMEM_SEARCH_MAX_ITEMS 16' mesa/src/freedreno/vulkan/tu_pass.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.40 A810 VB-REBIND-FASTPATH
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26340_a810_vb_rebind_fastpath.py
+          python3 patches/mesa_26340_a810_vb_rebind_fastpath.py
+          git -C mesa diff --check
+          grep -q 'Turnip A810 V40 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A810_26340_VB_REBIND_FASTPATH", true' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'frane_26340_vb_rebind_is_noop' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'TU_A810_26339_GMEM_PRESSURE_BOUND", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -660,7 +675,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Turnip-A810-V39.zip and provenance
+      - name: Package Winlator AdrenoTools Turnip-A810-V40.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -669,20 +684,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Turnip A810 V39',
-            'driverVersion': 'Turnip A810 V39', 'description': 'A810 GMEM-PRESSURE: V38 bounded search plus future-aware subpass pressure pruning and 16-item search window',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.39-a810-gmem-pressure-eda9aceb',
+            'schemaVersion': 1, 'name': 'Turnip A810 V40',
+            'driverVersion': 'Turnip A810 V40', 'description': 'A810 VB-REBIND-FASTPATH: V39 golden GMEM baseline plus exact no-op vertex-buffer rebind elimination',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.40-a810-vb-rebind-fastpath-eda9aceb',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Turnip-A810-V39.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Turnip-A810-V40.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Turnip-A810-V39.zip') as z:
+          with zipfile.ZipFile('Turnip-A810-V40.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -692,34 +707,35 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Turnip-A810-V39.zip verified')
+          print('Driver Turnip-A810-V40.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Turnip-A810-V39.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Turnip-A810-V40.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Publish direct-download GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          TAG="a810-v39-gmem-pressure"
+          TAG="a810-v40-vb-rebind-fastpath"
           gh release delete "$TAG" -y --cleanup-tag || true
           gh release create "$TAG" \
-            Turnip-A810-V39.zip \
+            Turnip-A810-V40.zip \
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "Turnip A810 V39 GMEM-PRESSURE" \
+            --title "Turnip A810 V40 VB-REBIND-FASTPATH" \
             --prerelease \
-            --notes "Experimental V39 on V38: future-aware subpass pressure bound prunes branches that cannot beat the current best, expands bounded search to <=16 GMEM items, and uses a 4096-node default budget. Disable TU_A810_26339_GMEM_PRESSURE_BOUND=0 for exact V38 search behavior."
-      - name: Upload compiled Turnip-A810-V39.zip and full source diff
+            --notes "Experimental V40 on golden V39: skips only exact no-op A810 vertex-buffer rebinds when stride is unchanged, reducing command-recording and draw-state rebuild overhead without changing render policy. Set TU_A810_26340_VB_REBIND_FASTPATH=0 for exact V39 behavior."
+      - name: Upload compiled Turnip-A810-V40.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Turnip-A810-V39
+          name: Turnip-A810-V40
           path: |
-            Turnip-A810-V39.zip
+            Turnip-A810-V40.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
             EXPERIMENT_MESA_26_3_39_A810_GMEM_PRESSURE.md
+            EXPERIMENT_MESA_26_3_40_A810_VB_REBIND_FASTPATH.md
