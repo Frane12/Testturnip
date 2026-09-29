@@ -8,10 +8,12 @@ Find the A810 performance/correctness frontier by progressively allowing a
 proven measured GMEM winner to stay in GMEM longer before PROFILED/SYSMEM
 control pressure can take it back.
 
-This is deliberately a render-mode policy experiment only. The V26 A810 GMEM
+This is deliberately a render-mode policy experiment only. The A810 GMEM
 safety classifier remains authoritative after mode selection, so unsafe passes
-still fall back to SYSMEM. Depth/stencil is NOT relaxed here; the existing
-TU_A810_26326_GMEM_ALLOW_DEPTH=1 remains a separate second-stage experiment.
+still fall back to SYSMEM. V49 does not alter the attachment-class policy
+established by V27-V32: simple depth, simple combined depth/stencil and packed
+depth/stencil retain their existing defaults, while stencil load/store remains
+conservative.
 
 Modes:
   TU_A810_26349_GMEM_FRONTIER_MODE=0
@@ -205,9 +207,20 @@ for needle in (
 ):
     assert needle in a, needle
 
-# V26 safety remains the final authority after selection.
-assert 'TU_A810_26326_GMEM_SAFETY", true' in a
-assert 'TU_A810_26326_GMEM_ALLOW_DEPTH", false' in a
+# The evolved V26->V32 safety policy remains the final authority after selection.
+# V27 replaced the old TU_A810_26326_GMEM_ALLOW_DEPTH knob, so guard the
+# current known-good attachment policy instead of asserting a stale option.
+for needle in (
+    'TU_A810_26326_GMEM_SAFETY", true',
+    'TU_A810_26327_GMEM_SIMPLE_DEPTH", true',
+    'TU_A810_26328_GMEM_SIMPLE_DS", true',
+    'TU_A810_26330_GMEM_PACKED_DS", true',
+    'TU_A810_26329_GMEM_STENCIL_LOADSTORE", false',
+    "subpass.resolve_depth_stencil",
+    "subpass.feedback_loop_ds",
+    "subpass.samples != VK_SAMPLE_COUNT_1_BIT",
+):
+    assert needle in a, needle
 assert "frane_a810_gmem_pass_safe" in a
 assert a.count("!frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer)") == 3
 
