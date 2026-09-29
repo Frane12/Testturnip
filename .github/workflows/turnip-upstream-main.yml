@@ -1,8 +1,8 @@
-name: Turnip A810 V35 SHORTNAME
+name: Turnip A810 V36 TURBO-HUNT
 
 on:
   push:
-    branches: ['frane-mesa-26.3.35-a810-shortname']
+    branches: ['frane-mesa-26.3.36-a810-turbo-hunt']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-35-a810-shortname
+  group: frane-mesa-26-3-36-a810-turbo-hunt
   cancel-in-progress: true
 
 jobs:
@@ -595,6 +595,18 @@ jobs:
           grep -q 'Turnip A810 V35 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
           ! grep -q 'Frane Mesa 26.3.35 A810 V34-DEEP-AUDIT-CLEAN EXP / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.36 A810 TURBO-HUNT
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26336_a810_turbo_hunt.py tests/mesa_26336_turbo_hunt.py
+          python3 patches/mesa_26336_a810_turbo_hunt.py
+          python3 tests/mesa_26336_turbo_hunt.py
+          git -C mesa diff --check
+          grep -q 'Turnip A810 V36 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A810_26317_TEX_WINDOW_MAX", 3' mesa/src/freedreno/ir3/ir3_compiler.c
+          grep -q 'TU_A810_26316_PREFETCH_USE_SCORE", true' mesa/src/freedreno/ir3/ir3_compiler.c
+          grep -q 'TU_A810_26320_GMEM_TURBO", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -623,7 +635,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Turnip-A810-V35.zip and provenance
+      - name: Package Winlator AdrenoTools Turnip-A810-V36.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -632,20 +644,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Turnip A810 V35',
-            'driverVersion': 'Turnip A810 V35', 'description': 'Validated A810 V35 deep-audit build with short user-visible driver name',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.35-a810-v35-shortname-eda9aceb',
+            'schemaVersion': 1, 'name': 'Turnip A810 V36',
+            'driverVersion': 'Turnip A810 V36', 'description': 'A810 TURBO-HUNT: scheduler window 3, use-scored legal texture prefetch, GMEM-TURBO re-test on V34/V35 base',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.36-a810-turbo-hunt-eda9aceb',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Turnip-A810-V35.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Turnip-A810-V36.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Turnip-A810-V35.zip') as z:
+          with zipfile.ZipFile('Turnip-A810-V36.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -655,33 +667,33 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Turnip-A810-V35.zip verified')
+          print('Driver Turnip-A810-V36.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Turnip-A810-V35.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Turnip-A810-V36.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Publish direct-download GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          TAG="a810-v35-shortname"
+          TAG="a810-v36-turbo-hunt"
           gh release delete "$TAG" -y --cleanup-tag || true
           gh release create "$TAG" \
-            Turnip-A810-V35.zip \
+            Turnip-A810-V36.zip \
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "Turnip A810 V35" \
-            --notes "Same validated 26.3.35 A810 deep-audit build, with shortened Vulkan/AdrenoTools display identity: Turnip A810 V35. No rendering or performance logic changes."
-      - name: Upload compiled Turnip-A810-V35.zip and full source diff
+            --title "Turnip A810 V36 TURBO-HUNT" \
+            --notes "High-risk A810 performance hunt on validated V35: scheduler max window 3, legal prefetch use-score default-on, and GMEM-TURBO default-on. V35 can be restored by env: TU_A810_26317_TEX_WINDOW_MAX=4, TU_A810_26316_PREFETCH_USE_SCORE=0, TU_A810_26320_GMEM_TURBO=0."
+      - name: Upload compiled Turnip-A810-V36.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Turnip-A810-V35
+          name: Turnip-A810-V36
           path: |
-            Turnip-A810-V35.zip
+            Turnip-A810-V36.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
-            EXPERIMENT_MESA_26_3_35_A810_SHORTNAME.md
+            EXPERIMENT_MESA_26_3_36_A810_TURBO_HUNT.md
