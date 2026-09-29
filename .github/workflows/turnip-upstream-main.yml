@@ -1,8 +1,8 @@
-name: Drnas Turnip V46 CB-PRESSURE
+name: Drnas Turnip V47 CB-PROFILER
 
 on:
   push:
-    branches: ['frane-mesa-26.3.46-a810-cb-pressure']
+    branches: ['frane-mesa-26.3.47-a810-cb-profiler']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-46-a810-cb-pressure
+  group: frane-mesa-26-3-47-a810-cb-profiler
   cancel-in-progress: true
 
 jobs:
@@ -66,6 +66,10 @@ jobs:
           echo "26.3.46 A810 CB pressure policy"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26346_cb_pressure.cpp -o /tmp/mesa-26346-cb-pressure-test
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26346-cb-pressure-test
+
+          echo "26.3.47 A810 CB profiler matrix"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26347_cb_profiler.cpp -o /tmp/mesa-26347-cb-profiler-test
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26347-cb-profiler-test
 
           echo "26.3.4 deterministic ASan+UBSan"
           g++ -std=c++17 -O0 -g -Wall -Wextra -Werror -fsanitize=address,undefined tests/mesa_2634_a810_gmem_runtime.cpp -o /tmp/mesa-2634-gmem-test-asan
@@ -718,6 +722,20 @@ jobs:
           grep -q 'frane_26346_keep_cb_pressure' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
           grep -q 'TU_A810_26339_GMEM_PRESSURE_BOUND", true' mesa/src/freedreno/vulkan/tu_pass.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.47 A810 CB-PROFILER
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26347_a810_cb_profiler.py
+          python3 patches/mesa_26347_a810_cb_profiler.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26347_cb_profiler.cpp -o /tmp/mesa-26347-cb-profiler-post
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26347-cb-profiler-post
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip V47 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A810_26347_CB_PROFILE_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'TU_A810_26347_CB_PROFILE_LOG' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'frane_26347_keep_cb_profile_policy' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'TU_A810_26339_GMEM_PRESSURE_BOUND", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -746,7 +764,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Drnas-Turnip-V46.zip and provenance
+      - name: Package Winlator AdrenoTools Drnas-Turnip-V47.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -755,20 +773,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Drnas Turnip V46',
-            'driverVersion': 'Drnas Turnip V46', 'description': 'A810 CB-PRESSURE: V45 adaptive concurrent binning plus bounded composite pressure scoring for expensive GMEM near-miss renderpasses',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.46-a810-cb-pressure',
+            'schemaVersion': 1, 'name': 'Drnas Turnip V47',
+            'driverVersion': 'Drnas Turnip V47', 'description': 'A810 CB-PROFILER: controlled concurrent-binning keep-policy matrix with optional structural telemetry; defaults to the proven V45 heavy-pass baseline',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.47-a810-cb-profiler',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V46.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-V47.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Drnas-Turnip-V46.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-V47.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -778,31 +796,31 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Drnas-Turnip-V46.zip verified')
+          print('Driver Drnas-Turnip-V47.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V46.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-V47.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Publish direct-download GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          TAG="a810-v46-cb-pressure"
+          TAG="a810-v47-cb-profiler"
           gh release delete "$TAG" -y --cleanup-tag || true
           gh release create "$TAG" \
-            Drnas-Turnip-V46.zip \
+            Drnas-Turnip-V47.zip \
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "Drnas Turnip V46 CB-PRESSURE" \
+            --title "Drnas Turnip V47 CB-PROFILER" \
             --prerelease \
-            --notes "V46 keeps V45 admission and safety intact, then adds a bounded composite pressure score only to the performance-only heavy-pass CB keep decision. It targets expensive GMEM passes that narrowly miss V45 rigid threshold pairs. Set TU_A810_26346_CB_PRESSURE_SCORE=0 for exact V45 heavy-pass behavior."
-      - name: Upload compiled Drnas-Turnip-V46.zip and full source diff
+            --notes "V47 converts the A810 concurrent-binning keep decision into a controlled profile matrix. Mode 1 is the default and reproduces the proven V45 heavy-pass baseline; modes 0/2/3/4/5 isolate runtime-only, bandwidth-filtered, balanced three-way, V46 pressure, and ultra-heavy behavior. Optional TU_A810_26347_CB_PROFILE_LOG=1 emits structural telemetry but should stay off during FPS tests."
+      - name: Upload compiled Drnas-Turnip-V47.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V46
+          name: Drnas-Turnip-V47
           path: |
-            Drnas-Turnip-V46.zip
+            Drnas-Turnip-V47.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -814,3 +832,4 @@ jobs:
             EXPERIMENT_MESA_26_3_44_A810_THROUGHPUT_CB.md
             EXPERIMENT_MESA_26_3_45_A810_ADAPTIVE_CB.md
             EXPERIMENT_MESA_26_3_46_A810_CB_PRESSURE.md
+            EXPERIMENT_MESA_26_3_47_A810_CB_PROFILER.md
