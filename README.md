@@ -1,4 +1,4 @@
-# Testturnip — experimental Android Turnip build
+# TestTurnip — experimental Android Turnip build
 
 Build target: Mesa **26.1.4** (commit `6dfbc555b4128ee51139c5f78c5aba2594c9701b`), Android arm64, KGSL.
 
