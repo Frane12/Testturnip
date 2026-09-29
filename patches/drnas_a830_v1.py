@@ -193,14 +193,58 @@ drnas_2635_is_a830_chip(uint64_t chip_id)
     "retarget bounded stage-NIR cache helper",
 )
 s = dev.read_text()
-if s.count("frane_2635_is_a810_chip(") != 1:
-    raise SystemExit("A830 V1: stage-NIR helper call drift")
-s = s.replace("frane_2635_is_a810_chip(", "drnas_2635_is_a830_chip(", 1)
+stage_calls = s.count("frane_2635_is_a810_chip(")
+if stage_calls < 1:
+    raise SystemExit("A830 V1: stage-NIR/cache-UUID helper calls missing")
+s = s.replace("frane_2635_is_a810_chip(", "drnas_2635_is_a830_chip(")
 if 'TU_A810_STAGE_NIR_CACHE' not in s:
     raise SystemExit("A830 V1: stage-NIR switch missing")
 s = s.replace("TU_A810_STAGE_NIR_CACHE", "TU_A830_V1_STAGE_NIR_CACHE")
+
+# 26.3.23 added compile-option hashing after the stage-NIR experiment.
+# Keep the cache UUID tied to the same A830 env names that the compiler/pipeline
+# will consume below; otherwise toggling an A830 option could reuse stale NIR.
+cache_envs = {
+    "TU_A810_26310_UBO_GAP": "TU_A830_26310_UBO_GAP",
+    "TU_A810_26311_SAFE_TEX_PREFETCH": "TU_A830_26311_SAFE_TEX_PREFETCH",
+    "TU_A810_26312_DUAL_TEX_PREFETCH": "TU_A830_26312_DUAL_TEX_PREFETCH",
+    "TU_A810_26314_TRIPLE_TEX_PREFETCH": "TU_A830_26314_TRIPLE_TEX_PREFETCH",
+    "TU_A810_26315_PREFETCH_DIVERSITY": "TU_A830_26315_PREFETCH_DIVERSITY",
+    "TU_A810_26315_QUAD_TEX_PREFETCH": "TU_A830_26315_QUAD_TEX_PREFETCH",
+    "TU_A810_26316_PREFETCH_USE_SCORE": "TU_A830_26316_PREFETCH_USE_SCORE",
+    "TU_A810_26317_ADAPTIVE_SCHED": "TU_A830_26317_ADAPTIVE_SCHED",
+    "TU_A810_26317_TEX_WINDOW_MAX": "TU_A830_26317_TEX_WINDOW_MAX",
+    "TU_A810_26313_LRZ_FASTPATH": "TU_A830_V1_26313_LRZ_FASTPATH",
+}
+for old_env, new_env in cache_envs.items():
+    if old_env not in s:
+        raise SystemExit(f"A830 V1: cache UUID env missing: {old_env}")
+    s = s.replace(old_env, new_env)
+s = s.replace("frane_26323_a810_cache_options",
+              "drnas_26323_a830_cache_options")
+s = s.replace("frane-a810-compile-options-v1",
+              "drnas-a830-compile-options-v1")
 dev.write_text(s)
-print("A830 V1 PASS bounded stage-NIR cache", flush=True)
+print(f"A830 V1 PASS bounded stage-NIR cache + UUID calls={stage_calls}", flush=True)
+
+# The IR3 disk cache has its own A810 chip gate/schema for those compiler
+# options. Retarget it too so A830 option changes invalidate both caches.
+disk = IR3 / "ir3_disk_cache.c"
+ds = disk.read_text()
+old_disk_gate = """   if (frane_chip == UINT64_C(0x44010000) ||
+       frane_chip == UINT64_C(0xffff44010000)) {"""
+new_disk_gate = """   if (frane_chip == UINT64_C(0x44050000) ||
+       frane_chip == UINT64_C(0x44050001) ||
+       frane_chip == UINT64_C(0xffff44050000)) {"""
+if ds.count(old_disk_gate) != 1:
+    raise SystemExit("A830 V1: IR3 disk-cache A810 gate drift")
+ds = ds.replace(old_disk_gate, new_disk_gate, 1)
+if "frane-a810-compile-options-v1" not in ds:
+    raise SystemExit("A830 V1: IR3 cache schema missing")
+ds = ds.replace("frane-a810-compile-options-v1",
+                "drnas-a830-compile-options-v1")
+disk.write_text(ds)
+print("A830 V1 PASS IR3 disk-cache namespace/gate", flush=True)
 
 # ---------------------------------------------------------------------------
 # Portable IR3 locality/prefetch/scheduler stack.
