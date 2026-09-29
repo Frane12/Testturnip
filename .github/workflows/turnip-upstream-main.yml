@@ -742,7 +742,7 @@ jobs:
           python3 -m py_compile patches/mesa_26348_a810_gmem_sticky.py
           python3 patches/mesa_26348_a810_gmem_sticky.py
           git -C mesa diff --check
-          grep -q 'Drnas Turnip V49 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Drnas Turnip V48 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'TU_A810_26348_GMEM_STICKY_MODE", 2' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'frane_26348_suppress_live_probe' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q '(decision_word & UINT64_C(255)) == 0' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -800,7 +800,7 @@ jobs:
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1, 'name': 'Drnas Turnip V49',
-            'driverVersion': 'Drnas Turnip V49', 'description': 'A810 GMEM-STICKY: V47 baseline plus de-duplicated strong-GMEM exploration and a narrow 1/256 ultra-sticky measured control probe',
+            'driverVersion': 'Drnas Turnip V49', 'description': 'A810 GMEM-FRONTIER: V48 baseline plus a four-step measured GMEM persistence sweep with V26 safety gate preserved',
             'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.49-a810-gmem-frontier',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
@@ -838,13 +838,13 @@ jobs:
             Drnas-Turnip-V49.zip \
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "Drnas Turnip V49 GMEM-STICKY" \
+            --title "Drnas Turnip V49 GMEM-FRONTIER" \
             --prerelease \
             --notes-file EXPERIMENT_MESA_26_3_49_A810_GMEM_FRONTIER.md
       - name: Upload compiled Drnas-Turnip-V49.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V48
+          name: Drnas-Turnip-V49
           path: |
             Drnas-Turnip-V49.zip
             mesa-commit.txt
