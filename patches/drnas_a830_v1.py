@@ -175,9 +175,22 @@ autotune.write_text(s.replace("TU_A810_2637_CORE_FASTPATH",
 # ---------------------------------------------------------------------------
 # Bounded stage-NIR cache: portable, RAM-capped and already audited.
 # ---------------------------------------------------------------------------
-retarget_simple_gate(
-    stage_h, "frane_2635_is_a810_chip", "drnas_2635_is_a830_chip",
-    None, None
+replace_once(
+    stage_h,
+    """static inline bool
+frane_2635_is_a810_chip(uint64_t chip_id)
+{
+   return chip_id == UINT64_C(0x44010000) ||
+          chip_id == UINT64_C(0xffff44010000);
+}""",
+    """static inline bool
+drnas_2635_is_a830_chip(uint64_t chip_id)
+{
+   return chip_id == UINT64_C(0x44050000) ||
+          chip_id == UINT64_C(0x44050001) ||
+          chip_id == UINT64_C(0xffff44050000);
+}""",
+    "retarget bounded stage-NIR cache helper",
 )
 s = dev.read_text()
 if s.count("frane_2635_is_a810_chip(") != 1:
