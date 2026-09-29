@@ -759,7 +759,10 @@ jobs:
           grep -q 'TU_A810_26349_GMEM_FRONTIER_MODE", 2' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'l_sysmem_probability <= 50' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'UINT64_C(2047)' mesa/src/freedreno/vulkan/tu_autotune.cc
-          grep -q 'TU_A810_26326_GMEM_ALLOW_DEPTH", false' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A810_26327_GMEM_SIMPLE_DEPTH", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A810_26328_GMEM_SIMPLE_DS", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A810_26330_GMEM_PACKED_DS", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A810_26329_GMEM_STENCIL_LOADSTORE", false' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_A810_26339_GMEM_PRESSURE_BOUND", true' mesa/src/freedreno/vulkan/tu_pass.cc
           git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
@@ -800,7 +803,7 @@ jobs:
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1, 'name': 'Drnas Turnip V49',
-            'driverVersion': 'Drnas Turnip V49', 'description': 'A810 GMEM-FRONTIER: V48 baseline plus a four-step measured GMEM persistence sweep with V26 safety gate preserved',
+            'driverVersion': 'Drnas Turnip V49', 'description': 'A810 GMEM-FRONTIER: V48 baseline plus a four-step measured GMEM persistence sweep with the validated V27-V32 attachment safety policy preserved',
             'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.49-a810-gmem-frontier',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
