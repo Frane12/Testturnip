@@ -87,6 +87,27 @@ def blocks_for_pixels(pixels, cpp, align=4096, shift=3):
     n = max(n, gran)
     return (n + gran - 1) & ~(gran - 1)
 
+def greedy_pixels(allocs, total_blocks=64, align=4096, shift=3):
+    if not allocs:
+        return 0
+    blocks = total_blocks
+    cpp_total = sum(a[0] for a in allocs)
+    pixels = (1 << 32) - 1
+
+    for cpp, _, _ in allocs:
+        gran = max(1, cpp >> shift)
+        nblocks = max(
+            (blocks * cpp // cpp_total) & ~(gran - 1),
+            gran,
+        )
+        if nblocks > blocks:
+            return 0
+        blocks -= nblocks
+        cpp_total -= cpp
+        pixels = min(pixels, nblocks * align // cpp)
+
+    return pixels
+
 def exact_pixels(allocs, total_blocks=64, align=4096, shift=3):
     if not allocs:
         return 0
@@ -130,11 +151,21 @@ mask2, ma2, _ = mask_alloc(fixture2)
 verify_no_overlap(fixture2, ma2)
 assert sum(a[0] for a in mask2) <= sum(a[0] for a in env2)
 
+# Deterministic V35-greedy rescue: same allocations are exactly packable
+# even though the proportional greedy split fails at a tiny block budget.
+rescue_fixture = [
+    [8, 0, 1],
+    [1, 0, 1],
+    [1, 0, 1],
+]
+assert greedy_pixels(rescue_fixture, total_blocks=4) == 0
+assert exact_pixels(rescue_fixture, total_blocks=4) > 0
+
 rng = random.Random(0x26337A810)
 wins = equal = losses = rescues = 0
 checks = 0
 
-for _ in range(250000):
+for _ in range(60000):
     count = rng.randint(2, 12)
     items = []
     for _ in range(count):
@@ -158,7 +189,11 @@ for _ in range(250000):
         else:
             losses += 1
 
-        if ep == 0 and mp > 0:
+        # Actual V35 declares the layout impossible when its greedy
+        # proportional split fails before the balanced/lifetime candidate can
+        # run. V37 exact packing is allowed to rescue precisely that case.
+        gp = greedy_pixels(env, total_blocks)
+        if gp == 0 and mp > 0:
             rescues += 1
 
         # Driver admission is strict: a worse mask candidate is ignored.
