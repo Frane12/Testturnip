@@ -1,8 +1,8 @@
-name: Drnas Turnip V42 CLEAN-DRAW-V2
+name: Drnas Turnip V44 THROUGHPUT-CB
 
 on:
   push:
-    branches: ['frane-mesa-26.3.42-a810-clean-draw-v2']
+    branches: ['frane-mesa-26.3.44-a810-throughput-cb']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-42-a810-clean-draw-v2
+  group: frane-mesa-26-3-44-a810-throughput-cb
   cancel-in-progress: true
 
 jobs:
@@ -54,6 +54,10 @@ jobs:
           echo "26.3.42 A810 clean-draw-v2 invalidation model"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26342_clean_draw_v2.cpp -o /tmp/mesa-26342-clean-draw-v2-test
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26342-clean-draw-v2-test
+
+          echo "26.3.44 A810 throughput concurrent-binning policy"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26344_throughput_cb.cpp -o /tmp/mesa-26344-throughput-cb-test
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26344-throughput-cb-test
 
           echo "26.3.4 deterministic ASan+UBSan"
           g++ -std=c++17 -O0 -g -Wall -Wextra -Werror -fsanitize=address,undefined tests/mesa_2634_a810_gmem_runtime.cpp -o /tmp/mesa-2634-gmem-test-asan
@@ -665,6 +669,20 @@ jobs:
           grep -q 'frane_26342_cached_index_size' mesa/src/freedreno/vulkan/tu_cmd_buffer.h
           grep -q 'TU_A810_26339_GMEM_PRESSURE_BOUND", true' mesa/src/freedreno/vulkan/tu_pass.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.44 A810 THROUGHPUT-CB
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26344_a810_throughput_cb.py
+          python3 patches/mesa_26344_a810_throughput_cb.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/mesa_26344_throughput_cb.cpp -o /tmp/mesa-26344-throughput-cb-post
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26344-throughput-cb-post
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip V44 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A810_26344_SMART_CB' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'TU_A810_26344_CB_MIN_DRAWS' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'frane_26344_cb_policy_allows' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'TU_A810_26339_GMEM_PRESSURE_BOUND", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -693,7 +711,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Drnas-Turnip-V42.zip and provenance
+      - name: Package Winlator AdrenoTools Drnas-Turnip-V44.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -702,20 +720,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Drnas Turnip V42',
-            'driverVersion': 'Drnas Turnip V42', 'description': 'A810 CLEAN-DRAW-V2: V39 golden GMEM baseline plus dependency-scoped draw initiator/bandwidth caches with command-buffer-resolved gates',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.42-a810-clean-draw-v2-eda9aceb',
+            'schemaVersion': 1, 'name': 'Drnas Turnip V44',
+            'driverVersion': 'Drnas Turnip V44', 'description': 'A810 THROUGHPUT-CB: V42/V39 baseline plus smart heavy-renderpass concurrent binning override for A810',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.44-a810-throughput-cb-eda9aceb',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V42.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-V44.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Drnas-Turnip-V42.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-V44.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -725,31 +743,31 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Drnas-Turnip-V42.zip verified')
+          print('Driver Drnas-Turnip-V44.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V42.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-V44.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Publish direct-download GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          TAG="a810-v42-clean-draw-v2"
+          TAG="a810-v44-throughput-cb"
           gh release delete "$TAG" -y --cleanup-tag || true
           gh release create "$TAG" \
-            Drnas-Turnip-V42.zip \
+            Drnas-Turnip-V44.zip \
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "Drnas Turnip V42 CLEAN-DRAW-V2" \
+            --title "Drnas Turnip V44 THROUGHPUT-CB" \
             --prerelease \
-            --notes "V42 keeps the V39 golden GMEM baseline and V41 cached draw values, but removes broad invalidation from ordinary VS-parameter/descriptor/VB churn. Initiator and bandwidth caches now rebuild only for their actual dependencies; A810/env gates are resolved once per command buffer. Disable TU_A810_26341_INITIATOR_CACHE=0 and TU_A810_26341_BANDWIDTH_CACHE=0 to restore V39 logic for these paths."
+            --notes "V44 branches from V42 and selectively enables Turnip concurrent binning on A810 for renderpasses with at least 8 draws by default, preserving all existing LRZ, query, overflow and BV/BR synchronization gates. Remove TU_DEBUG=nocb to exercise V44. Set TU_A810_26344_SMART_CB=0 for V42 CB behavior or TU_A810_26344_CB_MIN_DRAWS=4 for a more aggressive test."
       - name: Upload compiled Drnas-Turnip-V42.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V42
+          name: Drnas-Turnip-V44
           path: |
-            Drnas-Turnip-V42.zip
+            Drnas-Turnip-V44.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -758,3 +776,4 @@ jobs:
             EXPERIMENT_MESA_26_3_39_A810_GMEM_PRESSURE.md
             EXPERIMENT_MESA_26_3_41_A810_CLEAN_DRAW_FASTPATH.md
             EXPERIMENT_MESA_26_3_42_A810_CLEAN_DRAW_V2.md
+            EXPERIMENT_MESA_26_3_44_A810_THROUGHPUT_CB.md
