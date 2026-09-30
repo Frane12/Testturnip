@@ -1,0 +1,40 @@
+name: Publish Drnas Turnip V57 Golden Record
+
+on:
+  push:
+    branches: ['frane-mesa-26.3.57-a810-profiled-tail-guard']
+    paths:
+      - '.github/workflows/publish-v57-golden-record.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out release notes
+        uses: actions/checkout@v4
+
+      - name: Download verified V57 build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          mkdir -p release-artifact
+          gh run download 36730728328             --repo "$GITHUB_REPOSITORY"             --name "Drnas-Turnip-V57"             --dir release-artifact
+          test -s release-artifact/Drnas-Turnip-V57.zip
+          test -s release-artifact/SHA256SUMS.txt
+          cd release-artifact
+          grep 'Drnas-Turnip-V57.zip' SHA256SUMS.txt | sha256sum -c -
+
+      - name: Publish V57 Golden Record release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="a810-v57-golden-record"
+          gh release delete "$TAG" -y --cleanup-tag || true
+          gh release create "$TAG"             release-artifact/Drnas-Turnip-V57.zip             release-artifact/SHA256SUMS.txt             --repo "$GITHUB_REPOSITORY"             --target "401ebe2d1be74410862c159da786784ad38f9e9b"             --title "Drnas Turnip V57 — Golden Record"             --notes-file EXPERIMENT_MESA_26_3_57_A810_PROFILED_TAIL_GUARD.md             --latest
