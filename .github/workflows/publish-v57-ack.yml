@@ -1,4 +1,5 @@
 name: Refresh Drnas Turnip V57 Release Notes
+# refresh: upstream links
 
 on:
   push:
