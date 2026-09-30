@@ -1,8 +1,8 @@
-name: Drnas Turnip V59 SCAN-LEARNER
+name: Drnas Turnip V60 FREQUENCY-AWARE-SCAN
 
 on:
   push:
-    branches: ['frane-mesa-26.3.59-a810-scan-learner']
+    branches: ['frane-mesa-26.3.60-a810-frequency-aware-scan']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-59-a810-scan-learner
+  group: frane-mesa-26-3-60-a810-frequency-aware-scan
   cancel-in-progress: true
 
 jobs:
@@ -152,6 +152,14 @@ jobs:
           echo "26.3.58 A810 TAIL-LEARNER policy"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26358_a810_tail_learner.cpp -o /tmp/mesa-26358-tail-learner
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26358-tail-learner
+
+          echo "26.3.59 A810 SCAN-LEARNER policy"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26359_a810_scan_learner.cpp -o /tmp/mesa-26359-scan-learner
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26359-scan-learner
+
+          echo "26.3.60 A810 FREQUENCY-AWARE-SCAN policy"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26360_a810_frequency_scan.cpp -o /tmp/mesa-26360-frequency-scan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26360-frequency-scan
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -941,6 +949,27 @@ jobs:
           grep -q 'TU_FRANE_GMEM_PRESSURE' mesa/src/freedreno/vulkan/tu_pass.cc
           grep -q 'TU_FRANE_CB_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.60 A810 FREQUENCY-AWARE-SCAN
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26360_a810_frequency_scan.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26360_a810_frequency_scan.cpp -o /tmp/mesa-26360-frequency-scan-post
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26360-frequency-scan-post
+          python3 patches/mesa_26360_a810_frequency_scan.py
+          git -C mesa add -N src/freedreno/vulkan/frane_mesa_26360_a810_frequency_scan.h
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip V60 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_FREQ", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_tail_occurrences' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_26360_decide_frequency_scan' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          grep -q 'occurrences < 16' mesa/src/freedreno/vulkan/frane_mesa_26360_a810_frequency_scan.h
+          grep -q 'occurrences < 1024' mesa/src/freedreno/vulkan/frane_mesa_26360_a810_frequency_scan.h
+          grep -q 'TU_FRANE_SCAN", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_LEARN", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_GMEM_TURBO", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_GMEM_PRESSURE' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_FRANE_CB_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -969,7 +998,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-V59.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-V60.zip
         run: |
           set -eu
           mkdir -p output
@@ -979,8 +1008,8 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip V59',
-            'description': 'Mesa Turnip A810 - V59 bounded scan + V58 tail learner',
+            'name': 'Drnas Turnip V60',
+            'description': 'Mesa Turnip A810 - V60 frequency-aware scan + V58 tail learner',
             'author': 'Frane12',
             'packageVersion': '1',
             'vendor': 'Mesa',
@@ -990,7 +1019,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V59.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-V60.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -999,7 +1028,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-V59.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-V60.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -1012,17 +1041,17 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-V59.zip verified')
+          print('Driver Drnas-Turnip-V60.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V59.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Drnas-Turnip-V59.zip and full source diff
+          sha256sum Drnas-Turnip-V60.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Drnas-Turnip-V60.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V59
+          name: Drnas-Turnip-V60
           path: |
-            Drnas-Turnip-V59.zip
+            Drnas-Turnip-V60.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1047,3 +1076,4 @@ jobs:
             EXPERIMENT_MESA_26_3_57_A810_PROFILED_TAIL_GUARD.md
             EXPERIMENT_MESA_26_3_58_A810_TAIL_LEARNER.md
             EXPERIMENT_MESA_26_3_59_A810_SCAN_LEARNER.md
+            EXPERIMENT_MESA_26_3_60_A810_FREQUENCY_AWARE_SCAN.md
