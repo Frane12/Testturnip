@@ -192,7 +192,7 @@ for needle in (
 ):
     assert needle in a, needle
 
-assert a.count("!frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer)") == 3
+assert a.count("!frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer)") == 4  # V49 three gates + V50 precondition
 assert a.count("frane_26350_depth_frontier(") == 3  # definition + 2 PROFILED call sites
 
 # Preserve GMEM allocator/search, LRZ-safe behavior and CB policy.
