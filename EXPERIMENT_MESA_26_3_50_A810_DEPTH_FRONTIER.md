@@ -24,7 +24,7 @@ Exact V49 behavior. This is the baseline.
 TU_A810_26350_DEPTH_FRONTIER_MODE=1
 ```
 
-If the normal PROFILED/BANDWIDTH decision chose SYSMEM, force GMEM **only for
+If the normal PROFILED decision chose SYSMEM, force GMEM **only for
 currently-safe A810 passes whose GMEM layout contains depth but no stencil**.
 
 This is the clean first test for Crysis.
