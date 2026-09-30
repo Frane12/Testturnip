@@ -113,6 +113,58 @@ int main()
    }
 
    {
+      /* Sampling imbalance must not manufacture confidence. The paired-sample
+       * counter only advances when both modes have a new observation. */
+      frane_26358_tail_state state {};
+      for (uint32_t i = 0; i < 12; i++)
+         state = frane_26358_update_tail_state(state, true, 100);
+
+      assert(state.sysmem.samples == 12);
+      assert(state.gmem.samples == 0);
+      assert(state.paired_samples == 0);
+      assert(!state.ready);
+      assert(state.score == 0);
+
+      state = frane_26358_update_tail_state(state, false, 90);
+      assert(state.paired_samples == 1);
+      assert(!state.ready);
+      assert(state.score == 0);
+   }
+
+   {
+      /* The learner must be able to reverse a previously strong preference
+       * after the workload regime changes. This protects against a stale
+       * "winner" becoming permanent across a long-running game. */
+      frane_26358_tail_state state {};
+      for (uint32_t i = 0; i < 16; i++) {
+         state = frane_26358_update_tail_state(state, true, 100);
+         state = frane_26358_update_tail_state(state, false, 75);
+      }
+      assert(state.score >= 7);
+
+      for (uint32_t i = 0; i < 16; i++) {
+         state = frane_26358_update_tail_state(state, true, 85);
+         state = frane_26358_update_tail_state(state, false, 130);
+      }
+      assert(state.score <= -7);
+      assert(frane_26358_tail_cost(state.sysmem) <
+             frane_26358_tail_cost(state.gmem));
+   }
+
+   {
+      /* Zero-duration / invalid timing samples are ignored and therefore
+       * cannot move the learner or complete a false sample pair. */
+      frane_26358_tail_state state {};
+      state = frane_26358_update_tail_state(state, true, 0);
+      state = frane_26358_update_tail_state(state, false, 0);
+      assert(state.sysmem.samples == 0);
+      assert(state.gmem.samples == 0);
+      assert(state.paired_samples == 0);
+      assert(!state.ready);
+      assert(state.score == 0);
+   }
+
+   {
       /* Weak evidence never replaces PROFILED. */
       frane_26358_tail_snapshot s {};
       s.ready = true;
