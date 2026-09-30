@@ -110,6 +110,16 @@ edit(
 )
 
 edit(
+    "src/freedreno/vulkan/tu_autotune.cc",
+    """         runtime_input.tail_scan =
+            frane_a810_tail_scan_enabled(device);""",
+    """         runtime_input.tail_scan =
+            frane_a810_tail_scan_enabled(device) &&
+            frane_a810_tail_learner_enabled(device);""",
+    "make scan depend on its learner state",
+)
+
+edit(
     "src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h",
     """      const auto scan = in.tail_frequency
          ? frane_26360_decide_frequency_scan(
@@ -178,9 +188,12 @@ for needle in (
 
 assert "(in.tail_signature && in.tail_frequency)" in h20
 
+assert "frane_a810_tail_scan_enabled(device) &&" in a
+assert "frane_a810_tail_learner_enabled(device);" in a
+
 for needle in (
-    "learned.paired_samples >= 4",
-    "learned.paired_samples >= 2",
+    "if (paired >= 4)",
+    "else if (paired >= 2)",
     "target = 6",
     "confidence >= 4",
     "frane_26361_sat_mul",
