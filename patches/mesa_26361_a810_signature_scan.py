@@ -119,7 +119,7 @@ edit(
               in.tail_scan, true, scan_snapshot,
               sysmem_probability, decision_word);
 """,
-    """      const auto scan = in.tail_signature
+    """      const auto scan = (in.tail_signature && in.tail_frequency)
          ? frane_26361_decide_signature_scan(
               in.tail_scan, true, scan_snapshot,
               in.tail_learner_word,
