@@ -1,8 +1,8 @@
-name: Drnas Turnip V54 UPPER-PROBE
+name: Drnas Turnip V55 DEPTH-DUAL-BAND
 
 on:
   push:
-    branches: ['frane-mesa-26.3.54-a810-depth-upper-probe']
+    branches: ['frane-mesa-26.3.55-a810-depth-dual-band']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-54-a810-depth-upper-probe
+  group: frane-mesa-26-3-55-a810-depth-dual-band
   cancel-in-progress: true
 
 jobs:
@@ -833,6 +833,21 @@ jobs:
           grep -q 'TU_FRANE_GMEM_PRESSURE' mesa/src/freedreno/vulkan/tu_pass.cc
           grep -q 'TU_FRANE_CB_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.55 A810 DEPTH-DUAL-BAND
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26355_a810_depth_dual_band.py
+          python3 patches/mesa_26355_a810_depth_dual_band.py
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip V55 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_DEPTH_DRAWS", 16' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_DEPTH_MAX", 23' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_DEPTH_BAND2_MIN", 32' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_DEPTH_BAND2_MAX", 39' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'in_secondary' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_GMEM_PRESSURE' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_FRANE_CB_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -861,7 +876,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-V54.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-V55.zip
         run: |
           set -eu
           mkdir -p output
@@ -871,8 +886,8 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip V54',
-            'description': 'Mesa Turnip A810 - V54 upper-frontier probe, default depth window 16..31',
+            'name': 'Drnas Turnip V55',
+            'description': 'Mesa Turnip A810 - V55 depth dual-band probe, defaults 16..23 + 32..39',
             'author': 'Frane12',
             'packageVersion': '1',
             'vendor': 'Mesa',
@@ -882,7 +897,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V54.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-V55.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -891,7 +906,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-V54.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-V55.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -904,31 +919,31 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-V54.zip verified')
+          print('Driver Drnas-Turnip-V55.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V54.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-V55.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Publish direct-download GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          TAG="a810-v54-depth-upper-probe"
+          TAG="a810-v55-depth-dual-band"
           gh release delete "$TAG" -y --cleanup-tag || true
           gh release create "$TAG" \
-            Drnas-Turnip-V54.zip \
+            Drnas-Turnip-V55.zip \
             SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "Drnas Turnip V54 UPPER-PROBE" \
+            --title "Drnas Turnip V55 DEPTH-DUAL-BAND" \
             --prerelease \
-            --notes-file EXPERIMENT_MESA_26_3_54_A810_DEPTH_UPPER_PROBE.md
-      - name: Upload compiled Drnas-Turnip-V54.zip and full source diff
+            --notes-file EXPERIMENT_MESA_26_3_55_A810_DEPTH_DUAL_BAND.md
+      - name: Upload compiled Drnas-Turnip-V55.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V54
+          name: Drnas-Turnip-V55
           path: |
-            Drnas-Turnip-V54.zip
+            Drnas-Turnip-V55.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -948,3 +963,4 @@ jobs:
             EXPERIMENT_MESA_26_3_52_A810_CLEAN_INTERFACE.md
             EXPERIMENT_MESA_26_3_53_A810_DEPTH_WINDOW.md
             EXPERIMENT_MESA_26_3_54_A810_DEPTH_UPPER_PROBE.md
+            EXPERIMENT_MESA_26_3_55_A810_DEPTH_DUAL_BAND.md
