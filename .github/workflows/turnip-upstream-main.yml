@@ -987,7 +987,7 @@ jobs:
           grep -q 'TU_FRANE_SIG", true' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'runtime_input.tail_signature' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'frane_26361_decide_signature_scan' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
-          grep -q 'learned.paired_samples >= 4' mesa/src/freedreno/vulkan/frane_mesa_26361_a810_signature_scan.h
+          grep -q 'if (paired >= 4)' mesa/src/freedreno/vulkan/frane_mesa_26361_a810_signature_scan.h
           grep -q 'confidence >= 4' mesa/src/freedreno/vulkan/frane_mesa_26361_a810_signature_scan.h
           grep -q 'TU_FRANE_FREQ", true' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_FRANE_SCAN", true' mesa/src/freedreno/vulkan/tu_autotune.cc
@@ -1002,10 +1002,13 @@ jobs:
           for forbidden in ('malloc(', 'calloc(', 'realloc(', 'new ', 'pthread_', 'std::mutex', 'sleep(', 'usleep(', 'while (', 'while('):
               assert forbidden not in h, forbidden
           assert 'frane_26361_sat_mul' in h
+          assert 'const uint8_t paired =' in h
+          assert 'if (paired >= 4)' in h
           assert 'probe_log2 > 6' in h
           a = Path('mesa/src/freedreno/vulkan/tu_autotune.cc').read_text()
           assert a.count('frane_tail_occurrences.fetch_add') == 1
           assert a.count('runtime_input.tail_signature') == 1
+          assert 'frane_a810_tail_scan_enabled(device) &&\n            frane_a810_tail_learner_enabled(device)' in a
           t = Path('mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h').read_text()
           assert t.count('frane_26361_decide_signature_scan') == 1
           assert 'frane_26358_decide_tail_learner' in t
