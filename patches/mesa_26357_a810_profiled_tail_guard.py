@@ -72,25 +72,13 @@ edit(
 
 edit(
     "src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h",
-    """{
-   auto out = frane_26318_decide_smart_gmem(
-      true, in, state, sysmem_probability, decision_word);
-
-   if (!enabled)
-      return out;
-
-   const auto eval = frane_26318_eval_smart_gmem(in);
+    """   const auto eval = frane_26318_eval_smart_gmem(in);
    if (!eval.eligible)
       return out;
 """,
-    """{
-   if (!enabled)
-      return frane_26318_decide_smart_gmem(
-         true, in, state, sysmem_probability, decision_word);
-
-   const auto eval = frane_26318_eval_smart_gmem(in);
+    """   const auto eval = frane_26318_eval_smart_gmem(in);
    if (!eval.eligible)
-      return frane_26318_smart_gmem_decision {};
+      return out;
 
    frane_26357_tail_guard_input tail {};
    tail.enabled = in.tail_guard;
@@ -106,9 +94,6 @@ edit(
 
    if (frane_26357_eval_tail_guard(tail).defer_to_profiled)
       return frane_26318_smart_gmem_decision {};
-
-   auto out = frane_26318_decide_smart_gmem(
-      true, in, state, sysmem_probability, decision_word);
 """,
     "defer costly tail passes to Mesa PROFILED",
 )
