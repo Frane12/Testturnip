@@ -51,18 +51,18 @@ edit(
     """static bool
 frane_a810_live_profiled(const struct tu_device *device)
 {""",
-    r"""static render_mode
+    r"""static tu_autotune::render_mode
 frane_26350_depth_frontier(const struct tu_device *device,
                            const struct tu_cmd_state *cmd_state,
                            const struct tu_render_pass *pass,
                            const struct tu_framebuffer *framebuffer,
-                           render_mode current,
+                           tu_autotune::render_mode current,
                            bool *measure)
 {
    static const int mode =
       debug_get_num_option("TU_A810_26350_DEPTH_FRONTIER_MODE", 0);
 
-   if (mode <= 0 || current != render_mode::SYSMEM ||
+   if (mode <= 0 || current != tu_autotune::render_mode::SYSMEM ||
        !frane_a810_gmem_safety_enabled(device) ||
        !frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer) ||
        !pass)
@@ -93,7 +93,7 @@ frane_26350_depth_frontier(const struct tu_device *device,
    if (measure)
       *measure = false;
 
-   return render_mode::GMEM;
+   return tu_autotune::render_mode::GMEM;
 }
 
 static bool
