@@ -12,7 +12,7 @@ TU_A810_26350_DEPTH_FRONTIER_MODE=0 (default)
     Exact V49 behavior.
 
 =1
-    For A810 only, if PROFILED/BANDWIDTH selected SYSMEM but the existing V26
+    For A810 only, if PROFILED selected SYSMEM but the existing V26
     safety classifier says the pass is safe, force GMEM only when the GMEM
     layout contains depth and no stencil.
 
@@ -152,29 +152,8 @@ edit(
     "wire depth frontier into non-fast PROFILED path",
 )
 
-# BANDWIDTH path.
-edit(
-    "src/freedreno/vulkan/tu_autotune.cc",
-    r"""      if (mode == render_mode::GMEM &&
-          !frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer))
-         mode = render_mode::SYSMEM;
-      return mode;
-   }
-
-   return render_mode::SYSMEM;
-}""",
-    r"""      mode = frane_26350_depth_frontier(
-         device, cmd_state, pass, framebuffer, mode, nullptr);
-      if (mode == render_mode::GMEM &&
-          !frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer))
-         mode = render_mode::SYSMEM;
-      return mode;
-   }
-
-   return render_mode::SYSMEM;
-}""",
-    "wire depth frontier into BANDWIDTH path",
-)
+# Crysis/Winlator testing uses PROFILED. Keep BANDWIDTH untouched so this build
+# changes only the path we are actually benchmarking.
 
 edit(
     "src/freedreno/vulkan/tu_device.cc",
@@ -214,7 +193,7 @@ for needle in (
     assert needle in a, needle
 
 assert a.count("!frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer)") == 3
-assert a.count("frane_26350_depth_frontier(") == 4  # definition + 3 call sites
+assert a.count("frane_26350_depth_frontier(") == 3  # definition + 2 PROFILED call sites
 
 # Preserve GMEM allocator/search, LRZ-safe behavior and CB policy.
 assert 'TU_A810_26339_GMEM_PRESSURE_BOUND", true' in passcc
