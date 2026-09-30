@@ -1,11 +1,27 @@
-# TestTurnip — experimental Android Turnip build
+# Drnas Turnip — experimental A810 Turnip work
 
-Build target: Mesa **26.1.4** (commit `6dfbc555b4128ee51139c5f78c5aba2594c9701b`), Android arm64, KGSL.
+Public development repository for our Android **Adreno 810 / Turnip** experiments.
 
-## Build
+The current work tracks upstream Mesa/Turnip and focuses on measured GMEM/SYSMEM policy, GMEM allocation/search, depth handling, LRZ-safe behavior, concurrent binning, shader/pipeline efficiency and Winlator-oriented testing.
 
-Open **Actions → Build Turnip Android → Run workflow**. On success, download the `turnip-mesa-26.1.4-android-arm64` artifact. It contains `libvulkan_freedreno.so` and `meta.json`, packaged in a ZIP for testing in compatible driver loaders.
+## Public milestone builds
 
-This is a baseline upstream build, **not** a verified A810/A830-specific GMEM optimization. A build success does not establish device compatibility, stability, or improved FPS/RAM. Test with a known-good driver available for rollback. Do not flash the system vendor partition.
+To keep the Releases page readable, only milestone/reference builds are meant to stay public:
 
-The workflow checks out an exact upstream Mesa commit, configures Meson for Android arm64/KGSL, and only publishes an artifact after the shared library is produced. Build logs are available in Actions.
+- **V39 — GMEM-PRESSURE**: stronger future-aware GMEM search/pressure bound.
+- **V47 — CB-PROFILER**: concurrent-binning profiling/control milestone.
+- **V52 — CLEAN-INTERFACE**: standardized short `TU_FRANE_*` test controls.
+- **V54 — UPPER-PROBE**: preserved reference build for the current Crysis depth/GMEM work.
+- **V56 — GMEM-HARD-PUSH**: current aggressive measured GMEM boundary experiment.
+
+Intermediate builds are development probes. Their public Release entries may be removed once they have answered the question they were built for. The source branches/commit history are kept for development and comparison.
+
+## Testing
+
+These are experimental Android ARM64 KGSL drivers, not general-purpose stable releases. Use a known-good driver as rollback and compare builds under the same game, scene, resolution, DXVK/Wine/Proton setup and benchmark pass count.
+
+For the current A810 work, environment controls use the short `TU_FRANE_*` namespace. Experimental defaults are normally baked into the test build so the first benchmark run should be done **without extra variables** unless the release notes say otherwise.
+
+## Scope
+
+The project does not modify the Android vendor partition. Builds are packaged for compatible userspace driver loaders such as AdrenoTools/Winlator-style setups.
