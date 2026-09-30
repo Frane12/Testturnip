@@ -95,29 +95,13 @@ edit(
 
 edit(
     "src/freedreno/vulkan/tu_autotune.cc",
-    """      if (entry_config.test(metric_flag::TS)) {
-         if (entry.sysmem) {
-            uint64_t rp_duration = entry.get_rp_duration();
-
-            sysmem_rp_average.add(rp_duration);
-         } else {
-            gmem_rp_average.add(entry.get_rp_duration());
-
-            if (entry_config.test(metric_flag::TS_TILE) && at_config.test(mod_flag::PREEMPT_OPTIMIZE))
+    """            if (entry_config.test(metric_flag::TS_TILE) && at_config.test(mod_flag::PREEMPT_OPTIMIZE))
                preempt_optimize.update_gmem(*this, entry.get_max_tile_duration());
          }
 
          if (at_config.is_enabled(algorithm::PROFILED) || at_config.is_enabled(algorithm::PROFILED_IMM)) {
 """,
-    """      if (entry_config.test(metric_flag::TS)) {
-         const uint64_t rp_duration = entry.get_rp_duration();
-
-         if (entry.sysmem) {
-            sysmem_rp_average.add(rp_duration);
-         } else {
-            gmem_rp_average.add(rp_duration);
-
-            if (entry_config.test(metric_flag::TS_TILE) && at_config.test(mod_flag::PREEMPT_OPTIMIZE))
+    """            if (entry_config.test(metric_flag::TS_TILE) && at_config.test(mod_flag::PREEMPT_OPTIMIZE))
                preempt_optimize.update_gmem(*this, entry.get_max_tile_duration());
          }
 
