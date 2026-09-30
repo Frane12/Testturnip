@@ -69,8 +69,9 @@ edit(
     """         static const int frane_26348_sticky_mode =
             debug_get_num_option("TU_A810_26348_GMEM_STICKY_MODE", 2);
          static const int frane_26349_frontier_mode =
-            std::clamp(debug_get_num_option(
-               "TU_A810_26349_GMEM_FRONTIER_MODE", 2), 0, 4);
+            static_cast<int>(std::clamp<int64_t>(
+               debug_get_num_option("TU_A810_26349_GMEM_FRONTIER_MODE", 2),
+               INT64_C(0), INT64_C(4)));
          bool frane_26348_suppress_live_probe = false;""",
     "add bounded frontier mode selector",
 )
