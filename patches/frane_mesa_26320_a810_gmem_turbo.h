@@ -5,7 +5,8 @@
 #ifndef FRANE_MESA_26320_A810_GMEM_TURBO_H
 #define FRANE_MESA_26320_A810_GMEM_TURBO_H
 
-#include "frane_mesa_26318_a810_smart_gmem.h"\n#include "frane_mesa_26357_a810_tail_guard.h"
+#include "frane_mesa_26318_a810_smart_gmem.h"
+#include "frane_mesa_26357_a810_tail_guard.h"
 
 static inline frane_26318_smart_gmem_decision
 frane_26320_decide_gmem_turbo(bool enabled,
