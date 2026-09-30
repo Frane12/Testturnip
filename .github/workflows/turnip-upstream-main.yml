@@ -1,8 +1,8 @@
-name: Frane Mesa 26.3.20 A830 PORT-BOOST
+name: Drnas Turnip A830 V2 ADAPTIVE-GMEM
 
 on:
   push:
-    branches: ['frane-mesa-26.3.20-a830-port-boost']
+    branches: ['drnas-a830-v2-adaptive-gmem']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-20-a830-port-boost
+  group: drnas-a830-v2-adaptive-gmem
   cancel-in-progress: true
 
 jobs:
@@ -459,6 +459,27 @@ jobs:
           PYCODE
           git -C mesa diff > mesa-applied.patch
           test -s mesa-applied.patch
+      - name: Apply and verify Drnas A830 V2 ADAPTIVE-GMEM
+        run: |
+          set -eu
+          python3 -m py_compile patches/a830_v2_adaptive_gmem.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/a830_v2_adaptive_gmem.cpp -o /tmp/a830-v2-adaptive-gmem
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/a830-v2-adaptive-gmem
+          python3 patches/a830_v2_adaptive_gmem.py
+          git -C mesa add -N src/freedreno/vulkan/frane_a830_v2_adaptive_gmem.h
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip A830 V2 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_A830_BOOST", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_A830_LEARN", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_a830_v2_update_tail' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_a830_v2_decide' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'layout.structure_score >= 80' mesa/src/freedreno/vulkan/frane_a830_v2_adaptive_gmem.h
+          grep -q 'paired_samples < 8' mesa/src/freedreno/vulkan/frane_a830_v2_adaptive_gmem.h
+          grep -q 'TU_A830_26320_PROFILED_GMEM' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A830_26320_SMART_GMEM' mesa/src/freedreno/vulkan/tu_autotune.cc
+          ! grep -q 'TU_A830_PWR_MAX' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
+          ! grep -q 'TU_A830_SAMPLED_DEPTH_DIAG' mesa/src/freedreno/vulkan/tu_image.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -487,7 +508,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Frane-Mesa-26.3.20-A830-PORT-BOOST.zip and provenance
+      - name: Package standard AdrenoTools Drnas-Turnip-A830-V2.zip
         run: |
           set -eu
           mkdir -p output
@@ -496,19 +517,19 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Frane Mesa 26.3.20 A830 PORT-BOOST',
-            'driverVersion': f'Frane Mesa 26.3.20 A830 PORT-BOOST (base {version})', 'description': 'A830/8 Elite port: PROFILED turbo, measured+SMART GMEM, bounded NIR cache, hot-RP fastpath, IR3/prefetch/adaptive scheduler; keeps A810-only risky hacks isolated',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '26.3.20-a830-port-boost-eeca16aa',
+            'schemaVersion': 1, 'name': 'Drnas Turnip A830 V2',
+            'driverVersion': f'Drnas Turnip A830 V2 (base Mesa {version})', 'description': 'A830/8 Elite: measured adaptive GMEM hold + tail-aware per-render-pass learner on validated PORT-BOOST',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': 'a830-v2-adaptive-gmem',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Frane-Mesa-26.3.20-A830-PORT-BOOST.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-A830-V2.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Frane-Mesa-26.3.20-A830-PORT-BOOST.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-A830-V2.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -518,41 +539,21 @@ jobs:
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Frane-Mesa-26.3.20-A830-PORT-BOOST.zip verified')
+          print('Driver Drnas-Turnip-A830-V2.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Frane-Mesa-26.3.20-A830-PORT-BOOST.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Frane-Mesa-26.3.20-A830-PORT-BOOST.zip and full source diff
+          sha256sum Drnas-Turnip-A830-V2.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Drnas-Turnip-A830-V2.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Frane-Mesa-26.3.20-A830-PORT-BOOST
+          name: Drnas-Turnip-A830-V2
           path: |
-            Frane-Mesa-26.3.20-A830-PORT-BOOST.zip
+            Drnas-Turnip-A830-V2.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
             EXPERIMENT_MESA_26_3_20_A830_PORT_BOOST.md
-      - name: Publish experimental driver with source and checksums
-        if: github.event_name == 'push' && github.ref == 'refs/heads/frane-mesa-26.3.20-a830-port-boost'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view frane-mesa-26.3.20-a830-port-boost >/dev/null 2>&1; then
-            gh release upload frane-mesa-26.3.20-a830-port-boost \
-              Frane-Mesa-26.3.20-A830-PORT-BOOST.zip \
-              mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
-              --clobber
-            gh release edit frane-mesa-26.3.20-a830-port-boost --target "$GITHUB_SHA" \
-              --title 'Frane Mesa 26.3.20 A830 PORT-BOOST (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_20_A830_PORT_BOOST.md
-          else
-            gh release create frane-mesa-26.3.20-a830-port-boost \
-              Frane-Mesa-26.3.20-A830-PORT-BOOST.zip \
-              mesa-applied.patch SHA256SUMS.txt mesa-commit.txt frane-commit.txt driver-sha256.txt \
-              --target "$GITHUB_SHA" --prerelease \
-              --title 'Frane Mesa 26.3.20 A830 PORT-BOOST (experimental)' \
-              --notes-file EXPERIMENT_MESA_26_3_20_A830_PORT_BOOST.md
-          fi
+            DRNAS_A830_V2_ADAPTIVE_GMEM.md
