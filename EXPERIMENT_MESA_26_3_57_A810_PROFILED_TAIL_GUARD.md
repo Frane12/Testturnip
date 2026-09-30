@@ -78,7 +78,7 @@ The direction of the project is therefore becoming more selective: fewer blunt s
 
 This work exists because of the open-source work done upstream.
 
-Thanks to the **Mesa**, **Freedreno** and **Turnip** developers for building and maintaining the driver stack this project is based on, and to **diskdvd** for the A810-focused experiments and public work that helped inform parts of our own testing and direction.
+Thanks to the [**Mesa**](https://gitlab.freedesktop.org/mesa/mesa), **Freedreno** and **Turnip** developers for building and maintaining the driver stack this project is based on, and to @DiskDVD for the A810-focused experiments and public work that helped inform parts of our own testing and direction.
 
 Drnas Turnip is downstream experimental work on top of that foundation. We are grateful to everyone who publishes code, measurements and ideas openly enough for others to study, test and improve on.
 
