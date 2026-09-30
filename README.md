@@ -4,13 +4,13 @@ Public development repository for our Android **Adreno 810 / Turnip** experiment
 
 The current work tracks upstream Mesa/Turnip and focuses on measured GMEM/SYSMEM policy, GMEM allocation/search, depth handling, LRZ-safe behavior, concurrent binning, shader/pipeline efficiency and Winlator-oriented testing.
 
-## Current Golden Record
+## Current reference release
 
-**V57 — PROFILED-TAIL-GUARD** is the current A810 reference build.
+**V57 — PROFILED-TAIL-GUARD** is the current A810 reference release.
 
 It keeps V56's aggressive measured GMEM policy, then adds a targeted guard for depth/stencil-heavy multi-tile passes where GMEM replay can become more expensive than the win it was supposed to create. When the guard identifies that kind of tail workload, it does not blindly force SYSMEM; it returns the decision to Mesa's measured PROFILED autotuner.
 
-The first Golden Record validation used the built-in **Crysis / CryEngine 2 GPU TimeDemo** for three consecutive passes:
+The current reference validation used the built-in **Crysis / CryEngine 2 GPU TimeDemo** for three consecutive passes:
 
 | Pass | Average FPS | Minimum FPS | Maximum FPS |
 |---|---:|---:|---:|
@@ -31,7 +31,7 @@ To keep the Releases page readable, only milestone/reference builds are meant to
 - **V52 — CLEAN-INTERFACE**: standardized short `TU_FRANE_*` test controls.
 - **V54 — UPPER-PROBE**: preserved reference build for the Crysis depth/GMEM work.
 - **V56 — GMEM-HARD-PUSH**: aggressive measured GMEM boundary milestone.
-- **V57 — PROFILED-TAIL-GUARD / Golden Record**: current reference; keeps the V56 fast path and adds a measured escape path for expensive tail passes.
+- **V57 — PROFILED-TAIL-GUARD**: current reference; keeps the V56 fast path and adds a measured escape path for expensive tail passes.
 
 Intermediate builds are development probes. Their public Release entries may be removed once they have answered the question they were built for. The source branches/commit history are kept for development and comparison.
 
