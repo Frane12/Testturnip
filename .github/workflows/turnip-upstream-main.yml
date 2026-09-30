@@ -939,6 +939,32 @@ jobs:
       - name: Record package checksums
         run: |
           sha256sum Drnas-Turnip-V56.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Curate public milestone releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          # Keep public milestones: V39, V47, V52, V54 and the active V56.
+          # Remove only intermediate release entries/assets; development
+          # branches and commit history stay intact for our own work.
+          for tag in \
+            a810-v40-vb-rebind-fastpath \
+            a810-v41-clean-draw-fastpath \
+            a810-v42-clean-draw-v2 \
+            a810-v43-light-dirty-draw \
+            a810-v44-throughput-cb \
+            a810-v45-adaptive-cb \
+            a810-v46-cb-pressure \
+            a810-v48-gmem-sticky \
+            a810-v49-gmem-frontier \
+            a810-v50-depth-frontier \
+            a810-v51-depth-heavy \
+            a810-v53-depth-window \
+            a810-v55-depth-dual-band
+          do
+            gh release delete "$tag" -y --cleanup-tag || true
+          done
+
       - name: Publish direct-download GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
