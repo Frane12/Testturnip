@@ -14,6 +14,8 @@ struct frane_26318_smart_gmem_input {
    frane_2634_gmem_layout_input layout {};
    uint32_t sysmem_bandwidth_per_pixel = 0;
    uint32_t gmem_bandwidth_per_pixel = 0;
+   bool tail_guard = false;
+   bool zs_load_store = false;
 };
 
 struct frane_26318_smart_gmem_eval {
