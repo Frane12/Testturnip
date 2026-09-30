@@ -49,6 +49,55 @@ shutil.copyfile(
     V / "frane_mesa_26357_a810_tail_guard.h",
 )
 
+edit(
+    "src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h",
+    '#include "frane_mesa_26318_a810_smart_gmem.h"',
+    '#include "frane_mesa_26318_a810_smart_gmem.h"\n'
+    '#include "frane_mesa_26357_a810_tail_guard.h"',
+    "include V57 pure tail policy",
+)
+
+edit(
+    "src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h",
+    """   uint32_t sysmem_bandwidth_per_pixel = 0;
+   uint32_t gmem_bandwidth_per_pixel = 0;
+};""",
+    """   uint32_t sysmem_bandwidth_per_pixel = 0;
+   uint32_t gmem_bandwidth_per_pixel = 0;
+   bool tail_guard = false;
+   bool zs_load_store = false;
+};""",
+    "extend smart input with tail context",
+)
+
+edit(
+    "src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h",
+    """   const auto eval = frane_26318_eval_smart_gmem(in);
+   if (!eval.eligible)
+      return out;
+""",
+    """   const auto eval = frane_26318_eval_smart_gmem(in);
+   if (!eval.eligible)
+      return out;
+
+   frane_26357_tail_guard_input tail {};
+   tail.enabled = in.tail_guard;
+   tail.zs_load_store = in.zs_load_store;
+   tail.pass_pixels = in.layout.pass_pixels;
+   tail.estimated_tiles = eval.estimated_tiles;
+   tail.drawcalls = in.layout.drawcalls;
+   tail.sysmem_bandwidth_per_pixel = in.sysmem_bandwidth_per_pixel;
+   tail.gmem_bandwidth_per_pixel = in.gmem_bandwidth_per_pixel;
+   tail.measured_score = state.score;
+   tail.measured_armed = state.armed;
+   tail.sysmem_probability = sysmem_probability;
+
+   if (frane_26357_eval_tail_guard(tail).defer_to_profiled)
+      return frane_26318_smart_gmem_decision {};
+""",
+    "defer costly tail passes to Mesa PROFILED",
+)
+
 
 edit(
     "src/freedreno/vulkan/tu_autotune.cc",
