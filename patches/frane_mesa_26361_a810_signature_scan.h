@@ -128,15 +128,18 @@ frane_26361_decide_signature_scan(bool enabled,
 
    uint8_t target = 0;
    uint32_t activation = sig.start_occurrences;
+   const uint8_t paired =
+      scan.sysmem_samples < scan.gmem_samples ?
+      scan.sysmem_samples : scan.gmem_samples;
 
    if (!learned.ready) {
       /* Do not pay for samples that cannot possibly make the learner useful.
        * Natural PROFILED samples reduce how long we wait before rescuing a
        * starved history.
        */
-      if (learned.paired_samples >= 4)
+      if (paired >= 4)
          activation = sig.start_occurrences;
-      else if (learned.paired_samples >= 2)
+      else if (paired >= 2)
          activation = frane_26361_sat_mul(sig.start_occurrences, 2);
       else
          activation = frane_26361_sat_mul(sig.start_occurrences, 4);
