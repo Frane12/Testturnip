@@ -176,6 +176,8 @@ for needle in (
 ):
     assert needle in h20, needle
 
+assert "(in.tail_signature && in.tail_frequency)" in h20
+
 for needle in (
     "learned.paired_samples >= 4",
     "learned.paired_samples >= 2",
