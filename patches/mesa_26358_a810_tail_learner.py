@@ -82,10 +82,8 @@ frane_a810_tail_guard_enabled(const struct tu_device *device)
 
 edit(
     "src/freedreno/vulkan/tu_autotune.cc",
-    """   frane_2634_gmem_state frane_gmem_runtime_state {};
-   std::atomic<uint32_t> frane_gmem_runtime_word { 0 };""",
-    """   frane_2634_gmem_state frane_gmem_runtime_state {};
-   std::atomic<uint32_t> frane_gmem_runtime_word { 0 };
+    """   std::atomic<uint32_t> frane_gmem_runtime_word { 0 };""",
+    """   std::atomic<uint32_t> frane_gmem_runtime_word { 0 };
 
    /* V58 state is submit-thread owned. Recording threads only read the packed
     * atomic snapshot, matching the existing A810 GMEM runtime ownership model.
