@@ -1,8 +1,8 @@
-name: Drnas Turnip V57 PROFILED-TAIL-GUARD
+name: Drnas Turnip V58 TAIL-REGIME
 
 on:
   push:
-    branches: ['frane-mesa-26.3.57-a810-profiled-tail-guard']
+    branches: ['frane-mesa-26.3.58-a810-tail-regime']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-57-a810-profiled-tail-guard
+  group: frane-mesa-26-3-58-a810-tail-regime
   cancel-in-progress: true
 
 jobs:
@@ -148,6 +148,10 @@ jobs:
           echo "26.3.57 A810 PROFILED-TAIL-GUARD policy"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26357_a810_tail_guard.cpp -o /tmp/mesa-26357-tail-guard
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26357-tail-guard
+
+          echo "26.3.58 A810 TAIL-REGIME policy"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26358_a810_tail_regime.cpp -o /tmp/mesa-26358-tail-regime
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26358-tail-regime
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -895,6 +899,26 @@ jobs:
           grep -q 'TU_FRANE_GMEM_PRESSURE' mesa/src/freedreno/vulkan/tu_pass.cc
           grep -q 'TU_FRANE_CB_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.58 A810 TAIL-REGIME
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26358_a810_tail_regime.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26358_a810_tail_regime.cpp -o /tmp/mesa-26358-tail-regime-post
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26358-tail-regime-post
+          python3 patches/mesa_26358_a810_tail_regime.py
+          git -C mesa add -N src/freedreno/vulkan/frane_mesa_26358_a810_tail_regime.h
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip V58 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_TAIL", 2' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'runtime_input.tail_mode' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_26358_eval_tail_regime(tail).defer_to_profiled' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          grep -q 'out.replay_work >= 256' mesa/src/freedreno/vulkan/frane_mesa_26358_a810_tail_regime.h
+          grep -q 'in.sysmem_probability >= 35' mesa/src/freedreno/vulkan/frane_mesa_26358_a810_tail_regime.h
+          grep -q 'TU_FRANE_GMEM_TURBO", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_GMEM_PRESSURE' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_FRANE_CB_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          git -C mesa diff > mesa-applied.patch
+
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -923,7 +947,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-V57.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-V58.zip
         run: |
           set -eu
           mkdir -p output
@@ -933,8 +957,8 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip V57',
-            'description': 'Mesa Turnip A810 - V57 PROFILED tail guard on V56 hard-push',
+            'name': 'Drnas Turnip V58',
+            'description': 'Mesa Turnip A810 - V58 tail-regime guard on V57/V56 policy',
             'author': 'Frane12',
             'packageVersion': '1',
             'vendor': 'Mesa',
@@ -944,7 +968,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V57.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-V58.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -953,7 +977,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-V57.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-V58.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -966,11 +990,11 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-V57.zip verified')
+          print('Driver Drnas-Turnip-V58.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V57.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-V58.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Curate public milestone releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -997,12 +1021,12 @@ jobs:
             gh release delete "$tag" -y --cleanup-tag || true
           done
 
-      - name: Upload compiled Drnas-Turnip-V57.zip and full source diff
+      - name: Upload compiled Drnas-Turnip-V58.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V57
+          name: Drnas-Turnip-V58
           path: |
-            Drnas-Turnip-V57.zip
+            Drnas-Turnip-V58.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1025,3 +1049,4 @@ jobs:
             EXPERIMENT_MESA_26_3_55_A810_DEPTH_DUAL_BAND.md
             EXPERIMENT_MESA_26_3_56_A810_GMEM_HARD_PUSH.md
             EXPERIMENT_MESA_26_3_57_A810_PROFILED_TAIL_GUARD.md
+            EXPERIMENT_MESA_26_3_58_A810_TAIL_REGIME.md
