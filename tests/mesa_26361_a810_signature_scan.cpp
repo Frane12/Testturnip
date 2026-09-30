@@ -91,10 +91,24 @@ int main()
    }
 
    {
-      /* Expensive hostile exploration is throttled aggressively. */
+      /* A stale/newer learner word must not open rescue before the coherent
+       * per-mode scan snapshot itself contains enough paired evidence.
+       */
       frane_26359_scan_snapshot s {};
       s.sysmem_samples = 0;
       s.gmem_samples = 1;
+      const auto d = frane_26361_decide_signature_scan(
+         true, true, s, learner_word(0, 4, false),
+         256, 800, 2560ull * 1440ull, 12, 128, true,
+         50, UINT64_C(0));
+      assert(!d.override_mode);
+   }
+
+   {
+      /* Expensive hostile exploration is throttled aggressively. */
+      frane_26359_scan_snapshot s {};
+      s.sysmem_samples = 4;
+      s.gmem_samples = 5;
       auto d = frane_26361_decide_signature_scan(
          true, true, s, learner_word(0, 4, false),
          256, 800, 2560ull * 1440ull, 12, 128, true,
