@@ -72,12 +72,12 @@ edit(
 
 edit(
     "src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h",
-    """   const auto eval = frane_26318_eval_smart_gmem(in);
-   if (!eval.eligible)
+    """   if (!eval.eligible)
       return out;
+
+   if (sysmem_probability > 100)
 """,
-    """   const auto eval = frane_26318_eval_smart_gmem(in);
-   if (!eval.eligible)
+    """   if (!eval.eligible)
       return out;
 
    frane_26357_tail_guard_input tail {};
@@ -94,6 +94,8 @@ edit(
 
    if (frane_26357_eval_tail_guard(tail).defer_to_profiled)
       return frane_26318_smart_gmem_decision {};
+
+   if (sysmem_probability > 100)
 """,
     "defer costly tail passes to Mesa PROFILED",
 )
