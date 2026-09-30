@@ -21,7 +21,7 @@
 
 #include <cstdint>
 
-#include "frane_mesa_26360_a810_frequency_scan.h"
+#include "frane_mesa_26360_a810_frequency_scan.h"\n#include "frane_mesa_26358_a810_tail_learner.h"
 
 struct frane_26361_signature_info {
    uint16_t signature = 0;
