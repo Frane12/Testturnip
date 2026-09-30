@@ -5,7 +5,7 @@
 #ifndef FRANE_MESA_26320_A810_GMEM_TURBO_H
 #define FRANE_MESA_26320_A810_GMEM_TURBO_H
 
-#include "frane_mesa_26318_a810_smart_gmem.h"
+#include "frane_mesa_26318_a810_smart_gmem.h"\n#include "frane_mesa_26357_a810_tail_guard.h"
 
 static inline frane_26318_smart_gmem_decision
 frane_26320_decide_gmem_turbo(bool enabled,
@@ -23,6 +23,21 @@ frane_26320_decide_gmem_turbo(bool enabled,
    const auto eval = frane_26318_eval_smart_gmem(in);
    if (!eval.eligible)
       return out;
+
+   frane_26357_tail_guard_input tail {};
+   tail.enabled = in.tail_guard;
+   tail.zs_load_store = in.zs_load_store;
+   tail.pass_pixels = in.layout.pass_pixels;
+   tail.estimated_tiles = eval.estimated_tiles;
+   tail.drawcalls = in.layout.drawcalls;
+   tail.sysmem_bandwidth_per_pixel = in.sysmem_bandwidth_per_pixel;
+   tail.gmem_bandwidth_per_pixel = in.gmem_bandwidth_per_pixel;
+   tail.measured_score = state.score;
+   tail.measured_armed = state.armed;
+   tail.sysmem_probability = sysmem_probability;
+
+   if (frane_26357_eval_tail_guard(tail).defer_to_profiled)
+      return frane_26318_smart_gmem_decision {};
 
    if (sysmem_probability > 100)
       sysmem_probability = 100;
