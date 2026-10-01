@@ -226,7 +226,7 @@ frane_26366_simple_color_resolve(const struct tu_device *device,
    shape.multiview = subpass.multiview_mask != 0;
    shape.conditional_load_store = pass->has_cond_load_store;
 
-   if (!frane_26366_simple_color_resolve_shape(true, shape))
+   if (!frane_26366_simple_color_resolve_shape(true, &shape))
       return false;
 
    for (uint32_t i = 0; i < pass->attachment_count; i++) {
