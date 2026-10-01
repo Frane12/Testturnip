@@ -178,7 +178,7 @@ for needle in (
     "required_confidence",
     "probe_log2 = sig.cost_class == 1 ? 8u : 9u",
     "confidence >= 8",
-    "winner refresh",
+    "Winner refresh",
 ):
     assert needle in h62, needle
 
