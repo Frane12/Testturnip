@@ -1030,7 +1030,7 @@ jobs:
           git -C mesa add -N src/freedreno/ir3/frane_mesa_26366_a810_wide_lab.h
           git -C mesa add -N src/freedreno/vulkan/frane_mesa_26366_a810_wide_lab.h
           git -C mesa diff --check
-          grep -q 'Drnas Turnip V67 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Drnas Turnip V66 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'TU_FRANE_SHADER", true' mesa/src/freedreno/ir3/ir3_compiler.c
           grep -q 'frane_26366_shader_window' mesa/src/freedreno/ir3/ir3_sched.c
           grep -q 'frane-a810-compile-options-v2' mesa/src/freedreno/vulkan/tu_device.cc
