@@ -18,7 +18,7 @@
  *
  * On a spike V63 suppresses V61 forced scan exploration and converts a V58
  * loser-control probe back to the already learned winner. It does not invent
- * a new render-mode winner and does not override PROFILED when V58 itself
+ * an alternate render-mode winner and does not override PROFILED when V58 itself
  * declined to override.
  */
 #ifndef FRANE_MESA_26363_A810_RP_SPIKE_FREEZE_H
