@@ -4,7 +4,10 @@
 #ifndef FRANE_MESA_26366_A810_WIDE_LAB_H
 #define FRANE_MESA_26366_A810_WIDE_LAB_H
 
-#include <cstdint>
+#include <stdint.h>
+#ifndef __cplusplus
+#include <stdbool.h>
+#endif
 
 static inline unsigned
 frane_26366_shader_window(bool enabled,
@@ -29,33 +32,33 @@ frane_26366_shader_window(bool enabled,
 }
 
 struct frane_26366_resolve_shape {
-   uint32_t resolve_count = 0;
-   uint32_t samples = 1;
-   bool unresolve = false;
-   bool depth_stencil_resolve = false;
-   bool custom_resolve = false;
-   bool input_attachments = false;
-   bool feedback = false;
-   bool multiview = false;
-   bool conditional_load_store = false;
+   uint32_t resolve_count;
+   uint32_t samples;
+   bool unresolve;
+   bool depth_stencil_resolve;
+   bool custom_resolve;
+   bool input_attachments;
+   bool feedback;
+   bool multiview;
+   bool conditional_load_store;
 };
 
 static inline bool
 frane_26366_simple_color_resolve_shape(bool enabled,
-                                       const frane_26366_resolve_shape &s)
+                                       const struct frane_26366_resolve_shape *s)
 {
    if (!enabled)
       return false;
 
-   if (s.resolve_count == 0 || s.resolve_count > 2)
+   if (s->resolve_count == 0 || s->resolve_count > 2)
       return false;
 
-   if (s.samples != 2 && s.samples != 4)
+   if (s->samples != 2 && s->samples != 4)
       return false;
 
-   if (s.unresolve || s.depth_stencil_resolve || s.custom_resolve ||
-       s.input_attachments || s.feedback || s.multiview ||
-       s.conditional_load_store)
+   if (s->unresolve || s->depth_stencil_resolve || s->custom_resolve ||
+       s->input_attachments || s->feedback || s->multiview ||
+       s->conditional_load_store)
       return false;
 
    return true;
