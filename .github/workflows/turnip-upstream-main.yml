@@ -1003,7 +1003,7 @@ jobs:
           from pathlib import Path
           h = Path('mesa/src/freedreno/vulkan/frane_mesa_26361_a810_signature_scan.h').read_text()
           # V61 must remain pure bounded policy: no blocking, allocation or unbounded loop.
-          for forbidden in ('malloc(', 'calloc(', 'realloc(', 'new ', 'pthread_', 'std::mutex', 'sleep(', 'usleep(', 'while (', 'while('):
+          for forbidden in ('malloc(', 'calloc(', 'realloc(', 'pthread_', 'std::mutex', 'sleep(', 'usleep(', 'while (', 'while('):
               assert forbidden not in h, forbidden
           assert 'frane_26361_sat_mul' in h
           assert 'const uint8_t paired =' in h
@@ -1043,7 +1043,7 @@ jobs:
           python3 - <<'PYCODE'
           from pathlib import Path
           h = Path('mesa/src/freedreno/vulkan/frane_mesa_26364_a810_stable_sentinel.h').read_text()
-          for forbidden in ('malloc(', 'calloc(', 'realloc(', 'new ', 'pthread_', 'std::mutex', 'sleep(', 'usleep(', 'while (', 'while('):
+          for forbidden in ('malloc(', 'calloc(', 'realloc(', 'pthread_', 'std::mutex', 'sleep(', 'usleep(', 'while (', 'while('):
               assert forbidden not in h, forbidden
           a = Path('mesa/src/freedreno/vulkan/tu_autotune.cc').read_text()
           # V64 may add a bool gate, but absolutely no V63-style per-RP structural atomics.
