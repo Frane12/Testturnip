@@ -1,9 +1,9 @@
-name: Drnas Turnip V66 WIDE-LAB
-# V66 wide-lab build trigger
+name: Drnas Turnip V68 ADAPTIVE-HYSTERESIS
+# V68 adaptive-hysteresis build trigger
 
 on:
   push:
-    branches: ['frane-mesa-26.3.66-a810-wide-lab']
+    branches: ['frane-mesa-26.3.68-a810-adaptive-hysteresis']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-26-3-66-a810-wide-lab
+  group: frane-mesa-26-3-68-a810-adaptive-hysteresis
   cancel-in-progress: true
 
 jobs:
@@ -1056,6 +1056,42 @@ jobs:
           assert 'compiler->frane_26366_shader_balance' in cache
           PYCODE
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify 26.3.68 A810 ADAPTIVE-HYSTERESIS
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26368_a810_adaptive_hysteresis.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26368_a810_adaptive_hysteresis.cpp -o /tmp/mesa-26368-adaptive-hysteresis-post
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26368-adaptive-hysteresis-post
+          python3 patches/mesa_26368_a810_adaptive_hysteresis.py
+          git -C mesa add -N src/freedreno/ir3/frane_mesa_26368_a810_adaptive_hysteresis.h
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip V68 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_HYST", true' mesa/src/freedreno/ir3/ir3_compiler.c
+          grep -q 'frane_26368_hyst_step' mesa/src/freedreno/ir3/ir3_sched.c
+          grep -q 'frane_26368_hyst.valid' mesa/src/freedreno/ir3/ir3_sched.c
+          grep -q 'frane-a810-compile-options-v3' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'frane-a810-compile-options-v3' mesa/src/freedreno/ir3/ir3_disk_cache.c
+          grep -q 'TU_FRANE_RESOLVE", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_SIG", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          c = Path('mesa/src/freedreno/ir3/ir3_compiler.c').read_text()
+          h = Path('mesa/src/freedreno/ir3/ir3_compiler.h').read_text()
+          s = Path('mesa/src/freedreno/ir3/ir3_sched.c').read_text()
+          d = Path('mesa/src/freedreno/vulkan/tu_device.cc').read_text()
+          cache = Path('mesa/src/freedreno/ir3/ir3_disk_cache.c').read_text()
+          a = Path('mesa/src/freedreno/vulkan/tu_autotune.cc').read_text()
+          assert 'TU_FRANE_HYST", true' in c
+          assert 'frane_26368_adaptive_hysteresis' in h
+          assert s.count('frane_26368_hyst_step(&ctx->frane_26368_hyst, pressure)') == 1
+          assert 'return ctx->frane_26368_hyst.window;' in s
+          assert 'options[11] = debug_get_bool_option("TU_FRANE_HYST", true);' in d
+          assert 'compiler->frane_26368_adaptive_hysteresis' in cache
+          assert 'TU_FRANE_RESOLVE", true' in a
+          assert 'TU_FRANE_MOMENTUM' not in c
+          assert 'frane_26367_momentum' not in s
+          PYCODE
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -1084,7 +1120,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-V66.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-V68.zip
         run: |
           set -eu
           mkdir -p output
@@ -1094,8 +1130,8 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip V66',
-            'description': 'Mesa Turnip A810 - V66 wide-lab shader balance + simple color resolve on V61 stack',
+            'name': 'Drnas Turnip V68',
+            'description': 'Mesa Turnip A810 - V68 adaptive hysteresis scheduler on V66 wide-lab stack',
             'author': 'Frane12',
             'packageVersion': '1',
             'vendor': 'Mesa',
@@ -1105,7 +1141,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V66.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-V68.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -1114,7 +1150,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-V66.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-V68.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -1127,17 +1163,17 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-V66.zip verified')
+          print('Driver Drnas-Turnip-V68.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V66.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Drnas-Turnip-V66.zip and full source diff
+          sha256sum Drnas-Turnip-V68.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Drnas-Turnip-V68.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V66
+          name: Drnas-Turnip-V68
           path: |
-            Drnas-Turnip-V66.zip
+            Drnas-Turnip-V68.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1165,3 +1201,4 @@ jobs:
             EXPERIMENT_MESA_26_3_60_A810_FREQUENCY_AWARE_SCAN.md
             EXPERIMENT_MESA_26_3_61_A810_SIGNATURE_SCAN.md
             EXPERIMENT_MESA_26_3_66_A810_WIDE_LAB.md
+            EXPERIMENT_MESA_26_3_68_A810_ADAPTIVE_HYSTERESIS.md
