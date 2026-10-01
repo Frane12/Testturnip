@@ -20,26 +20,26 @@ int main()
    frane_26366_resolve_shape r {};
    r.resolve_count = 1;
    r.samples = 4;
-   assert(frane_26366_simple_color_resolve_shape(true, r));
-   assert(!frane_26366_simple_color_resolve_shape(false, r));
+   assert(frane_26366_simple_color_resolve_shape(true, &r));
+   assert(!frane_26366_simple_color_resolve_shape(false, &r));
 
    r.resolve_count = 3;
-   assert(!frane_26366_simple_color_resolve_shape(true, r));
+   assert(!frane_26366_simple_color_resolve_shape(true, &r));
    r.resolve_count = 1;
 
    r.samples = 8;
-   assert(!frane_26366_simple_color_resolve_shape(true, r));
+   assert(!frane_26366_simple_color_resolve_shape(true, &r));
    r.samples = 2;
-   assert(frane_26366_simple_color_resolve_shape(true, r));
+   assert(frane_26366_simple_color_resolve_shape(true, &r));
 
    r.unresolve = true;
-   assert(!frane_26366_simple_color_resolve_shape(true, r));
+   assert(!frane_26366_simple_color_resolve_shape(true, &r));
    r.unresolve = false;
    r.depth_stencil_resolve = true;
-   assert(!frane_26366_simple_color_resolve_shape(true, r));
+   assert(!frane_26366_simple_color_resolve_shape(true, &r));
    r.depth_stencil_resolve = false;
    r.conditional_load_store = true;
-   assert(!frane_26366_simple_color_resolve_shape(true, r));
+   assert(!frane_26366_simple_color_resolve_shape(true, &r));
 
    return 0;
 }
