@@ -244,7 +244,7 @@ assert 'TU_FRANE_GMEM_TURBO", true' in auto
 # regressions just for the sake of more changes.
 assert 'TU_FRANE_DEPTH_DRAWS", 16' in auto
 assert 'TU_FRANE_DEPTH_MAX", 23' in auto
-assert 'TU_A810_26347_CB_PROFILE_MODE", 1' in cmd
+assert 'TU_FRANE_CB_MODE", 1' in cmd
 
 # V58/V59 LRZ and all sync/hang fixes must survive.
 assert "(CHIP >= A8XX && !z_write_enable)" in lrz
