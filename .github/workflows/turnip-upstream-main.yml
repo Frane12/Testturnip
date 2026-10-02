@@ -1,8 +1,8 @@
-name: Drnas Turnip V59 LRZ-CLEAN
+name: Drnas Turnip A810 V60Y PREDICTIVE
 
 on:
   push:
-    branches: ['frane-mesa-v59-a810-lrz-clean']
+    branches: ['frane-mesa-v60y-a810-predictive-selector']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-v59-a810-lrz-clean
+  group: frane-mesa-v60y-a810-predictive-selector
   cancel-in-progress: true
 
 jobs:
@@ -955,6 +955,25 @@ jobs:
           grep -q 'TU_FRANE_DEPTH_DRAWS", 16' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_FRANE_DEPTH_MAX", 23' mesa/src/freedreno/vulkan/tu_autotune.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify A810 V60Y PREDICTIVE-SELECTOR
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_v60y_a810_predictive_selector.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/v60y_a810_predictive_selector.cpp -o /tmp/v60y-predictive
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/v60y-predictive
+          python3 patches/mesa_v60y_a810_predictive_selector.py
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip A810 V60Y PREDICTIVE / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_PREDICT", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_predict_word' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'confidence >= 4u' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'confidence >= 7u ? 31u' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'compare_exchange_weak' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_a810_gmem_pass_safe' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_GMEM_TURBO", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_EDGE", 1' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'V59 A8XX LRZ-CLEAN' mesa/src/freedreno/vulkan/tu_lrz.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -983,7 +1002,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-V59.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-A810-V60Y-PREDICTIVE.zip
         run: |
           set -eu
           mkdir -p output
@@ -993,10 +1012,10 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip V59',
-            'description': 'Mesa Turnip A810 - V58 LRZ retention plus A8XX stencil LRZ cleanup and hot-path dedup',
+            'name': 'Drnas Turnip A810 V60Y PREDICTIVE',
+            'description': 'A810 predictive GMEM/SYSMEM selector fastpath on V59 LRZ-CLEAN; periodic full audits preserve adaptive feedback',
             'author': 'Frane12',
-            'packageVersion': '1',
+            'packageVersion': 'v60y-predictive',
             'vendor': 'Mesa',
             'driverVersion': f'Mesa {version}',
             'minApi': 34,
@@ -1004,7 +1023,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V59.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-A810-V60Y-PREDICTIVE.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -1013,7 +1032,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-V59.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-A810-V60Y-PREDICTIVE.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -1026,12 +1045,13 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-V59.zip verified')
+          print('Driver Drnas-Turnip-A810-V60Y-PREDICTIVE.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V59.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-A810-V60Y-PREDICTIVE.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Curate public milestone releases
+        if: ${{ false }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -1057,12 +1077,12 @@ jobs:
             gh release delete "$tag" -y --cleanup-tag || true
           done
 
-      - name: Upload compiled Drnas-Turnip-V59.zip and full source diff
+      - name: Upload compiled Drnas-Turnip-A810-V60Y-PREDICTIVE.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V59
+          name: Drnas-Turnip-A810-V60Y-PREDICTIVE
           path: |
-            Drnas-Turnip-V59.zip
+            Drnas-Turnip-A810-V60Y-PREDICTIVE.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1088,3 +1108,4 @@ jobs:
             EXPERIMENT_V57X_A810_EDGE_STRETCH.md
             EXPERIMENT_V58_A810_LRZ_KEEP.md
             EXPERIMENT_V59_A810_LRZ_CLEAN.md
+            EXPERIMENT_V60Y_A810_PREDICTIVE_SELECTOR.md
