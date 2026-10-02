@@ -1,8 +1,8 @@
-name: Drnas Turnip A810 V60Y PREDICTIVE
+name: Drnas Turnip A810 V60Y.1 DUAL-CONFIDENCE
 
 on:
   push:
-    branches: ['frane-mesa-v60y-a810-predictive-selector']
+    branches: ['frane-mesa-v60y.1-a810-dual-confidence']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-v60y-a810-predictive-selector
+  group: frane-mesa-v60y.1-a810-dual-confidence
   cancel-in-progress: true
 
 jobs:
@@ -974,6 +974,26 @@ jobs:
           grep -q 'TU_FRANE_EDGE", 1' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'V59 A8XX LRZ-CLEAN' mesa/src/freedreno/vulkan/tu_lrz.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify A810 V60Y.1 DUAL-CONFIDENCE
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_v60y1_a810_dual_confidence.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/v60y1_a810_dual_confidence.cpp -o /tmp/v60y1-dual
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/v60y1-dual
+          python3 patches/mesa_v60y1_a810_dual_confidence.py
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip A810 V60Y.1 DUAL-CONFIDENCE / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'gmem_score = predict_word & 15u' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'sysmem_score = (predict_word >> 4) & 15u' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'winner_score >= 6u' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'margin >= 3u' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'predict_sysmem ? 63u : 31u' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'sysmem_score = MIN2(sysmem_score + 2u, 15u)' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'gmem_score = MIN2(gmem_score + 2u, 15u)' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_a810_gmem_pass_safe' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_PREDICT", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'V59 A8XX LRZ-CLEAN' mesa/src/freedreno/vulkan/tu_lrz.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -1002,7 +1022,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-A810-V60Y-PREDICTIVE.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-A810-V60Y.1-DUAL-CONFIDENCE.zip
         run: |
           set -eu
           mkdir -p output
@@ -1012,10 +1032,10 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip A810 V60Y PREDICTIVE',
-            'description': 'A810 predictive GMEM/SYSMEM selector fastpath on V59 LRZ-CLEAN; periodic full audits preserve adaptive feedback',
+            'name': 'Drnas Turnip A810 V60Y.1 DUAL-CONFIDENCE',
+            'description': 'A810 dual-confidence predictive selector: separate GMEM/SYSMEM evidence and adaptive 1/8..1/64 full-audit cadence',
             'author': 'Frane12',
-            'packageVersion': 'v60y-predictive',
+            'packageVersion': 'v60y.1-dual-confidence',
             'vendor': 'Mesa',
             'driverVersion': f'Mesa {version}',
             'minApi': 34,
@@ -1023,7 +1043,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-A810-V60Y-PREDICTIVE.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-A810-V60Y.1-DUAL-CONFIDENCE.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -1032,7 +1052,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-A810-V60Y-PREDICTIVE.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-A810-V60Y.1-DUAL-CONFIDENCE.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -1045,11 +1065,11 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-A810-V60Y-PREDICTIVE.zip verified')
+          print('Driver Drnas-Turnip-A810-V60Y.1-DUAL-CONFIDENCE.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-A810-V60Y-PREDICTIVE.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-A810-V60Y.1-DUAL-CONFIDENCE.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Curate public milestone releases
         if: ${{ false }}
         env:
@@ -1077,12 +1097,12 @@ jobs:
             gh release delete "$tag" -y --cleanup-tag || true
           done
 
-      - name: Upload compiled Drnas-Turnip-A810-V60Y-PREDICTIVE.zip and full source diff
+      - name: Upload compiled Drnas-Turnip-A810-V60Y.1-DUAL-CONFIDENCE.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-A810-V60Y-PREDICTIVE
+          name: Drnas-Turnip-A810-V60Y.1-DUAL-CONFIDENCE
           path: |
-            Drnas-Turnip-A810-V60Y-PREDICTIVE.zip
+            Drnas-Turnip-A810-V60Y.1-DUAL-CONFIDENCE.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1109,3 +1129,4 @@ jobs:
             EXPERIMENT_V58_A810_LRZ_KEEP.md
             EXPERIMENT_V59_A810_LRZ_CLEAN.md
             EXPERIMENT_V60Y_A810_PREDICTIVE_SELECTOR.md
+            EXPERIMENT_V60Y1_A810_DUAL_CONFIDENCE.md
