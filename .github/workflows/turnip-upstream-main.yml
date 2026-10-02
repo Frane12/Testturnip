@@ -1,8 +1,8 @@
-name: Drnas Turnip V59 LRZ-CLEAN
+name: Drnas Turnip A810 MAX-PERF LAB V1.0
 
 on:
   push:
-    branches: ['frane-mesa-v59-a810-lrz-clean']
+    branches: ['drnas-a810-maxperf-lab-v1.0']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-v59-a810-lrz-clean
+  group: drnas-a810-maxperf-lab-v1.0
   cancel-in-progress: true
 
 jobs:
@@ -955,6 +955,27 @@ jobs:
           grep -q 'TU_FRANE_DEPTH_DRAWS", 16' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'TU_FRANE_DEPTH_MAX", 23' mesa/src/freedreno/vulkan/tu_autotune.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify A810 MAX-PERF LAB V1.0
+        run: |
+          set -eu
+          python3 -m py_compile patches/a810_maxperf_lab_v1.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/a810_maxperf_lab_v1.cpp -o /tmp/a810-maxperf-lab-v1
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-maxperf-lab-v1
+          python3 patches/a810_maxperf_lab_v1.py
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip A810 MAX-PERF LAB V1.0 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_A810_26316_PREFETCH_USE_SCORE", true' mesa/src/freedreno/ir3/ir3_compiler.c
+          grep -q 'if (p < 12)' mesa/src/freedreno/ir3/ir3_sched.c
+          grep -q 'if (p < 30)' mesa/src/freedreno/ir3/ir3_sched.c
+          grep -q 'probe_log2 = 10' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          grep -q 'std::max(effective, 1u)' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          grep -q 'TU_FRANE_DEPTH_DRAWS", 16' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_DEPTH_MAX", 23' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_EDGE", 1' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_A810_26347_CB_PROFILE_MODE", 1' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'V59 A8XX LRZ-CLEAN' mesa/src/freedreno/vulkan/tu_lrz.cc
+          grep -q 'FRANE_2631_POLL_READY' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -983,7 +1004,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-V59.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-A810-MAXPERF-LAB-V1.0.zip
         run: |
           set -eu
           mkdir -p output
@@ -993,8 +1014,8 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip V59',
-            'description': 'Mesa Turnip A810 - V58 LRZ retention plus A8XX stencil LRZ cleanup and hot-path dedup',
+            'name': 'Drnas Turnip A810 MAX-PERF LAB V1.0',
+            'description': 'A810 internal unstable lab: V59 base + occupancy-first IR3 scheduling + use-ranked texture prefetch + GMEM overdrive',
             'author': 'Frane12',
             'packageVersion': '1',
             'vendor': 'Mesa',
@@ -1004,7 +1025,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V59.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-A810-MAXPERF-LAB-V1.0.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -1013,7 +1034,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-V59.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-A810-MAXPERF-LAB-V1.0.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -1026,11 +1047,11 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-V59.zip verified')
+          print('Driver Drnas-Turnip-A810-MAXPERF-LAB-V1.0.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V59.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-A810-MAXPERF-LAB-V1.0.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Curate public milestone releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1057,12 +1078,12 @@ jobs:
             gh release delete "$tag" -y --cleanup-tag || true
           done
 
-      - name: Upload compiled Drnas-Turnip-V59.zip and full source diff
+      - name: Upload compiled Drnas-Turnip-A810-MAXPERF-LAB-V1.0.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V59
+          name: Drnas-Turnip-A810-MAXPERF-LAB-V1.0
           path: |
-            Drnas-Turnip-V59.zip
+            Drnas-Turnip-A810-MAXPERF-LAB-V1.0.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1088,3 +1109,4 @@ jobs:
             EXPERIMENT_V57X_A810_EDGE_STRETCH.md
             EXPERIMENT_V58_A810_LRZ_KEEP.md
             EXPERIMENT_V59_A810_LRZ_CLEAN.md
+            DRNAS_A810_MAXPERF_LAB_V1.0.md
