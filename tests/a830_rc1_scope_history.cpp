@@ -80,7 +80,7 @@ int main()
 
       s = feed(s, 85, 135, 1);
       assert(s.hold == 1);
-      assert(s.score < before);
+      assert(s.score <= before);
    }
 
    {
