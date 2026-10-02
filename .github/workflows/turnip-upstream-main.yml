@@ -971,7 +971,7 @@ jobs:
           grep -q 'sysmem_probability > 75' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
           grep -q 'std::max(effective, 1u)' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
           grep -q 'TU_FRANE_EDGE", 2' mesa/src/freedreno/vulkan/tu_autotune.cc
-          grep -q 'TU_A810_26347_CB_PROFILE_MODE", 1' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          grep -q 'TU_FRANE_CB_MODE", 1' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
           grep -q 'V59 A8XX LRZ-CLEAN' mesa/src/freedreno/vulkan/tu_lrz.cc
           grep -q 'FRANE_2631_POLL_READY' mesa/src/freedreno/vulkan/tu_knl_kgsl.cc
           git -C mesa diff > mesa-applied.patch
