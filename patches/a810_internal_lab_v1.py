@@ -324,13 +324,17 @@ edit(
           sysmem_probability <= 40)""",
     "lower strongest armed tier",
 )
+edit(H, "probe_log2 = 9; /* 1/512 */", "probe_log2 = 10; /* 1/1024 */",
+     "stretch strongest GMEM hold")
 edit(
     H,
     """} else if (state.score >= 7 && eval.structure_score >= 66 &&
-                 sysmem_probability <= 40)""",
+                 sysmem_probability <= 40) {
+         probe_log2 = 8; /* 1/256 */""",
     """} else if (state.score >= 6 && eval.structure_score >= 60 &&
-                 sysmem_probability <= 50)""",
-    "lower middle armed tier",
+                 sysmem_probability <= 50) {
+         probe_log2 = 9; /* 1/512 */""",
+    "lower middle armed tier and stretch hold",
 )
 edit(
     H,
@@ -340,10 +344,6 @@ edit(
          probe_log2 = 8; /* 1/256 */""",
     "open low armed tier and reduce probes",
 )
-edit(H, "probe_log2 = 9; /* 1/512 */", "probe_log2 = 10; /* 1/1024 */",
-     "stretch strongest GMEM hold")
-edit(H, "probe_log2 = 8; /* 1/256 */", "probe_log2 = 9; /* 1/512 */",
-     "stretch middle GMEM hold")
 
 edit(
     H,
