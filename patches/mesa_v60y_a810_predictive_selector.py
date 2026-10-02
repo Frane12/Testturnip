@@ -57,20 +57,31 @@ def edit(rel, old, new, label):
 # bit 1      predicted mode (1=SYSMEM, 0=GMEM)
 # bits 2..4  confidence 0..7
 # Ticket only selects periodic full-audit decisions.
-edit(
-    "src/freedreno/vulkan/tu_autotune.cc",
-    """   frane_2634_gmem_state frane_gmem_runtime_state {};
-   std::atomic<uint32_t> frane_gmem_runtime_word { 0 };""",
-    """   frane_2634_gmem_state frane_gmem_runtime_state {};
-   std::atomic<uint32_t> frane_gmem_runtime_word { 0 };
+#
+# Later A810 cleanup patches changed the submit-owned runtime-state member
+# layout, but the atomic runtime snapshot remains the stable member shared by
+# recording/submission paths.  Anchor on that single member instead of a stale
+# two-line layout from 26.3.4.
+p = V / "tu_autotune.cc"
+src = p.read_text()
+needle = "std::atomic<uint32_t> frane_gmem_runtime_word"
+if src.count(needle) != 1:
+    raise SystemExit(
+        f"V60Y source drift at predictor member anchor: "
+        f"expected 1 runtime-word member, found {src.count(needle)}"
+    )
+pos = src.index(needle)
+line_end = src.index("\n", pos)
+insert = """
 
    /* V60Y: tiny final-decision predictor.  This lives in the existing
     * rp_history so there is no additional map/hash lookup on the hot path.
     */
    std::atomic<uint32_t> frane_predict_word { 0 };
-   std::atomic<uint32_t> frane_predict_ticket { 0 };""",
-    "add per-history packed predictor state",
-)
+   std::atomic<uint32_t> frane_predict_ticket { 0 };"""
+src = src[:line_end] + insert + src[line_end:]
+p.write_text(src)
+print("V60Y PASS add per-history packed predictor state", flush=True)
 
 # Fast-predict before constructing runtime_input.  This is where the CPU work is
 # actually avoided, rather than merely replacing one branch later in SMART-GMEM.
