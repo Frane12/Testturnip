@@ -33,8 +33,8 @@ Existing opt-outs still work:
 """
 from pathlib import Path
 
-ROOT = Path("mesa")
-V = ROOT / "src/freedreno"
+ROOT = Path("mesa/src/freedreno")
+V = ROOT
 
 
 def edit(rel, old, new, label):
