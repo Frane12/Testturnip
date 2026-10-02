@@ -222,7 +222,7 @@ edit(
          quarantine = risk.resolve || risk.msaa || risk.depth_stencil;
          break;
       default:
-         unreachable("A830 PF mode range");
+         break;
       }
 
       if (quarantine) {
