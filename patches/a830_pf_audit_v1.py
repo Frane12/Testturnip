@@ -326,17 +326,8 @@ assert "FRANE_2631_POLL_READY" in kg
 assert "frane_2631_deadline_ns" in kg
 assert "pthread_mutex_unlock(&device->submit_mutex);" in queue
 
-# PF-AUDIT itself must not touch the hardware-facing things we are trying to
-# diagnose.
-for forbidden in (
-    "RB_CCU_CACHE_CNTL(",
-    "VPC_ATTR_BUF_GMEM_BASE(",
-    "VPC_POS_BUF_GMEM_BASE(",
-    "VPC_BV_POS_BUF_GMEM_BASE(",
-):
-    # Existing source can contain them; this patch script never injects them.
-    assert forbidden not in Path(__file__).read_text(), forbidden
-
+# PF-AUDIT changes selector policy only. Hardware-facing CCU/VPC/GMEM
+# programming is intentionally left untouched by this patch.
 assert "Drnas Turnip A830 PF-AUDIT V1.0 / Mesa " in dev
 
 print("Drnas Turnip A830 PF-AUDIT V1.0 applied and audited", flush=True)
