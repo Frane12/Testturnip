@@ -1056,7 +1056,8 @@ jobs:
         run: |
           sha256sum Drnas-Turnip-A810-INTERNAL-LAB-V1.0.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Keep INTERNAL-LAB private from release curation
-        run: echo "Internal lab build: no public release/tag mutation"
+        run: |
+          echo "Internal lab build: no public release/tag mutation"
 
       - name: Upload compiled Drnas-Turnip-A810-INTERNAL-LAB-V1.0.zip and full source diff
         uses: actions/upload-artifact@v4
