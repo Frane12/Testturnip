@@ -1,8 +1,8 @@
-name: Drnas Turnip V57X EDGE-STRETCH
+name: Drnas Turnip V57XS SHADER-BALANCE
 
 on:
   push:
-    branches: ['frane-mesa-v57x-a810-edge-stretch']
+    branches: ['frane-mesa-v57xs-a810-shader-balance']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: frane-mesa-v57x-a810-edge-stretch
+  group: frane-mesa-v57xs-a810-shader-balance
   cancel-in-progress: true
 
 jobs:
@@ -148,6 +148,10 @@ jobs:
           echo "26.3.57 A810 PROFILED-TAIL-GUARD policy"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26357_a810_tail_guard.cpp -o /tmp/mesa-26357-tail-guard
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26357-tail-guard
+
+          echo "V57XS A810 SHADER-BALANCE policy"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/v57xs_a810_shader_balance.cpp -o /tmp/v57xs-shader-balance
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/v57xs-shader-balance
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -915,6 +919,28 @@ jobs:
           grep -q 'TU_FRANE_GMEM_PRESSURE' mesa/src/freedreno/vulkan/tu_pass.cc
           grep -q 'TU_FRANE_CB_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify V57XS A810 SHADER-BALANCE
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_v57xs_a810_shader_balance.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/v57xs_a810_shader_balance.cpp -o /tmp/v57xs-shader-balance-post
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/v57xs-shader-balance-post
+          python3 patches/mesa_v57xs_a810_shader_balance.py
+          git -C mesa add -N src/freedreno/ir3/frane_v57xs_a810_shader_balance.h
+          git -C mesa diff --check
+          grep -q 'Drnas Turnip V57XS / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_EDGE", 1' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_SHADER", true' mesa/src/freedreno/ir3/ir3_compiler.c
+          grep -q 'frane_v57xs_shader_window' mesa/src/freedreno/ir3/ir3_sched.c
+          grep -q 'frane-a810-compile-options-v2' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'frane-a810-compile-options-v2' mesa/src/freedreno/ir3/ir3_disk_cache.c
+          grep -q 'frane_v57x_eval_edge' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          grep -q 'TU_FRANE_GMEM_TURBO", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_DEPTH_DRAWS", 16' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_DEPTH_MAX", 23' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_GMEM_PRESSURE' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_FRANE_CB_MODE' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -943,7 +969,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-V57X.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-V57XS.zip
         run: |
           set -eu
           mkdir -p output
@@ -953,8 +979,8 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip V57X',
-            'description': 'Mesa Turnip A810 - V57 base with bounded EDGE-STRETCH',
+            'name': 'Drnas Turnip V57XS',
+            'description': 'Mesa Turnip A810 - V57X hard-tail baseline with pressure-balanced IR3 scheduling',
             'author': 'Frane12',
             'packageVersion': '1',
             'vendor': 'Mesa',
@@ -964,7 +990,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V57X.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-V57XS.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -973,7 +999,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-V57X.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-V57XS.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -986,11 +1012,11 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-V57X.zip verified')
+          print('Driver Drnas-Turnip-V57XS.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V57X.zip mesa-applied.patch > SHA256SUMS.txt
+          sha256sum Drnas-Turnip-V57XS.zip mesa-applied.patch > SHA256SUMS.txt
       - name: Curate public milestone releases
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1017,12 +1043,12 @@ jobs:
             gh release delete "$tag" -y --cleanup-tag || true
           done
 
-      - name: Upload compiled Drnas-Turnip-V57X.zip and full source diff
+      - name: Upload compiled Drnas-Turnip-V57XS.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V57X
+          name: Drnas-Turnip-V57XS
           path: |
-            Drnas-Turnip-V57X.zip
+            Drnas-Turnip-V57XS.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1046,3 +1072,4 @@ jobs:
             EXPERIMENT_MESA_26_3_56_A810_GMEM_HARD_PUSH.md
             EXPERIMENT_MESA_26_3_57_A810_PROFILED_TAIL_GUARD.md
             EXPERIMENT_V57X_A810_EDGE_STRETCH.md
+            EXPERIMENT_V57XS_A810_SHADER_BALANCE.md
