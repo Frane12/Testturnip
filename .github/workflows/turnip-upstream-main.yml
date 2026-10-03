@@ -1,19 +1,20 @@
-name: Drnas Turnip V61E ENDURANCE
+name: Drnas-Turnip S1 A810
 
 on:
   push:
-    branches: ['drnas-a810-v61e-endurance']
+    branches: ['release/drnas-turnip-s1-a810']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
       - 'tests/**'
+      - 'RELEASE_NOTES_S1_A810.md'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: drnas-a810-v61e-endurance
+  group: drnas-turnip-s1-a810
   cancel-in-progress: true
 
 jobs:
@@ -983,7 +984,7 @@ jobs:
           python3 patches/mesa_26361_a810_signature_scan.py
           git -C mesa add -N src/freedreno/vulkan/frane_mesa_26361_a810_signature_scan.h
           git -C mesa diff --check
-          grep -q 'Drnas Turnip V61E Endurance / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'Drnas-Turnip S1 A810 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
           grep -q 'TU_FRANE_SIG", true' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'runtime_input.tail_signature' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -q 'frane_26361_decide_signature_scan' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
@@ -1043,7 +1044,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-V61E-Endurance.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-S1-A810.zip
         run: |
           set -eu
           mkdir -p output
@@ -1053,8 +1054,8 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas Turnip V61E Endurance',
-            'description': 'A810 endurance - frozen tested V61 signature scan with V57 tail guard',
+            'name': 'Drnas-Turnip S1 A810',
+            'description': 'Adreno 810 stability/endurance milestone with PROFILED-aware adaptive GMEM policy',
             'author': 'Frane12',
             'packageVersion': '1',
             'vendor': 'Mesa',
@@ -1064,7 +1065,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-V61E-Endurance.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-S1-A810.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -1073,7 +1074,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-V61E-Endurance.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-S1-A810.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -1086,22 +1087,23 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-V61E-Endurance.zip verified')
+          print('Driver Drnas-Turnip-S1-A810.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-V61E-Endurance.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Drnas-Turnip-V61E-Endurance.zip and full source diff
+          sha256sum Drnas-Turnip-S1-A810.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Drnas-Turnip-S1-A810.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-V61E-Endurance
+          name: Drnas-Turnip-S1-A810
           path: |
-            Drnas-Turnip-V61E-Endurance.zip
+            Drnas-Turnip-S1-A810.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
             driver-sha256.txt
             SHA256SUMS.txt
+            RELEASE_NOTES_S1_A810.md
             EXPERIMENT_MESA_26_3_39_A810_GMEM_PRESSURE.md
             EXPERIMENT_MESA_26_3_41_A810_CLEAN_DRAW_FASTPATH.md
             EXPERIMENT_MESA_26_3_42_A810_CLEAN_DRAW_V2.md
@@ -1123,3 +1125,17 @@ jobs:
             EXPERIMENT_MESA_26_3_59_A810_SCAN_LEARNER.md
             EXPERIMENT_MESA_26_3_60_A810_FREQUENCY_AWARE_SCAN.md
             EXPERIMENT_MESA_26_3_61_A810_SIGNATURE_SCAN.md
+
+      - name: Publish Drnas-Turnip S1 A810 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="drnas-turnip-s1-a810"
+          TITLE="Drnas-Turnip S1 A810"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" Drnas-Turnip-S1-A810.zip SHA256SUMS.txt driver-sha256.txt --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes-file RELEASE_NOTES_S1_A810.md --prerelease
+          else
+            gh release create "$TAG"               Drnas-Turnip-S1-A810.zip               SHA256SUMS.txt               driver-sha256.txt               --target "${GITHUB_SHA}"               --title "$TITLE"               --notes-file RELEASE_NOTES_S1_A810.md               --prerelease
+          fi
