@@ -212,7 +212,7 @@ frane_26362_pack_histogram(const frane_26362_hist_state &s)
    uint32_t recent = frane_26362_recent_total(s);
    if (recent > 127)
       recent = 127;
-   const uint32_t switches = s.switches > 65535u ? 65535u : s.switches;
+   const uint32_t switches = uint32_t(s.switches);
 
    return pref | (confidence << 2) | (recent << 6) | (switches << 16);
 }
