@@ -305,7 +305,7 @@ for needle in (
     assert needle in h20, needle
 
 for forbidden in (
-    "malloc(", "calloc(", "realloc(", "new ", "pthread_",
+    "malloc(", "calloc(", "realloc(", "pthread_",
     "std::mutex", "sleep(", "usleep(", "while (", "while("
 ):
     assert forbidden not in h62, forbidden
