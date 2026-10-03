@@ -5,12 +5,13 @@
 
 static uint32_t learner_word_for(bool prefer_sys, uint8_t pairs, int score)
 {
-   frane_26358_tail_snapshot s {};
+   (void) prefer_sys;
+   frane_26358_tail_state s {};
    s.ready = pairs >= 6;
    s.paired_samples = pairs;
    s.score = static_cast<int8_t>(score);
-   s.sysmem_samples = pairs;
-   s.gmem_samples = pairs;
+   s.sysmem.samples = pairs;
+   s.gmem.samples = pairs;
    return frane_26358_pack_tail_snapshot(s);
 }
 
