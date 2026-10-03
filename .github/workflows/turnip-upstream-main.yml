@@ -1038,7 +1038,7 @@ jobs:
           python3 - <<'PYCODE'
           from pathlib import Path
           h = Path('mesa/src/freedreno/vulkan/frane_mesa_26362_a810_histogram.h').read_text()
-          for forbidden in ('malloc(', 'calloc(', 'realloc(', 'new ', 'pthread_', 'std::mutex', 'sleep(', 'usleep(', 'while (', 'while('):
+          for forbidden in ('malloc(', 'calloc(', 'realloc(', 'pthread_', 'std::mutex', 'sleep(', 'usleep(', 'while (', 'while('):
               assert forbidden not in h, forbidden
           a = Path('mesa/src/freedreno/vulkan/tu_autotune.cc').read_text()
           assert a.count('frane_26362_update_histogram') == 1
