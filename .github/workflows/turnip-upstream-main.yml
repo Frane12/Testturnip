@@ -1,8 +1,8 @@
-name: Drnas-Turnip S1 A810
+name: Drnas-Turnip S1H A810
 
 on:
   push:
-    branches: ['drnas-a810-v61e-endurance']
+    branches: ['drnas-s1-histogram-frametime-lab']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: drnas-a810-v61e-endurance
+  group: drnas-s1-histogram-frametime-lab
   cancel-in-progress: true
 
 jobs:
@@ -164,6 +164,10 @@ jobs:
           echo "26.3.61 A810 SIGNATURE-GATED-SCAN policy"
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26361_a810_signature_scan.cpp -o /tmp/mesa-26361-signature-scan
           UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26361-signature-scan
+
+          echo "S1H A810 USER-HISTOGRAM / FRAMETIME-STABILIZER policy"
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26362_a810_histogram.cpp -o /tmp/mesa-26362-histogram
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26362-histogram
       - name: Android NDK r29
         uses: nttld/setup-ndk@v1
         id: ndk
@@ -1015,6 +1019,34 @@ jobs:
           assert 'frane_26357_eval_tail_guard' in t
           PYCODE
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and verify S1H A810 USER-HISTOGRAM / FRAMETIME-STABILIZER
+        run: |
+          set -eu
+          python3 -m py_compile patches/mesa_26362_a810_histogram.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/mesa_26362_a810_histogram.cpp -o /tmp/mesa-26362-histogram-post
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/mesa-26362-histogram-post
+          python3 patches/mesa_26362_a810_histogram.py
+          git -C mesa add -N src/freedreno/vulkan/frane_mesa_26362_a810_histogram.h
+          git -C mesa diff --check
+          grep -q 'Drnas-Turnip S1H A810 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_HIST", false' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'TU_FRANE_HIST_SMOOTH", false' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'DRNAS_HIST rp=%016' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_26362_decide_smoothing' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          grep -q 'frane_26361_decide_signature_scan' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          grep -q 'frane_26358_decide_tail_learner' mesa/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          h = Path('mesa/src/freedreno/vulkan/frane_mesa_26362_a810_histogram.h').read_text()
+          for forbidden in ('malloc(', 'calloc(', 'realloc(', 'new ', 'pthread_', 'std::mutex', 'sleep(', 'usleep(', 'while (', 'while('):
+              assert forbidden not in h, forbidden
+          a = Path('mesa/src/freedreno/vulkan/tu_autotune.cc').read_text()
+          assert a.count('frane_26362_update_histogram') == 1
+          assert a.count('history.frane_hist_word.load') == 1
+          assert 'frane_a810_histogram_active(at.device)' in a
+          assert '(frane_hist_state.observations & 15u) == 0u' in a
+          PYCODE
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -1043,7 +1075,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-S1-A810.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-S1H-A810.zip
         run: |
           set -eu
           mkdir -p output
@@ -1053,8 +1085,8 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas-Turnip S1 A810',
-            'description': 'Adreno 810 stability/endurance milestone with PROFILED adaptive policy',
+            'name': 'Drnas-Turnip S1H A810',
+            'description': 'S1-based A810 user histogram and optional frametime stabilizer lab',
             'author': 'Frane12',
             'packageVersion': '1',
             'vendor': 'Mesa',
@@ -1064,7 +1096,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-S1-A810.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-S1H-A810.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -1073,7 +1105,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-S1-A810.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-S1H-A810.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -1086,17 +1118,17 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-S1-A810.zip verified')
+          print('Driver Drnas-Turnip-S1H-A810.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-S1-A810.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Drnas-Turnip-S1-A810.zip and full source diff
+          sha256sum Drnas-Turnip-S1H-A810.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Drnas-Turnip-S1H-A810.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
           name: Drnas-Turnip-S1-A810
           path: |
-            Drnas-Turnip-S1-A810.zip
+            Drnas-Turnip-S1H-A810.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1123,21 +1155,5 @@ jobs:
             EXPERIMENT_MESA_26_3_59_A810_SCAN_LEARNER.md
             EXPERIMENT_MESA_26_3_60_A810_FREQUENCY_AWARE_SCAN.md
             EXPERIMENT_MESA_26_3_61_A810_SIGNATURE_SCAN.md
+            EXPERIMENT_S1H_A810_HISTOGRAM.md
             RELEASE_S1_A810.md
-      - name: Publish Drnas-Turnip S1 A810 release
-        if: contains(github.event.head_commit.message, '[release-s1]')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          TAG="drnas-turnip-s1-a810"
-          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" -y --cleanup-tag || true
-          gh release create "$TAG" \
-            Drnas-Turnip-S1-A810.zip \
-            SHA256SUMS.txt \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Drnas-Turnip S1 A810" \
-            --notes-file RELEASE_S1_A810.md \
-            --prerelease
-
