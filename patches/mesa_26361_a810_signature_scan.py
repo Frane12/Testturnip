@@ -155,8 +155,8 @@ edit(
 edit(
     "src/freedreno/vulkan/tu_device.cc",
     "Drnas Turnip V60 / Mesa ",
-    "Drnas Turnip V61 / Mesa ",
-    "V61 display identity",
+    "Drnas Turnip V61E Endurance / Mesa ",
+    "V61E endurance display identity",
 )
 
 a = (V / "tu_autotune.cc").read_text()
@@ -220,6 +220,6 @@ assert "TU_FRANE_CB_MODE" in c
 assert "subpass.resolve_depth_stencil" in a
 assert "subpass.feedback_loop_ds" in a
 assert "subpass.samples != VK_SAMPLE_COUNT_1_BIT" in a
-assert "Drnas Turnip V61 / Mesa " in d
+assert "Drnas Turnip V61E Endurance / Mesa " in d
 
 print("Drnas Turnip V61 SIGNATURE-GATED-SCAN applied", flush=True)
