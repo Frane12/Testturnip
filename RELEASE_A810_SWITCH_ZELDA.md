@@ -24,7 +24,7 @@ If the emulator does not expose driver environment variables, compare by importi
 
 ## Validation
 
-Local ASan/UBSan checks passed: 42240 Switch gate boundary cases, render-area/offset/subpass/draw-band separation, inherited Smart cadence and fresh-pair checks, eighteen loss-budget boundary cases, 256 reversal simulations, 28000 actual C++ allocator equivalence cases, 140000 exact threshold checks and four independent allocator-cache threads.
+Local ASan/UBSan checks passed: short-pass integration into the actual layout eligibility helper, rejection of invalid geometry, measured GMEM and SYSMEM winner/probe behavior, 42240 Switch gate boundary cases, render-area/offset/subpass/draw-band separation, inherited Smart cadence and fresh-pair checks, eighteen loss-budget boundary cases, 256 reversal simulations, 28000 actual C++ allocator equivalence cases, 140000 exact threshold checks and four independent allocator-cache threads.
 
 CI repeats the inherited suites and Switch tests, applies both patches to pristine pinned Mesa, compiles a real Android ARM64 driver using NDK r29, checks ELF/ZIP/identity and creates only this DRAFT release. Source ZIP includes both patches and test logs. Build success is separate from on-device validation. Vulkan CTS, Android stress and Zelda gameplay have not been run.
 

@@ -96,6 +96,14 @@ diff --git a/src/freedreno/vulkan/tu_autotune.cc b/src/freedreno/vulkan/tu_autot
                            (!latency_info || !latency_info->seen_latency_spike);
  
     if (!enabled)
+@@ -3251,6 +3299,7 @@
+             pass->gmem_pixels[TU_GMEM_LAYOUT_FULL];
+          runtime_input.layout.pass_pixels = pass_pixels;
+          runtime_input.layout.drawcalls = rp_state->drawcall_count;
++         runtime_input.layout.short_pass_eligible = switch_small;
+ 
+          /* 26.3.21: the allocator has already selected a real 2D tile grid.
+           * Only use it for a full-frame, single-layer pass without multiview
 diff --git a/src/freedreno/vulkan/tu_device.cc b/src/freedreno/vulkan/tu_device.cc
 --- a/src/freedreno/vulkan/tu_device.cc
 +++ b/src/freedreno/vulkan/tu_device.cc
@@ -158,3 +166,24 @@ new file mode 100644
 +          in.resident_cpp && in.transfer_cpp <= in.resident_cpp;
 +}
 +#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_2634_a810_gmem_runtime.h b/src/freedreno/vulkan/frane_mesa_2634_a810_gmem_runtime.h
+--- a/src/freedreno/vulkan/frane_mesa_2634_a810_gmem_runtime.h
++++ b/src/freedreno/vulkan/frane_mesa_2634_a810_gmem_runtime.h
+@@ -19,6 +19,7 @@
+    uint64_t pixels_per_tile = 0;
+    uint64_t pass_pixels = 0;
+    uint32_t drawcalls = 0;
++   bool short_pass_eligible = false;
+    uint64_t selected_tile_count = 0; /* 0: legacy estimate */
+ };
+ 
+@@ -67,7 +68,8 @@
+       in.pixels_per_tile >= 16 &&
+       in.pass_pixels > 0 &&
+       in.pass_pixels <= MAX_PASS_PIXELS &&
+-      in.drawcalls >= 5;
++      (in.drawcalls >= 5 ||
++       (in.short_pass_eligible && in.drawcalls >= 2 && in.drawcalls <= 4));
+ 
+    if (!geometry_ok)
+       return out;
