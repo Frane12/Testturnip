@@ -1,0 +1,111 @@
+name: A830 S1 Smart Performance 2 Internal
+on:
+  push:
+    branches: ['drnas-a830-s1-smart-performance-2']
+    paths: ['.github/workflows/turnip-a830-smart2-internal.yml', 'patches/a830-smart2-complete.patch', 'tests/smart_v2.cpp', 'tests/a830_gmem_safety.cpp', 'tests/source_guards.py', 'RELEASE_S1_SMART_2_A830.md']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: drnas-a830-s1-smart-performance-2
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y git ninja-build pkg-config python3-pip bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Fetch exact base and apply verified complete patch
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
+          git -C mesa fetch --depth 1 origin eeca16aa41e89a114e53e76439df623c7efb9519
+          git -C mesa checkout --detach eeca16aa41e89a114e53e76439df623c7efb9519
+          git -C mesa apply --check ../patches/a830-smart2-complete.patch
+          git -C mesa apply ../patches/a830-smart2-complete.patch
+          git -C mesa rev-parse HEAD > mesa-commit.txt
+          git rev-parse HEAD > frane-commit.txt
+      - name: Policy tests — 716040 boundary cases and regime simulation
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/smart_v2.cpp -o /tmp/smart2-ubsan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-ubsan | tee smart2-ubsan.log
+          g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/smart_v2.cpp -o /tmp/smart2-asan
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-asan | tee smart2-asan.log
+      - name: A830 arithmetic and safety integration tests
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Imesa/src/freedreno/vulkan tests/a830_gmem_safety.cpp -o /tmp/a830-safety
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/a830-safety | tee safety-test.log
+          python3 tests/source_guards.py | tee source-test.log
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<CROSS
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          CROSS
+      - name: Compile real Android ARM64 driver
+        run: |
+          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+          meson compile -C mesa/build-android -j 4
+      - name: Package and verify driver plus sources
+        run: |
+          set -euo pipefail
+          mkdir output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          python3 - <<'PY'
+          import json,pathlib,zipfile
+          meta={'schemaVersion':1,'name':'A830 S1 Smart Performance 2','description':'A830 smart processing; SYSMEM default for known GMEM write-fault risk. Experimental guarded GMEM: TU_FRANE_A830_GMEM=1. Host tested; no device validation.','author':'Frane12','packageVersion':'2','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
+          pathlib.Path('output/meta.json').write_text(json.dumps(meta,indent=2)+'\n')
+          with zipfile.ZipFile('A830-S1-Smart-Performance-2.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              z.write('output/libvulkan_freedreno.so','libvulkan_freedreno.so')
+              z.write('output/meta.json','meta.json')
+          with zipfile.ZipFile('A830-S1-Smart-Performance-2.zip') as z:
+              assert z.testzip() is None
+              assert set(z.namelist())=={'libvulkan_freedreno.so','meta.json'}
+              b=z.read('libvulkan_freedreno.so')
+              assert b[:6]==b'\x7fELF\x02\x01'
+              assert int.from_bytes(b[16:18],'little')==3 and int.from_bytes(b[18:20],'little')==183
+              assert b'A830 S1 Smart Performance 2 / Mesa' in b and b'TU_FRANE_SMART' in b
+          PY
+          zip -9 A830-S1-Smart-Performance-2-Source.zip patches/a830-smart2-complete.patch tests/smart_v2.cpp tests/a830_gmem_safety.cpp tests/source_guards.py safety-test.log source-test.log RELEASE_S1_SMART_2_A830.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log
+          sha256sum A830-S1-Smart-Performance-2.zip A830-S1-Smart-Performance-2-Source.zip patches/a830-smart2-complete.patch > SHA256SUMS.txt
+      - name: Create or update INTERNAL DRAFT only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=a830-s1-smart-performance-2-internal
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/smart2-release.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("/tmp/smart2-release.json"))["isDraft"], "Refusing to modify a published release"'
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "A830 S1 Smart Performance 2" --notes-file RELEASE_S1_SMART_2_A830.md
+            gh release upload "$TAG" A830-S1-Smart-Performance-2.zip A830-S1-Smart-Performance-2-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" A830-S1-Smart-Performance-2.zip A830-S1-Smart-Performance-2-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "A830 S1 Smart Performance 2" --notes-file RELEASE_S1_SMART_2_A830.md --draft
+          fi
