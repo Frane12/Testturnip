@@ -43,10 +43,49 @@ diff --git a/src/freedreno/vulkan/tu_pass.cc b/src/freedreno/vulkan/tu_pass.cc
        pass->has_cond_load_store |=
           att->cond_load_allowed | att->cond_store_allowed;
     }
-@@ -2122,6 +2130,84 @@
+@@ -2093,7 +2101,8 @@
  }
  
  static void
+-tu_render_pass_bandwidth_config(struct tu_render_pass *pass)
++tu_render_pass_bandwidth_config(struct tu_render_pass *pass,
++                                 const struct tu_physical_device *phys)
+ {
+    pass->gmem_bandwidth_per_pixel = 0;
+    pass->sysmem_bandwidth_per_pixel = 0;
+@@ -2109,9 +2118,25 @@
+       if (att->store)
+          pass->gmem_bandwidth_per_pixel += att->cpp;
+ 
++      static const bool ds1 = debug_get_bool_option("TU_FRANE_DS1", true);
++      const uint64_t id = phys->dev_id.chip_id;
++      const bool ds1_split = ds1 &&
++         (id == UINT64_C(0x44010000) || id == UINT64_C(0xffff44010000)) &&
++         att->format == VK_FORMAT_D32_SFLOAT_S8_UINT;
++      if (ds1_split) {
++         if (att->load_stencil)
++            pass->gmem_bandwidth_per_pixel += att->samples;
++         if (att->store_stencil)
++            pass->gmem_bandwidth_per_pixel += att->samples;
++         if (att->clear_mask & VK_IMAGE_ASPECT_DEPTH_BIT)
++            pass->sysmem_bandwidth_per_pixel += att->cpp;
++         if (att->clear_mask & VK_IMAGE_ASPECT_STENCIL_BIT)
++            pass->sysmem_bandwidth_per_pixel += att->samples;
++      } else {
+       /* approximate tu_clear_sysmem_attachment */
+       if (att->clear_mask)
+          pass->sysmem_bandwidth_per_pixel += att->cpp;
++      }
+ 
+       /* approximate tu6_emit_sysmem_resolves */
+       if (att->will_be_resolved) {
+@@ -2119,6 +2144,84 @@
+             att->cpp + att->cpp / att->samples;
+       }
+    }
++}
++
++static void
 +frane_ds1_prepare_pass(struct tu_render_pass *pass,
 +                       const struct tu_physical_device *phys)
 +{
@@ -122,13 +161,10 @@ diff --git a/src/freedreno/vulkan/tu_pass.cc b/src/freedreno/vulkan/tu_pass.cc
 +         pass->frane_ds_layout_mask |= uint8_t(1u << layout);
 +   }
 +   pass->frane_ds_flags = flags;
-+}
-+
-+static void
- attachment_set_ops(struct tu_device *device,
-                    struct tu_render_pass_attachment *att,
-                    VkAttachmentLoadOp load_op,
-@@ -2134,6 +2220,24 @@
+ }
+ 
+ static void
+@@ -2134,6 +2237,24 @@
           load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
        if (stencil_load_op == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
           stencil_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -153,7 +189,16 @@ diff --git a/src/freedreno/vulkan/tu_pass.cc b/src/freedreno/vulkan/tu_pass.cc
     }
  
     /* load/store ops */
-@@ -2589,6 +2693,7 @@
+@@ -2581,7 +2702,7 @@
+    tu_render_pass_check_ib2_skip(pass);
+    tu_render_pass_cond_config(device, pass);
+    tu_render_pass_gmem_config(pass, device->physical_device);
+-   tu_render_pass_bandwidth_config(pass);
++   tu_render_pass_bandwidth_config(pass, device->physical_device);
+    tu_render_pass_calc_views(pass);
+ 
+    for (unsigned i = 0; i < pCreateInfo->dependencyCount; ++i) {
+@@ -2589,6 +2710,7 @@
     }
  
     tu_render_pass_add_implicit_deps(pass, pCreateInfo);
@@ -161,9 +206,12 @@ diff --git a/src/freedreno/vulkan/tu_pass.cc b/src/freedreno/vulkan/tu_pass.cc
  
     *pRenderPass = tu_render_pass_to_handle(pass);
  
-@@ -3094,6 +3199,7 @@
+@@ -3092,8 +3214,9 @@
+    tu_render_pass_check_ib2_skip(pass);
+    tu_render_pass_cond_config(device, pass);
     tu_render_pass_gmem_config(pass, device->physical_device);
-    tu_render_pass_bandwidth_config(pass);
+-   tu_render_pass_bandwidth_config(pass);
++   tu_render_pass_bandwidth_config(pass, device->physical_device);
     tu_render_pass_calc_views(pass);
 +   frane_ds1_prepare_pass(pass, device->physical_device);
  }
