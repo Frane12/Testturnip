@@ -1,0 +1,160 @@
+diff --git a/src/freedreno/vulkan/tu_autotune.cc b/src/freedreno/vulkan/tu_autotune.cc
+--- a/src/freedreno/vulkan/tu_autotune.cc
++++ b/src/freedreno/vulkan/tu_autotune.cc
+@@ -30,6 +30,7 @@
+ 
+ #define XXH_INLINE_ALL
+ #include "util/xxhash.h"
++#include "frane_switch_policy.h"
+ 
+ #include "tu_cmd_buffer.h"
+ #include "tu_cs.h"
+@@ -498,6 +499,13 @@
+ {
+    const uint64_t id = device->physical_device->dev_id.chip_id;
+    return id == 0x44010000ull || id == 0xffff44010000ull;
++}
++
++static bool
++frane_switch_enabled(const struct tu_device *device)
++{
++   static const bool enabled = debug_get_bool_option("TU_FRANE_SWITCH", true);
++   return enabled && frane_a810_gpu(device);
+ }
+ 
+ static uint32_t
+@@ -1376,11 +1384,23 @@
+       bool store_stencil;
+    };
+ 
++   const bool switch_key = frane_switch_enabled(cmd->device) &&
++      !cmd->state.per_layer_render_area && pass->num_views == 0 &&
++      framebuffer->layers == 1;
++   const size_t prefix_count = switch_key ? 9 : 3;
++
+    auto get_hash = [&](uint32_t *data, size_t size) {
+       uint32_t *ptr = data;
+       *ptr++ = framebuffer->width;
+       *ptr++ = framebuffer->height;
+       *ptr++ = framebuffer->layers;
++      if (switch_key) {
++         const auto &area = cmd->state.render_areas[0];
++         const auto tag = frane_switch_area_key(
++            area.offset.x, area.offset.y, area.extent.width, area.extent.height,
++            cmd->state.rp.drawcall_count, pass->subpass_count);
++         for (uint32_t value : tag) *ptr++ = value;
++      }
+ 
+       for (unsigned i = 0; i < pass->attachment_count; i++) {
+          /* Every image reaching a render pass must have an identity (see
+@@ -1408,9 +1428,9 @@
+    /* We do a manual Boost-style "small vector" optimization here where the stack is used for the vast majority of
+     * cases, while only extreme cases need to allocate on the heap.
+     */
+-   size_t data_count = 3 + (pass->attachment_count * sizeof(packed_att_properties) / sizeof(uint32_t));
++   size_t data_count = prefix_count + (pass->attachment_count * sizeof(packed_att_properties) / sizeof(uint32_t));
+    constexpr size_t STACK_MAX_DATA_COUNT =
+-      3 + (5 * (sizeof(packed_att_properties) / sizeof(uint32_t))); /* in u32 units, up to 5 attachments. */
++      9 + (5 * (sizeof(packed_att_properties) / sizeof(uint32_t))); /* in u32 units, up to 5 attachments. */
+ 
+    if (data_count <= STACK_MAX_DATA_COUNT) {
+       /* If the data is small enough, we can use the stack. */
+@@ -3151,7 +3171,35 @@
+     *
+     * Note: If we detect a small RP to be latency sensitive, we enable the autotuner for it anyway.
+     */
+-   bool ignore_small_rp = !config.test(mod_flag::TUNE_SMALL) && rp_state->drawcall_count < 5 &&
++   bool switch_small = false;
++   if (frane_switch_enabled(device) && enabled && !simultaneous_use &&
++       frane_a810_lean_profiled() && frane_a810_gmem_safety_enabled(device) &&
++       config.is_enabled(algorithm::PROFILED) &&
++       !config.test(mod_flag::PREEMPT_OPTIMIZE) &&
++       (cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) &&
++       rp_state->drawcall_count >= 2 && rp_state->drawcall_count <= 4 &&
++       frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer)) {
++      uint64_t resident = 0, transfer = 0;
++      for (uint32_t i = 0; i < pass->attachment_count; ++i) {
++         const auto &att = pass->attachments[i];
++         if (!att.gmem) continue;
++         resident += att.cpp;
++         transfer += uint64_t(att.cpp) * (unsigned(att.load) + unsigned(att.store));
++         if (att.load_stencil || att.store_stencil) transfer += 2;
++      }
++      const auto &area = cmd_state->render_areas[0];
++      const auto *tiling = cmd_state->tiling;
++      const auto &subpass = pass->subpasses[0];
++      switch_small = frane_switch_tune_small({
++         true, true, true,
++         subpass.depth_used || subpass.stencil_used || subpass.color_count >= 2,
++         rp_state->drawcall_count,
++         uint64_t(area.extent.width) * area.extent.height,
++         uint64_t(tiling->vsc.tile_count.width) * tiling->vsc.tile_count.height,
++         resident, transfer});
++   }
++   bool ignore_small_rp = !config.test(mod_flag::TUNE_SMALL) && !switch_small &&
++                          rp_state->drawcall_count < 5 &&
+                           (!latency_info || !latency_info->seen_latency_spike);
+ 
+    if (!enabled)
+diff --git a/src/freedreno/vulkan/tu_device.cc b/src/freedreno/vulkan/tu_device.cc
+--- a/src/freedreno/vulkan/tu_device.cc
++++ b/src/freedreno/vulkan/tu_device.cc
+@@ -1044,7 +1044,7 @@
+             "turnip Mesa driver");
+    memset(p->driverInfo, 0, sizeof(p->driverInfo));
+    snprintf(p->driverInfo, VK_MAX_DRIVER_INFO_SIZE,
+-            "A810 S1.2 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
++            "A810 S1.2 Zelda X1 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
+    p->conformanceVersion = (VkConformanceVersion) {
+       .major = 1,
+       .minor = 4,
+diff --git a/src/freedreno/vulkan/frane_switch_policy.h b/src/freedreno/vulkan/frane_switch_policy.h
+new file mode 100644
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_switch_policy.h
+@@ -0,0 +1,45 @@
++#ifndef FRANE_SWITCH_POLICY_H
++#define FRANE_SWITCH_POLICY_H
++#include <cstdint>
++#include <array>
++
++static inline uint32_t
++frane_switch_draw_band(uint32_t draws)
++{
++   if (draws < 5) return draws;
++   if (draws < 16) return 5;
++   if (draws < 64) return 6;
++   if (draws < 256) return 7;
++   return 8;
++}
++
++static inline std::array<uint32_t, 6>
++frane_switch_area_key(int32_t x, int32_t y, uint32_t width,
++                      uint32_t height, uint32_t draws, uint32_t subpasses)
++{
++   return {uint32_t(x), uint32_t(y), width, height,
++           frane_switch_draw_band(draws), subpasses};
++}
++
++struct frane_switch_small_input {
++   bool enabled = false;
++   bool profiled_one_time = false;
++   bool safe_full_frame = false;
++   bool depth_or_mrt = false;
++   uint32_t draws = 0;
++   uint64_t pixels = 0;
++   uint64_t tiles = 0;
++   uint64_t resident_cpp = 0;
++   uint64_t transfer_cpp = 0;
++};
++
++static inline bool
++frane_switch_tune_small(const frane_switch_small_input &in)
++{
++   return in.enabled && in.profiled_one_time && in.safe_full_frame &&
++          in.depth_or_mrt && in.draws >= 2 && in.draws <= 4 &&
++          in.pixels >= UINT64_C(262144) &&
++          in.tiles >= 1 && in.tiles <= 16 &&
++          in.resident_cpp && in.transfer_cpp <= in.resident_cpp;
++}
++#endif
