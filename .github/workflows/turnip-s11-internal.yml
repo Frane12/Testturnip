@@ -31,8 +31,8 @@ jobs:
           git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
           git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
           git -C mesa checkout --detach eda9aceb39d5ff169b096444abe366bdf2269e24
-          grep -Fq 'TU_A810_26338_GMEM_SEARCH", true' ../patches/s1.1-complete.patch
-          grep -Fq 'TU_FRANE_GMEM_PRESSURE", false' ../patches/s1.1-complete.patch
+          grep -Fq 'TU_A810_26338_GMEM_SEARCH", true' patches/s1.1-complete.patch
+          grep -Fq 'TU_FRANE_GMEM_PRESSURE", false' patches/s1.1-complete.patch
           git -C mesa apply --check ../patches/s1.1-complete.patch
           git -C mesa apply ../patches/s1.1-complete.patch
           git -C mesa rev-parse HEAD > mesa-commit.txt
