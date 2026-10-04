@@ -119,7 +119,7 @@ jobs:
           TAG=a810-s1-smart-ds1-internal
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/smart2-release.json 2>/dev/null; then
             python3 -c 'import json; assert json.load(open("/tmp/smart2-release.json"))["isDraft"], "Refusing to modify a published release"'
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "A810 S1 Smart DS1" --notes-file RELEASE_S1_SMART_DS1_A810.md
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "A810 S1 Smart DS1" --notes-file RELEASE_S1_SMART_DS1_A810.md
             gh release upload "$TAG" A810-S1-Smart-DS1.zip A810-S1-Smart-DS1-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$TAG" A810-S1-Smart-DS1.zip A810-S1-Smart-DS1-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "A810 S1 Smart DS1" --notes-file RELEASE_S1_SMART_DS1_A810.md --draft
