@@ -21,7 +21,8 @@ jobs:
         run: |
           set -eu
           mkdir artifact
-          gh run download 37158717771             --repo "$GITHUB_REPOSITORY"             --name "Drnas-Turnip-S1-A810"             --dir artifact
+          gh api -H "Accept: application/vnd.github+json" "/repos/$GITHUB_REPOSITORY/actions/artifacts/11287401353/zip" > artifact-bundle.zip
+          unzip -q artifact-bundle.zip -d artifact
           test -f artifact/Drnas-Turnip-S1H-A810.zip
           test -f artifact/SHA256SUMS.txt
 
