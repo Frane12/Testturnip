@@ -1157,3 +1157,11 @@ jobs:
             EXPERIMENT_MESA_26_3_61_A810_SIGNATURE_SCAN.md
             EXPERIMENT_S1H_A810_HISTOGRAM.md
             RELEASE_S1_A810.md
+      - name: Publish Drnas-Turnip S1H A810 prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="drnas-turnip-s1h-a810"
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" -y --cleanup-tag || true
+          gh release create "$TAG" Drnas-Turnip-S1H-A810.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Drnas-Turnip S1H A810" --notes "Experimental S1-based A810 histogram / frametime stabilizer lab. S1 stable release remains unchanged. TU_FRANE_HIST=1 enables user histogram logging. TU_FRANE_HIST_SMOOTH=1 enables optional histogram-based pathway smoothing." --prerelease
