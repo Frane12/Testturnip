@@ -11,6 +11,8 @@ V38 GMEM allocation/search and the exact S1 Smart 2 baseline, with a depth/stenc
 - Preserve authoritative Smart GMEM/SYSMEM choices and paired measurements. The old forced-depth heuristic may operate only between measurements when Smart has not taken ownership; stencil passes use measured selection.
 - Retain the two previously integrated Mesa correctness fixes and V38 packing. No hardware register workaround or FPS result is asserted.
 
+Vulkan device name (DXVK HUD): `Turnip-Drnas A810`.
+
 Enabled by default. Install normally; no extra environment variables are required.
 
 `TU_FRANE_DS1=0` restores the old Smart 2 depth/stencil policy and conditional transfer behavior. `TU_FRANE_SMART=0` disables Smart history selection. `TU_FRANE_STENCIL_LS=0` narrows stencil-preservation admission while retaining DS1 checks.

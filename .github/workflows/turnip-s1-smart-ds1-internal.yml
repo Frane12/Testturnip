@@ -85,7 +85,7 @@ jobs:
           cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
           python3 - <<'PY'
           import json,pathlib,zipfile
-          meta={'schemaVersion':1,'name':'A810 S1 Smart DS1','description':'Experimental A810 V38 packing + Smart2 + validated depth/stencil aspect ops, plane bounds and unconditional Z/S transfers. DS1 and Smart default ON; hardware testing pending.','author':'Frane12','packageVersion':'1','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
+          meta={'schemaVersion':1,'name':'A810 S1 Smart DS1','description':'Experimental A810 V38 packing + Smart2 + validated depth/stencil aspect ops, plane bounds and unconditional Z/S transfers. DS1 and Smart default ON; hardware testing pending.','author':'Frane12','packageVersion':'2','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
           pathlib.Path('output/meta.json').write_text(json.dumps(meta,indent=2)+'\n')
           with zipfile.ZipFile('A810-S1-Smart-DS1.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
               z.write('output/libvulkan_freedreno.so','libvulkan_freedreno.so')
@@ -97,6 +97,7 @@ jobs:
               assert b[:6]==b'\x7fELF\x02\x01'
               assert int.from_bytes(b[16:18],'little')==3 and int.from_bytes(b[18:20],'little')==183
               assert b'A810 S1 Smart DS1 / Mesa' in b and b'TU_FRANE_SMART' in b
+              assert b'Turnip-Drnas A810' in b
           PY
           zip -9 A810-S1-Smart-DS1-Source.zip patches/s1-smart2-complete.patch patches/s1-smart-ds1.patch tests/ds1_policy.cpp tests/ds1_mesa_ops.py tests/mesa_26364_a810_smart_v2.cpp .github/workflows/turnip-s1-smart-ds1-internal.yml RELEASE_S1_SMART_DS1_A810.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log ds1-ubsan.log ds1-asan.log ds1-mesa-ops.log
           sha256sum A810-S1-Smart-DS1.zip A810-S1-Smart-DS1-Source.zip patches/s1-smart2-complete.patch patches/s1-smart-ds1.patch > SHA256SUMS.txt

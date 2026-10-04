@@ -354,6 +354,20 @@ diff --git a/src/freedreno/vulkan/tu_device.cc b/src/freedreno/vulkan/tu_device.
     p->conformanceVersion = (VkConformanceVersion) {
        .major = 1,
        .minor = 4,
+@@ -1745,7 +1745,12 @@
+       !device->has_raytracing;
+    const char *rt_suffix = raytracing_disabled ? " (raytracing disabled)" : "";
+ 
+-   if (strncmp(fd_name, "FD", 2) == 0) {
++   if (device->dev_id.chip_id == UINT64_C(0x44010000) ||
++       device->dev_id.chip_id == UINT64_C(0xffff44010000)) {
++      device->name = vk_asprintf(&instance->vk.alloc,
++                                 VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE,
++                                 "%s", "Turnip-Drnas A810");
++   } else if (strncmp(fd_name, "FD", 2) == 0) {
+       device->name = vk_asprintf(&instance->vk.alloc,
+                                  VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE,
+                                  "Turnip Adreno (TM) %s%s", &fd_name[2],
 diff --git a/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h b/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
 --- a/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
 +++ b/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
