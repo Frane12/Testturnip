@@ -27,7 +27,7 @@ jobs:
           ndk-version: r29
       - name: Fetch exact base and apply verified complete patch
         run: |
-          set -eu
+          set -euo pipefail
           git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
           git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
           git -C mesa checkout --detach eda9aceb39d5ff169b096444abe366bdf2269e24
@@ -37,7 +37,7 @@ jobs:
           git rev-parse HEAD > frane-commit.txt
       - name: Policy tests — 716040 boundary cases and regime simulation
         run: |
-          set -eu
+          set -euo pipefail
           g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/mesa_26364_a810_smart_v2.cpp -o /tmp/smart2-ubsan
           UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-ubsan | tee smart2-ubsan.log
           g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/mesa_26364_a810_smart_v2.cpp -o /tmp/smart2-asan
@@ -70,7 +70,7 @@ jobs:
           meson compile -C mesa/build-android -j 4
       - name: Package and verify driver plus sources
         run: |
-          set -eu
+          set -euo pipefail
           mkdir output
           cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
           python3 - <<'PY'
@@ -94,7 +94,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -eu
+          set -euo pipefail
           TAG=a810-s1-smart-performance-2-internal
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/smart2-release.json 2>/dev/null; then
             python3 -c 'import json; assert json.load(open("/tmp/smart2-release.json"))["isDraft"], "Refusing to modify a published release"'
