@@ -4138,9 +4138,9 @@ index 6a306114..dbcadaef 100644
  
 +   if (frane_a830_target(cmd->device->physical_device->dev_id.chip_id)) {
 +      static const bool experimental_gmem =
-+         debug_get_bool_option("TU_FRANE_A830_GMEM", false);
++         debug_get_bool_option("TU_FRANE_A830_GMEM", true);
 +      if (!experimental_gmem) {
-+         cmd->state.rp.force_render_mode_reason = "A830 GMEM write-fault quarantine";
++         cmd->state.rp.force_render_mode_reason = "A830 GMEM disabled by TU_FRANE_A830_GMEM=0";
 +         return true;
 +      }
 +      const auto *pass = cmd->state.pass;

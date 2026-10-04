@@ -1,4 +1,4 @@
-name: A830 S1 Smart Performance 2 Internal
+name: Drnas Turnip S1 A830 Smart Performance
 on:
   push:
     branches: ['drnas-a830-s1-smart-performance-2']
@@ -82,31 +82,31 @@ jobs:
           cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
           python3 - <<'PY'
           import json,pathlib,zipfile
-          meta={'schemaVersion':1,'name':'A830 S1 Smart Performance 2','description':'A830 smart processing; SYSMEM default for known GMEM write-fault risk. Experimental guarded GMEM: TU_FRANE_A830_GMEM=1. Host tested; no device validation.','author':'Frane12','packageVersion':'2','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
+          meta={'schemaVersion':1,'name':'Drnas Turnip S1 A830','description':'A830 Smart Performance; guarded GMEM is enabled by default. Set TU_FRANE_A830_GMEM=0 to disable A830 GMEM and fall back to SYSMEM. Experimental; host tested, no device validation.','author':'Frane12','packageVersion':'2','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
           pathlib.Path('output/meta.json').write_text(json.dumps(meta,indent=2)+'\n')
-          with zipfile.ZipFile('A830-S1-Smart-Performance-2.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+          with zipfile.ZipFile('Drnas-Turnip-S1-A830.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
               z.write('output/libvulkan_freedreno.so','libvulkan_freedreno.so')
               z.write('output/meta.json','meta.json')
-          with zipfile.ZipFile('A830-S1-Smart-Performance-2.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-S1-A830.zip') as z:
               assert z.testzip() is None
               assert set(z.namelist())=={'libvulkan_freedreno.so','meta.json'}
               b=z.read('libvulkan_freedreno.so')
               assert b[:6]==b'\x7fELF\x02\x01'
               assert int.from_bytes(b[16:18],'little')==3 and int.from_bytes(b[18:20],'little')==183
-              assert b'A830 S1 Smart Performance 2 / Mesa' in b and b'TU_FRANE_SMART' in b
+              assert b'A830 S1 Smart Performance 2 / Mesa' in b and b'TU_FRANE_SMART' in b and b'TU_FRANE_A830_GMEM' in b
           PY
-          zip -9 A830-S1-Smart-Performance-2-Source.zip patches/a830-smart2-complete.patch tests/smart_v2.cpp tests/a830_gmem_safety.cpp tests/source_guards.py tests/history_key.py history-key-test.log safety-test.log source-test.log RELEASE_S1_SMART_2_A830.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log
-          sha256sum A830-S1-Smart-Performance-2.zip A830-S1-Smart-Performance-2-Source.zip patches/a830-smart2-complete.patch > SHA256SUMS.txt
-      - name: Create or update INTERNAL DRAFT only
+          zip -9 Drnas-Turnip-S1-A830-Source.zip patches/a830-smart2-complete.patch tests/smart_v2.cpp tests/a830_gmem_safety.cpp tests/source_guards.py tests/history_key.py history-key-test.log safety-test.log source-test.log RELEASE_S1_SMART_2_A830.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log
+          sha256sum Drnas-Turnip-S1-A830.zip Drnas-Turnip-S1-A830-Source.zip patches/a830-smart2-complete.patch > SHA256SUMS.txt
+      - name: Publish public A830 Smart Performance prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG=a830-s1-smart-performance-2-internal
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/smart2-release.json 2>/dev/null; then
-            python3 -c 'import json; assert json.load(open("/tmp/smart2-release.json"))["isDraft"], "Refusing to modify a published release"'
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "A830 S1 Smart Performance 2" --notes-file RELEASE_S1_SMART_2_A830.md
-            gh release upload "$TAG" A830-S1-Smart-Performance-2.zip A830-S1-Smart-Performance-2-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          TAG=drnas-turnip-s1-a830-smart
+          TITLE="Drnas-Turnip S1 A830 — Smart Performance"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file RELEASE_S1_SMART_2_A830.md --prerelease
+            gh release upload "$TAG" Drnas-Turnip-S1-A830.zip Drnas-Turnip-S1-A830-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" A830-S1-Smart-Performance-2.zip A830-S1-Smart-Performance-2-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "A830 S1 Smart Performance 2" --notes-file RELEASE_S1_SMART_2_A830.md --draft
+            gh release create "$TAG" Drnas-Turnip-S1-A830.zip Drnas-Turnip-S1-A830-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE" --notes-file RELEASE_S1_SMART_2_A830.md --prerelease
           fi
