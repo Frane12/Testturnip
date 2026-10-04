@@ -44,7 +44,7 @@ int main()
       /* Warm stable history is a cheap memoized GMEM hit. */
       const auto d = frane_26363_decide_smart_performance(
          true, false, hist(FRANE_HIST_PREF_GMEM, 4, 8),
-         learner(3), 45, UINT64_C(1));
+         learner(3), 45, UINT64_C(1) | (UINT64_C(1) << 16));
       assert(d.override_mode);
       assert(!d.select_sysmem);
       assert(!d.force_measure);
@@ -70,7 +70,7 @@ int main()
       /* Locked history samples the loser only 1/256 decisions. */
       auto d = frane_26363_decide_smart_performance(
          true, false, hist(FRANE_HIST_PREF_GMEM, 8, 32),
-         learner(8), 20, UINT64_C(1));
+         learner(8), 20, UINT64_C(1) | (UINT64_C(1) << 16));
       assert(d.override_mode);
       assert(d.tier == 3);
       assert(d.probe_log2 == 8);
