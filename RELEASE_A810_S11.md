@@ -10,19 +10,29 @@ The expensive-cost flag is computed only when timing feedback arrives and packed
 
 The freshness window grows to 1024 occurrences only while the sparse policy qualifies. This is an explicit tradeoff: fewer expensive probes in stable scenes, potentially slower detection when the winner changes. Counts are render-pattern recurrences, not frames or milliseconds.
 
+
+## V38 fusion: bounded GMEM look-ahead
+
+S1.1 now defaults to the original V38 GMEM search profile on top of Smart 2/loss budgeting. The exact-mask V37 candidate is still the seed/fallback; for small render passes (3-12 GMEM items) a bounded branch-and-bound search may explore alternative legal lifetime track assignments. The default budget is 1024 nodes and a searched layout is adopted only on a strict exact gmem_pixels win, otherwise the V37 candidate is preserved byte-for-byte.
+
+The later V39 future-pressure extension remains compiled in but is now opt-in so this draft cleanly isolates the S1.1 + V38 combination. This avoids attributing any result to the larger 16-item / 4096-node V39 search.
+
 ## Controls
 
 Enabled by default, no variables required.
 
 - TU_FRANE_SMART_BUDGET=0: disable only S1.1 loss budgeting, preserving the S1 Smart 2 selection and measurement schedule.
 - TU_FRANE_SMART=0: disable the whole Smart layer and return to the inherited S1 path.
+- TU_A810_26338_GMEM_SEARCH=0: disable V38 bounded GMEM look-ahead and keep the inherited exact-mask allocator.
+- TU_A810_26338_GMEM_SEARCH_BUDGET=1024: V38 node budget (default 1024; bounded internally).
+- TU_FRANE_GMEM_PRESSURE=1: opt into the later V39 future-pressure extension (up to 16 items / 4096-node default); OFF by default in this fusion draft.
 - TU_FRANE_PROFILE_ID is not needed.
 
 ## Validation
 
 Host UBSan checks passed: inherited 716,040 boundary combinations with budgeting disabled; exact cadence and counter rollover for both winner modes; risky-pass exclusion; tie and <2x boundary withdrawal; extreme 64-bit costs; 256 synthetic abrupt-winner-reversal simulations.
 
-Across those 256 simulations, the largest observed delay to the new TRUSTED winner was 636 pattern occurrences. They requested 25,274 measurements out of 2,560,000 decisions (0.987%). These are synthetic policy results, not GPU overhead or game FPS results. A successful build additionally runs ASan+UBSan, applies the complete patch against pristine pinned Mesa, compiles Android ARM64 with NDK r29 and checks the ZIP/ELF.
+Across those 256 simulations, the largest observed delay to the new TRUSTED winner was 636 pattern occurrences. They requested 25,274 measurements out of 2,560,000 decisions (0.987%). These are synthetic policy results, not GPU overhead or game FPS results. A successful build additionally runs ASan+UBSan, verifies the V38/V39 default split in the complete patch, applies it against pristine pinned Mesa, compiles Android ARM64 with NDK r29 and checks the ZIP/ELF.
 
 ## Device test
 
