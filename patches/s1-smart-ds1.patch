@@ -1,0 +1,422 @@
+diff --git a/src/freedreno/vulkan/tu_pass.h b/src/freedreno/vulkan/tu_pass.h
+--- a/src/freedreno/vulkan/tu_pass.h
++++ b/src/freedreno/vulkan/tu_pass.h
+@@ -96,11 +96,14 @@
+    struct tu_subpass_barrier start_barrier;
+ };
+ 
++#include "frane_ds1.h"
++
+ struct tu_render_pass_attachment
+ {
+    VkFormat format;
+    VkSampleCountFlagBits samples;
+    uint32_t cpp;
++   frane_ds1_ops frane_ds_ops {};
+    VkImageAspectFlags clear_mask;
+ 
+    /* All views that are used with the attachment in all subpasses. Used to
+@@ -147,6 +150,8 @@
+    uint32_t tile_align_w;
+    uint32_t min_cpp;
+    uint64_t autotune_hash;
++   uint8_t frane_ds_flags = 0;
++   uint8_t frane_ds_layout_mask = 0;
+ 
+    /* memory bandwidth costs (in bytes) for gmem / sysmem rendering */
+    uint32_t gmem_bandwidth_per_pixel;
+diff --git a/src/freedreno/vulkan/tu_pass.cc b/src/freedreno/vulkan/tu_pass.cc
+--- a/src/freedreno/vulkan/tu_pass.cc
++++ b/src/freedreno/vulkan/tu_pass.cc
+@@ -606,6 +606,14 @@
+       att->cond_store_allowed =
+          (att->store || att->store_stencil) && !att->clear_mask;
+ 
++      static const bool ds1 = debug_get_bool_option("TU_FRANE_DS1", true);
++      const uint64_t id = device->physical_device->dev_id.chip_id;
++      if (ds1 && (id == UINT64_C(0x44010000) || id == UINT64_C(0xffff44010000)) &&
++          vk_format_is_depth_or_stencil(att->format)) {
++         att->cond_load_allowed = false;
++         att->cond_store_allowed = false;
++      }
++
+       pass->has_cond_load_store |=
+          att->cond_load_allowed | att->cond_store_allowed;
+    }
+@@ -2122,6 +2130,84 @@
+ }
+ 
+ static void
++frane_ds1_prepare_pass(struct tu_render_pass *pass,
++                       const struct tu_physical_device *phys)
++{
++   pass->frane_ds_flags = 0;
++   pass->frane_ds_layout_mask = 0;
++   const uint64_t id = phys->dev_id.chip_id;
++   if (id != UINT64_C(0x44010000) && id != UINT64_C(0xffff44010000))
++      return;
++   if (!pass->attachment_count || pass->attachment_count > 4 ||
++       pass->subpass_count != 1 || pass->num_views || pass->has_fdm ||
++       pass->has_layered_fdm || pass->has_msrtss)
++      return;
++   const auto &sp = pass->subpasses[0];
++   if (sp.input_count || sp.resolve_count || sp.unresolve_count ||
++       sp.resolve_depth_stencil || sp.feedback_loop_color || sp.feedback_loop_ds ||
++       sp.feedback_invalidate || sp.raster_order_attachment_access ||
++       sp.custom_resolve || sp.multiview_mask || sp.samples != VK_SAMPLE_COUNT_1_BIT)
++      return;
++   uint8_t flags = 0;
++   for (uint32_t i = 0; i < pass->attachment_count; ++i) {
++      const auto &att = pass->attachments[i];
++      if (att.samples != VK_SAMPLE_COUNT_1_BIT || att.will_be_resolved)
++         return;
++      if (!att.gmem) continue;
++      if (att.first_subpass_idx != 0 || att.last_subpass_idx != 0)
++         return;
++      const bool depth = vk_format_has_depth(att.format);
++      const bool stencil = vk_format_has_stencil(att.format);
++      if (!depth && !stencil) continue;
++      if (att.cond_load_allowed || att.cond_store_allowed)
++         return;
++      const auto kind = att.format == VK_FORMAT_D24_UNORM_S8_UINT ? FRANE_DS1_PACKED :
++                        att.format == VK_FORMAT_D32_SFLOAT_S8_UINT ? FRANE_DS1_SPLIT :
++                        att.format == VK_FORMAT_S8_UINT ? FRANE_DS1_STENCIL :
++                        depth && !stencil ? FRANE_DS1_DEPTH : FRANE_DS1_UNKNOWN;
++      frane_ds1_emitted emitted {};
++      emitted.load = att.load;
++      emitted.store = att.store;
++      emitted.load_stencil = att.load_stencil;
++      emitted.store_stencil = att.store_stencil;
++      if (kind == FRANE_DS1_PACKED || kind == FRANE_DS1_SPLIT) {
++         if (att.clear_mask & VK_IMAGE_ASPECT_DEPTH_BIT) emitted.clear |= FRANE_DS1_D;
++         if (att.clear_mask & VK_IMAGE_ASPECT_STENCIL_BIT) emitted.clear |= FRANE_DS1_S;
++      } else if (att.clear_mask) {
++         emitted.clear = stencil ? FRANE_DS1_S : FRANE_DS1_D;
++      }
++      if (!frane_ds1_ops_valid(kind, att.frane_ds_ops, emitted))
++         return;
++      flags |= depth ? FRANE_DS1_HAS_DEPTH : 0;
++      flags |= stencil ? FRANE_DS1_HAS_STENCIL : 0;
++      flags |= kind == FRANE_DS1_PACKED ? FRANE_DS1_HAS_PACKED : 0;
++      if (att.load || att.store || att.load_stencil || att.store_stencil)
++         flags |= FRANE_DS1_PERSISTENT;
++      if (stencil && ((att.frane_ds_ops.load | att.frane_ds_ops.store |
++                      att.frane_ds_ops.preserve) & FRANE_DS1_S))
++         flags |= FRANE_DS1_STENCIL_LS;
++   }
++   for (unsigned layout = 0; layout < TU_GMEM_LAYOUT_COUNT; ++layout) {
++      frane_ds1_plane planes[8] {};
++      uint32_t count = 0;
++      for (uint32_t i = 0; i < pass->attachment_count; ++i) {
++         const auto &att = pass->attachments[i];
++         if (!att.gmem) continue;
++         planes[count++] = {att.gmem_offset[layout], att.cpp};
++         if (att.format == VK_FORMAT_D32_SFLOAT_S8_UINT)
++            planes[count++] = {att.gmem_offset_stencil[layout], uint32_t(att.samples)};
++      }
++      uint32_t capacity = phys->usable_gmem_size_gmem;
++      if (layout == TU_GMEM_LAYOUT_AVOID_CCU)
++         capacity = MIN2(capacity, phys->config_gmem.color_ccu_offset);
++      const uint32_t align = 8u * phys->info->tile_align_w * phys->info->tile_align_h;
++      if (frane_ds1_planes_valid(planes, count, pass->gmem_pixels[layout], capacity, align))
++         pass->frane_ds_layout_mask |= uint8_t(1u << layout);
++   }
++   pass->frane_ds_flags = flags;
++}
++
++static void
+ attachment_set_ops(struct tu_device *device,
+                    struct tu_render_pass_attachment *att,
+                    VkAttachmentLoadOp load_op,
+@@ -2134,6 +2220,24 @@
+          load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
+       if (stencil_load_op == VK_ATTACHMENT_LOAD_OP_DONT_CARE)
+          stencil_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
++   }
++
++   att->frane_ds_ops = {};
++   if (vk_format_is_depth_or_stencil(att->format)) {
++      auto &ops = att->frane_ds_ops;
++      ops.known = true;
++      if (vk_format_has_depth(att->format)) {
++         if (load_op == VK_ATTACHMENT_LOAD_OP_LOAD) ops.load |= FRANE_DS1_D;
++         if (load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) ops.clear |= FRANE_DS1_D;
++         if (store_op == VK_ATTACHMENT_STORE_OP_STORE) ops.store |= FRANE_DS1_D;
++         if (store_op == VK_ATTACHMENT_STORE_OP_NONE_EXT) ops.preserve |= FRANE_DS1_D;
++      }
++      if (vk_format_has_stencil(att->format)) {
++         if (stencil_load_op == VK_ATTACHMENT_LOAD_OP_LOAD) ops.load |= FRANE_DS1_S;
++         if (stencil_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) ops.clear |= FRANE_DS1_S;
++         if (stencil_store_op == VK_ATTACHMENT_STORE_OP_STORE) ops.store |= FRANE_DS1_S;
++         if (stencil_store_op == VK_ATTACHMENT_STORE_OP_NONE_EXT) ops.preserve |= FRANE_DS1_S;
++      }
+    }
+ 
+    /* load/store ops */
+@@ -2589,6 +2693,7 @@
+    }
+ 
+    tu_render_pass_add_implicit_deps(pass, pCreateInfo);
++   frane_ds1_prepare_pass(pass, device->physical_device);
+ 
+    *pRenderPass = tu_render_pass_to_handle(pass);
+ 
+@@ -3094,6 +3199,7 @@
+    tu_render_pass_gmem_config(pass, device->physical_device);
+    tu_render_pass_bandwidth_config(pass);
+    tu_render_pass_calc_views(pass);
++   frane_ds1_prepare_pass(pass, device->physical_device);
+ }
+ 
+ void
+diff --git a/src/freedreno/vulkan/tu_autotune.cc b/src/freedreno/vulkan/tu_autotune.cc
+--- a/src/freedreno/vulkan/tu_autotune.cc
++++ b/src/freedreno/vulkan/tu_autotune.cc
+@@ -158,6 +158,13 @@
+ }
+ 
+ static bool
++frane_ds1_enabled()
++{
++   static const bool enabled = debug_get_bool_option("TU_FRANE_DS1", true);
++   return enabled;
++}
++
++static bool
+ frane_a810_gmem_pass_safe(const struct tu_device *device,
+                           const struct tu_cmd_state *cmd_state,
+                           const struct tu_render_pass *pass,
+@@ -200,6 +207,21 @@
+ 
+    if (pass->attachment_count == 0 || pass->attachment_count > 4)
+       return false;
++
++   if (frane_ds1_enabled()) {
++      if (cmd_state->gmem_layout >= TU_GMEM_LAYOUT_COUNT ||
++          !(pass->frane_ds_layout_mask & (1u << cmd_state->gmem_layout)))
++         return false;
++      static const bool allow_depth = debug_get_bool_option("TU_FRANE_SIMPLE_DEPTH", true);
++      static const bool allow_ds = debug_get_bool_option("TU_FRANE_SIMPLE_DS", true);
++      static const bool allow_packed = debug_get_bool_option("TU_FRANE_PACKED_DS", true);
++      static const bool allow_stencil_ls = debug_get_bool_option("TU_FRANE_STENCIL_LS", true);
++      const uint8_t flags = pass->frane_ds_flags;
++      return (!(flags & FRANE_DS1_HAS_DEPTH) || allow_depth) &&
++             (!(flags & FRANE_DS1_HAS_STENCIL) || allow_ds) &&
++             (!(flags & FRANE_DS1_HAS_PACKED) || allow_packed) &&
++             (!(flags & FRANE_DS1_STENCIL_LS) || allow_stencil_ls);
++   }
+ 
+    static const bool allow_simple_depth =
+       debug_get_bool_option("TU_FRANE_SIMPLE_DEPTH", true);
+@@ -1374,6 +1396,7 @@
+       bool store;
+       bool load_stencil;
+       bool store_stencil;
++      uint32_t ds_key;
+    };
+ 
+    auto get_hash = [&](uint32_t *data, size_t size) {
+@@ -1395,6 +1418,9 @@
+             .store = pass->attachments[i].store,
+             .load_stencil = pass->attachments[i].load_stencil,
+             .store_stencil = pass->attachments[i].store_stencil,
++            .ds_key = frane_ds1_enabled() && pass->attachments[i].frane_ds_ops.known ?
++               frane_ds1_ops_key(uint32_t(pass->attachments[i].format),
++                                 pass->attachments[i].frane_ds_ops) : 0,
+          };
+ 
+          memcpy(ptr, &props, sizeof(packed_att_properties));
+@@ -2043,6 +2069,7 @@
+                   history.frane_smart_word.load(std::memory_order_relaxed),
+                   l_sysmem_probability, in.tail_occurrences, history.hash);
+                if (d.owns) {
++                  if (in.smart_owned) *in.smart_owned = true;
+                   *measure = d.measure;
+                   return d.sysmem ? render_mode::SYSMEM : render_mode::GMEM;
+                }
+@@ -3189,6 +3216,14 @@
+       return forced(early_return_reason, *early_return_mode);
+    }
+ 
++   if (frane_ds1_enabled() && !config.test(mod_flag::PREEMPT_OPTIMIZE) &&
++       (config.is_enabled(algorithm::PROFILED) ||
++        config.is_enabled(algorithm::PROFILED_IMM) ||
++        config.is_enabled(algorithm::BANDWIDTH)) &&
++       !frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer)) {
++      return forced("DS1 GMEM eligibility", render_mode::SYSMEM);
++   }
++
+    rp_key key(0);
+    if (key_opt)
+       key = *key_opt;
+@@ -3227,7 +3262,9 @@
+        !config.test(mod_flag::PREEMPT_OPTIMIZE) && !early_return_mode &&
+        (cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)) {
+       bool measure = true;
++      bool smart_owned = false;
+       frane_26318_smart_gmem_input runtime_input {};
++      runtime_input.smart_owned = &smart_owned;
+       if (frane_a810_gmem_runtime_enabled(device)) {
+          uint64_t pass_pixels = 0;
+          if (cmd_state->per_layer_render_area) {
+@@ -3301,6 +3338,10 @@
+                history.frane_hist_word.load(std::memory_order_relaxed);
+          }
+ 
++         if (frane_ds1_enabled()) {
++            runtime_input.zs_load_store = pass->frane_ds_flags &
++               (FRANE_DS1_PERSISTENT | FRANE_DS1_HAS_STENCIL);
++         } else {
+          for (uint32_t i = 0; i < pass->attachment_count; i++) {
+             const struct tu_render_pass_attachment &att = pass->attachments[i];
+             if (!att.gmem ||
+@@ -3313,6 +3354,7 @@
+                break;
+             }
+          }
++         }
+       }
+ 
+       render_mode mode = history.profiled.get_optimal_mode(
+@@ -3322,9 +3364,12 @@
+          frane_a810_gmem_turbo_enabled(device),
+          frane_a810_live_profiled(device));
+ 
+-      mode = frane_26350_depth_frontier(
+-         device, cmd_state, pass, framebuffer, mode,
+-         rp_state->drawcall_count, &measure);
++      if (frane_ds1_frontier_allowed(frane_ds1_enabled(), smart_owned,
++                                     measure, pass->frane_ds_flags)) {
++         mode = frane_26350_depth_frontier(
++            device, cmd_state, pass, framebuffer, mode,
++            rp_state->drawcall_count, &measure);
++      }
+ 
+       if (mode == render_mode::GMEM &&
+           !frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer)) {
+diff --git a/src/freedreno/vulkan/tu_device.cc b/src/freedreno/vulkan/tu_device.cc
+--- a/src/freedreno/vulkan/tu_device.cc
++++ b/src/freedreno/vulkan/tu_device.cc
+@@ -1044,7 +1044,7 @@
+             "turnip Mesa driver");
+    memset(p->driverInfo, 0, sizeof(p->driverInfo));
+    snprintf(p->driverInfo, VK_MAX_DRIVER_INFO_SIZE,
+-            "A810 S1 Smart Performance 2 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
++            "A810 S1 Smart DS1 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
+    p->conformanceVersion = (VkConformanceVersion) {
+       .major = 1,
+       .minor = 4,
+diff --git a/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h b/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
+--- a/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
++++ b/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
+@@ -24,6 +24,7 @@
+    uint32_t tail_occurrences = 0;
+    bool tail_signature = false;
+    bool hist_smooth = false;
++   bool *smart_owned = nullptr;
+    uint32_t hist_word = 0;
+ };
+ 
+diff --git a/src/freedreno/vulkan/frane_ds1.h b/src/freedreno/vulkan/frane_ds1.h
+new file mode 100644
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_ds1.h
+@@ -0,0 +1,98 @@
++#ifndef FRANE_DS1_H
++#define FRANE_DS1_H
++#include <cstdint>
++
++enum frane_ds1_kind : uint8_t {
++   FRANE_DS1_COLOR, FRANE_DS1_DEPTH, FRANE_DS1_PACKED,
++   FRANE_DS1_SPLIT, FRANE_DS1_STENCIL, FRANE_DS1_UNKNOWN
++};
++enum : uint8_t { FRANE_DS1_D = 1, FRANE_DS1_S = 2 };
++enum : uint8_t {
++   FRANE_DS1_HAS_DEPTH = 1, FRANE_DS1_HAS_STENCIL = 2,
++   FRANE_DS1_HAS_PACKED = 4, FRANE_DS1_PERSISTENT = 8,
++   FRANE_DS1_STENCIL_LS = 16
++};
++struct frane_ds1_ops {
++   uint8_t load = 0, store = 0, clear = 0, preserve = 0;
++   bool known = false;
++};
++struct frane_ds1_emitted {
++   bool load = false, store = false;
++   bool load_stencil = false, store_stencil = false;
++   uint8_t clear = 0;
++};
++struct frane_ds1_plane {
++   int32_t offset = -1;
++   uint32_t cpp = 0;
++};
++static inline uint8_t frane_ds1_aspects(frane_ds1_kind kind)
++{
++   return kind == FRANE_DS1_DEPTH ? FRANE_DS1_D :
++          kind == FRANE_DS1_STENCIL ? FRANE_DS1_S :
++          kind == FRANE_DS1_PACKED || kind == FRANE_DS1_SPLIT ? 3 : 0;
++}
++static inline bool frane_ds1_ops_valid(frane_ds1_kind kind,
++                                      frane_ds1_ops op,
++                                      frane_ds1_emitted emitted)
++{
++   const uint8_t aspects = frane_ds1_aspects(kind);
++   if (!aspects || !op.known ||
++       ((op.load | op.store | op.clear | op.preserve) & ~aspects) ||
++       (op.load & op.clear) || (op.store & op.preserve))
++      return false;
++   frane_ds1_emitted expected {};
++   expected.clear = op.clear;
++   if (kind == FRANE_DS1_SPLIT) {
++      expected.load = op.load & FRANE_DS1_D;
++      expected.store = op.store & FRANE_DS1_D;
++      expected.load_stencil = op.load & FRANE_DS1_S;
++      expected.store_stencil = op.store & FRANE_DS1_S;
++   } else {
++      expected.load = op.load ||
++         (kind == FRANE_DS1_PACKED && op.store && op.preserve);
++      expected.store = op.store;
++   }
++   return emitted.load == expected.load && emitted.store == expected.store &&
++          emitted.load_stencil == expected.load_stencil &&
++          emitted.store_stencil == expected.store_stencil &&
++          emitted.clear == expected.clear;
++}
++static inline bool frane_ds1_planes_valid(const frane_ds1_plane *planes,
++                                         uint32_t count, uint32_t pixels,
++                                         uint32_t capacity,
++                                         uint32_t alignment)
++{
++   if (!planes || !count || count > 8 || !pixels || !capacity || !alignment)
++      return false;
++   for (uint32_t i = 0; i < count; ++i) {
++      if (planes[i].offset < 0 || !planes[i].cpp ||
++          uint32_t(planes[i].offset) % alignment)
++         return false;
++      const uint64_t begin = uint32_t(planes[i].offset);
++      const uint64_t end = begin + uint64_t(pixels) * planes[i].cpp;
++      if (end > capacity)
++         return false;
++      for (uint32_t j = 0; j < i; ++j) {
++         const uint64_t other_begin = uint32_t(planes[j].offset);
++         const uint64_t other_end = other_begin + uint64_t(pixels) * planes[j].cpp;
++         if (begin < other_end && other_begin < end)
++            return false;
++      }
++   }
++   return true;
++}
++static inline uint32_t frane_ds1_ops_key(uint32_t format, frane_ds1_ops op)
++{
++   return (format & 0xffffu) | (uint32_t(op.load) << 16) |
++          (uint32_t(op.store) << 18) | (uint32_t(op.clear) << 20) |
++          (uint32_t(op.preserve) << 22) | (uint32_t(op.known) << 24);
++}
++static inline bool frane_ds1_frontier_allowed(bool enabled,
++                                             bool smart_owned,
++                                             bool measured,
++                                             uint8_t flags)
++{
++   return !enabled || (!smart_owned && !measured &&
++                       !(flags & FRANE_DS1_HAS_STENCIL));
++}
++#endif
