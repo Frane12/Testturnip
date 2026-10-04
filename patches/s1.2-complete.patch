@@ -771,6 +771,2510 @@ index 3f7bb6f..31b69e6 100644
  
     /* The terminator has to stay at the end. Instead of trying to set up
      * dependencies to achieve this, it's easier to just remove it now and add it
+diff --git a/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h b/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
+new file mode 100644
+index 0000000..b93d830
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
+@@ -0,0 +1,183 @@
++/* SPDX-License-Identifier: MIT
++ * Frane Mesa 26.3.18 A810 SMART-GMEM EXP.
++ * Pure policy helpers. Experimental downstream code, not official Mesa.
++ */
++#ifndef FRANE_MESA_26318_A810_SMART_GMEM_H
++#define FRANE_MESA_26318_A810_SMART_GMEM_H
++
++#include <algorithm>
++#include <cstdint>
++
++#include "frane_mesa_2634_a810_gmem_runtime.h"
++
++struct frane_26318_smart_gmem_input {
++   frane_2634_gmem_layout_input layout {};
++   uint32_t sysmem_bandwidth_per_pixel = 0;
++   uint32_t gmem_bandwidth_per_pixel = 0;
++   bool tail_guard = false;
++   bool zs_load_store = false;
++   bool tail_learner = false;
++   uint32_t tail_learner_word = 0;
++   bool tail_scan = false;
++   uint32_t tail_scan_word = 0;
++   bool tail_frequency = false;
++   uint32_t tail_occurrences = 0;
++   bool tail_signature = false;
++   bool hist_smooth = false;
++   uint32_t hist_word = 0;
++};
++
++struct frane_26318_smart_gmem_eval {
++   bool eligible = false;
++   uint8_t structure_score = 0; /* 0..100 */
++   uint64_t estimated_tiles = 0;
++};
++
++struct frane_26318_smart_gmem_decision {
++   bool override_mode = false;
++   bool select_sysmem = false;
++   bool force_measure = false;
++   uint8_t structure_score = 0;
++   uint8_t probe_log2 = 0;
++   uint32_t effective_sysmem_probability = 0;
++};
++
++static inline frane_26318_smart_gmem_eval
++frane_26318_eval_smart_gmem(const frane_26318_smart_gmem_input &in)
++{
++   frane_26318_smart_gmem_eval out {};
++   const auto base = frane_2634_eval_layout(in.layout);
++   if (!base.eligible)
++      return out;
++
++   out.eligible = true;
++   out.estimated_tiles = base.estimated_tiles;
++
++   int score = 0;
++
++   /* Attachment/load-store bandwidth prior.  Mesa already computes these
++    * per-pixel costs when building the render pass; use only ratios so this
++    * helper never needs a potentially overflowing pixels*bandwidth product.
++    */
++   const uint64_t sys = in.sysmem_bandwidth_per_pixel;
++   const uint64_t gm = in.gmem_bandwidth_per_pixel;
++
++   if (sys && gm) {
++      if (frane_2634_ratio_le(gm, sys, 1, 2))
++         score += 30;
++      else if (frane_2634_ratio_le(gm, sys, 2, 3))
++         score += 24;
++      else if (frane_2634_ratio_le(gm, sys, 4, 5))
++         score += 16;
++      else if (frane_2634_ratio_le(gm, sys, 15, 16))
++         score += 8;
++      else if (gm <= sys)
++         score += 4;
++      else
++         score -= 12;
++   }
++
++   /* Fewer tiles means less replay/state overhead. */
++   if (base.estimated_tiles <= 6)
++      score += 25;
++   else if (base.estimated_tiles <= 12)
++      score += 18;
++   else if (base.estimated_tiles <= 18)
++      score += 10;
++   else
++      score += 3;
++
++   /* Reuse density: more draws per tile makes on-chip attachment reuse more
++    * valuable. estimated_tiles <= 24, so the products are trivially safe.
++    */
++   const uint64_t draws = in.layout.drawcalls;
++   const uint64_t tiles = base.estimated_tiles;
++   if (draws >= tiles * 4)
++      score += 25;
++   else if (draws >= tiles * 2)
++      score += 18;
++   else if (draws >= tiles)
++      score += 10;
++   else
++      score -= 8;
++
++   if (draws >= 32)
++      score += 10;
++   else if (draws >= 16)
++      score += 6;
++   else if (draws >= 8)
++      score += 2;
++
++   out.structure_score = uint8_t(std::clamp(score, 0, 100));
++   return out;
++}
++
++static inline frane_26318_smart_gmem_decision
++frane_26323_decide_smart_gmem_evaluated(bool enabled,
++                              const frane_26318_smart_gmem_eval &eval,
++                              frane_2634_gmem_state state,
++                              uint32_t sysmem_probability,
++                              uint64_t decision_word)
++{
++   frane_26318_smart_gmem_decision out {};
++   if (!enabled)
++      return out;
++
++   out.structure_score = eval.structure_score;
++   if (!eval.eligible)
++      return out;
++
++   if (sysmem_probability > 100)
++      sysmem_probability = 100;
++
++   /* Once measured timings have armed the old runtime, timings dominate.
++    * Preserve its conservative "do not fight a clear SYSMEM preference"
++    * rule, but make the control-probe cadence confidence-aware.
++    */
++   if (state.armed) {
++      if (sysmem_probability > 40)
++         return out;
++
++      uint8_t probe_log2 = 5; /* marginal winner: 1/32 */
++      if (state.score >= 8 && eval.structure_score >= 75)
++         probe_log2 = 7;      /* timing + structure agree strongly: 1/128 */
++      else if (state.score >= 7 || eval.structure_score >= 65)
++         probe_log2 = 6;      /* normal strong case: 1/64 */
++
++      const uint64_t mask = (UINT64_C(1) << probe_log2) - 1u;
++      out.override_mode = true;
++      out.probe_log2 = probe_log2;
++      out.effective_sysmem_probability = sysmem_probability;
++
++      if ((decision_word & mask) == 0) {
++         out.select_sysmem = true;
++         out.force_measure = true;
++      } else {
++         out.select_sysmem = false;
++      }
++      return out;
++   }
++
++   /* 26.3.24 measured-first policy:
++    * structural GMEM evidence is advisory until paired GPU timings arm the
++    * runtime.  PROFILED remains solely responsible for cold-start sampling.
++    * This avoids turning an unverified layout estimate into a near-forced
++    * GMEM choice on a low-tier/single-slice A810.
++    */
++   return out;
++}
++
++/* Evaluate once and share the result with the TURBO wrapper. */
++static inline frane_26318_smart_gmem_decision
++frane_26318_decide_smart_gmem(bool enabled,
++                              const frane_26318_smart_gmem_input &in,
++                              frane_2634_gmem_state state,
++                              uint32_t probability, uint64_t decision_word)
++{
++   if (!enabled)
++      return {};
++   return frane_26323_decide_smart_gmem_evaluated(
++      true, frane_26318_eval_smart_gmem(in), state, probability, decision_word);
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26319_memory_audit.h b/src/freedreno/vulkan/frane_mesa_26319_memory_audit.h
+new file mode 100644
+index 0000000..6009efe
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26319_memory_audit.h
+@@ -0,0 +1,46 @@
++#ifndef FRANE_MESA_26319_MEMORY_AUDIT_H
++#define FRANE_MESA_26319_MEMORY_AUDIT_H
++#include <cstdint>
++#include "frane_mesa_2634_a810_gmem_runtime.h"
++
++static constexpr uint32_t FRANE_26319_NIR_BUDGET = 32u * 1024u * 1024u;
++static constexpr uint32_t FRANE_26319_NIR_MAX_BLOB = 2u * 1024u * 1024u;
++
++static inline bool
++frane_26319_reserve_bytes(uint32_t *used, uint32_t bytes)
++{
++   uint32_t old = __atomic_load_n(used, __ATOMIC_RELAXED);
++   do {
++      if (bytes > FRANE_26319_NIR_BUDGET ||
++          old > FRANE_26319_NIR_BUDGET - bytes)
++         return false;
++   } while (!__atomic_compare_exchange_n(used, &old, old + bytes, true,
++                                         __ATOMIC_RELAXED, __ATOMIC_RELAXED));
++   return true;
++}
++
++struct frane_26319_gmem_freshness {
++   uint64_t sysmem = 0;
++   uint64_t gmem = 0;
++};
++
++static inline frane_2634_gmem_state
++frane_26319_update_gmem(frane_2634_gmem_state state,
++                       frane_26319_gmem_freshness &last,
++                       uint64_t sys, uint64_t gm,
++                       uint64_t sys_count, uint64_t gm_count)
++{
++   if (sys_count < last.sysmem || gm_count < last.gmem) {
++      last = {};
++      state = {};
++   }
++   const auto next = frane_2634_update_gmem_state(
++      state, sys, gm, sys_count, gm_count);
++   const bool fresh = sys_count > last.sysmem && gm_count > last.gmem;
++   if (fresh)
++      last = {sys_count, gm_count};
++   if (next.score > state.score && !fresh)
++      return state;
++   return next;
++}
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_2631_sync.h b/src/freedreno/vulkan/frane_mesa_2631_sync.h
+new file mode 100644
+index 0000000..d526f9a
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_2631_sync.h
+@@ -0,0 +1,50 @@
++/* SPDX-License-Identifier: MIT
++ * Frane Mesa 26.3.1 EXP: small pure helpers for KGSL wait robustness.
++ * Base: Mesa 26.3.0-devel eeca16aa (experimental downstream patchset).
++ */
++#ifndef FRANE_MESA_2631_SYNC_H
++#define FRANE_MESA_2631_SYNC_H
++
++#include <limits.h>
++#include <stdint.h>
++
++static inline uint64_t
++frane_2631_deadline_ns(uint64_t now_ns, uint64_t timeout_ns)
++{
++   if (timeout_ns == UINT64_MAX || timeout_ns > UINT64_MAX - now_ns)
++      return UINT64_MAX;
++   return now_ns + timeout_ns;
++}
++
++static inline int
++frane_2631_relative_ms(uint64_t now_ns, uint64_t abs_timeout_ns)
++{
++   if (abs_timeout_ns >= INT64_MAX)
++      return -1;
++
++   if (abs_timeout_ns <= now_ns)
++      return 0;
++
++   /* 26.3.6: ceil the remaining interval, not two absolute timestamps.
++    * Division before addition also avoids overflow near the sentinel. */
++   const uint64_t remaining_ns = abs_timeout_ns - now_ns;
++   const uint64_t delta_ms = remaining_ns / 1000000ull +
++                             (remaining_ns % 1000000ull != 0);
++   return delta_ms > (uint64_t)INT_MAX ? INT_MAX : (int)delta_ms;
++}
++
++enum frane_2631_poll_outcome {
++   FRANE_2631_POLL_ERROR = -1,
++   FRANE_2631_POLL_TIMEOUT = 0,
++   FRANE_2631_POLL_READY = 1,
++};
++
++static inline enum frane_2631_poll_outcome
++frane_2631_poll_outcome_from_ret(int ret)
++{
++   return ret > 0 ? FRANE_2631_POLL_READY :
++          ret == 0 ? FRANE_2631_POLL_TIMEOUT :
++                     FRANE_2631_POLL_ERROR;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h b/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+new file mode 100644
+index 0000000..3d66021
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h
+@@ -0,0 +1,203 @@
++/* SPDX-License-Identifier: MIT
++ * Frane Mesa 26.3.20 A810 GMEM-TURBO EXP.
++ * Aggressive A810-only wrapper around the 26.3.18 SMART-GMEM policy.
++ */
++#ifndef FRANE_MESA_26320_A810_GMEM_TURBO_H
++#define FRANE_MESA_26320_A810_GMEM_TURBO_H
++
++#include "frane_mesa_26318_a810_smart_gmem.h"
++#include "frane_mesa_26357_a810_tail_guard.h"
++#include "frane_mesa_26358_a810_tail_learner.h"
++#include "frane_mesa_26359_a810_scan_learner.h"
++#include "frane_mesa_26360_a810_frequency_scan.h"
++#include "frane_mesa_26361_a810_signature_scan.h"
++#include "frane_mesa_26362_a810_histogram.h"
++#include "frane_mesa_26363_a810_smart_performance.h"
++
++static inline frane_26318_smart_gmem_decision
++frane_26320_decide_gmem_turbo(bool enabled,
++                              const frane_26318_smart_gmem_input &in,
++                              frane_2634_gmem_state state,
++                              uint32_t sysmem_probability,
++                              uint64_t decision_word)
++{
++   const auto eval = frane_26318_eval_smart_gmem(in);
++   auto out = frane_26323_decide_smart_gmem_evaluated(
++      true, eval, state, sysmem_probability, decision_word);
++
++   if (!enabled)
++      return out;
++
++   if (!eval.eligible)
++      return out;
++
++   frane_26357_tail_guard_input tail {};
++   tail.enabled = in.tail_guard;
++   tail.zs_load_store = in.zs_load_store;
++   tail.pass_pixels = in.layout.pass_pixels;
++   tail.estimated_tiles = eval.estimated_tiles;
++   tail.drawcalls = in.layout.drawcalls;
++   tail.sysmem_bandwidth_per_pixel = in.sysmem_bandwidth_per_pixel;
++   tail.gmem_bandwidth_per_pixel = in.gmem_bandwidth_per_pixel;
++   tail.measured_score = state.score;
++   tail.measured_armed = state.armed;
++   tail.sysmem_probability = sysmem_probability;
++
++   const auto tail_guard_eval = frane_26357_eval_tail_guard(tail);
++
++   /* Smart Performance fast path.  The Mesa rp_history object is our scene
++    * table row. Once its measured histogram is trustworthy, consult it before
++    * spending more work on scan/learn. A contradiction simply falls through
++    * to the unchanged S1 path below.
++    */
++   const auto smart_tail_snapshot =
++      frane_26358_unpack_tail_snapshot(in.tail_learner_word);
++   const auto smart_hist_snapshot =
++      frane_26362_unpack_histogram(in.hist_word);
++   const auto smart = frane_26363_decide_smart_performance(
++      in.hist_smooth,
++      tail_guard_eval.defer_to_profiled,
++      smart_hist_snapshot,
++      smart_tail_snapshot,
++      sysmem_probability,
++      decision_word);
++
++   if (smart.override_mode) {
++      out.override_mode = true;
++      out.select_sysmem = smart.select_sysmem;
++      out.force_measure = smart.force_measure;
++      out.probe_log2 = smart.probe_log2;
++      out.effective_sysmem_probability = sysmem_probability;
++      return out;
++   }
++
++   if (tail_guard_eval.defer_to_profiled) {
++      /* V59/V60/V61 are now the cold/relearn path only. Once Smart
++       * Performance has a stable history, normal recurrences return above.
++       */
++      const auto scan_snapshot =
++         frane_26359_unpack_scan(in.tail_scan_word);
++      const auto scan = (in.tail_signature && in.tail_frequency)
++         ? frane_26361_decide_signature_scan(
++              in.tail_scan, true, scan_snapshot,
++              in.tail_learner_word,
++              in.tail_occurrences,
++              tail_guard_eval.replay_work,
++              tail.pass_pixels,
++              tail.estimated_tiles,
++              tail.drawcalls,
++              tail.zs_load_store,
++              sysmem_probability,
++              decision_word)
++         : in.tail_frequency
++            ? frane_26360_decide_frequency_scan(
++                 in.tail_scan, true, scan_snapshot,
++                 in.tail_occurrences, sysmem_probability, decision_word)
++            : frane_26359_decide_scan(
++                 in.tail_scan, true, scan_snapshot,
++                 sysmem_probability, decision_word);
++
++      if (scan.override_mode) {
++         out.override_mode = true;
++         out.select_sysmem = scan.select_sysmem;
++         out.force_measure = true;
++         out.probe_log2 = 0;
++         out.effective_sysmem_probability = sysmem_probability;
++         return out;
++      }
++
++      const auto tail_snapshot =
++         frane_26358_unpack_tail_snapshot(in.tail_learner_word);
++
++      /* S1H's older smoothing path is intentionally replaced by the
++       * history-first Smart Performance table above. This block is reached
++       * only when the memoized history declined to own the decision.
++       */
++      const auto learned = frane_26358_decide_tail_learner(
++         in.tail_learner, true, tail_snapshot,
++         sysmem_probability, decision_word);
++
++      if (learned.override_mode) {
++         out.override_mode = true;
++         out.select_sysmem = learned.select_sysmem;
++         out.force_measure = learned.force_measure;
++         out.probe_log2 = learned.probe_log2;
++         out.effective_sysmem_probability = sysmem_probability;
++         return out;
++      }
++
++      /* Not enough evidence yet, or evidence conflicts with a strong live
++       * profiler: retain V57 exactly and let Mesa PROFILED decide.
++       */
++      return frane_26318_smart_gmem_decision {};
++   }
++
++   if (sysmem_probability > 100)
++      sysmem_probability = 100;
++
++   /* Aggressive learned mode: only extend the GMEM hold when three independent
++    * signals agree: measured timing confidence, structural score and the live
++    * PROFILED probability.  Keep sparse measured SYSMEM control probes so the
++    * old state machine can still detect a scene/regime change.
++    */
++   if (state.armed) {
++      /* V56 hard-push: let an already measured winner challenge much more of
++       * PROFILED's neutral/SYSMEM territory. The final A810 GMEM safety gate
++       * remains authoritative after this selector.
++       */
++      if (sysmem_probability > 55)
++         return out;
++
++      uint8_t probe_log2 = 0;
++      if (state.score >= 8 && eval.structure_score >= 76 &&
++          sysmem_probability <= 30) {
++         probe_log2 = 9; /* 1/512 */
++      } else if (state.score >= 7 && eval.structure_score >= 66 &&
++                 sysmem_probability <= 40) {
++         probe_log2 = 8; /* 1/256 */
++      } else if (state.score >= 5 && eval.structure_score >= 58) {
++         probe_log2 = 7; /* 1/128 */
++      } else {
++         return out;
++      }
++
++      const uint64_t mask = (UINT64_C(1) << probe_log2) - 1u;
++      out.override_mode = true;
++      out.probe_log2 = probe_log2;
++      out.effective_sysmem_probability = sysmem_probability;
++      out.select_sysmem = (decision_word & mask) == 0;
++      out.force_measure = out.select_sysmem;
++      return out;
++   }
++
++   /* Aggressive cold-start prior.  This path still refuses to fight a strong
++    * live SYSMEM preference.  Strong structural evidence may reduce the
++    * exploratory SYSMEM share below 26.3.18's 8% floor, but never below 4%.
++    * It also doubles the measurement cadence to converge faster.
++    */
++   if (sysmem_probability > 65 || eval.structure_score < 62)
++      return out;
++
++   /* V56 also pushes the cold-start prior harder, but it still leaves a
++    * non-zero SYSMEM share and doubles measurement cadence so a bad guess is
++    * corrected quickly instead of becoming sticky.
++    */
++   uint32_t reduction = 24;
++   if (eval.structure_score >= 88)
++      reduction = 44;
++   else if (eval.structure_score >= 78)
++      reduction = 34;
++
++   uint32_t effective =
++      sysmem_probability > reduction ? sysmem_probability - reduction : 0u;
++   effective = std::max(effective, 2u);
++
++   out.override_mode = true;
++   out.probe_log2 = 0;
++   out.effective_sysmem_probability = effective;
++   out.select_sysmem = (decision_word % 100u) < effective;
++   out.force_measure = ((decision_word >> 8) & 3u) == 0u; /* 1/4 */
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_2632_a810_turbo.h b/src/freedreno/vulkan/frane_mesa_2632_a810_turbo.h
+new file mode 100644
+index 0000000..c00fdb8
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_2632_a810_turbo.h
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: MIT
++ * Frane Mesa 26.3.2 A810 TURBO EXP: pure policy helpers.
++ * Experimental downstream patchset; not an official Mesa release.
++ */
++#ifndef FRANE_MESA_2632_A810_TURBO_H
++#define FRANE_MESA_2632_A810_TURBO_H
++
++#include <algorithm>
++#include <cstdint>
++
++static inline uint32_t
++frane_2632_profile_base_interval(uint32_t normal_base, bool is_a810)
++{
++   return is_a810 ? std::max(normal_base, 16u) : normal_base;
++}
++
++static inline bool
++frane_2632_maintenance_due(uint32_t ticket)
++{
++   /* 1/128 submit cadence. Ticket zero intentionally runs maintenance. */
++   return (ticket & 127u) == 0u;
++}
++
++static inline bool
++frane_2632_power_refresh_due(uint32_t successful_submissions)
++{
++   /* PWR_MAX was accepted at queue creation. Refresh only once per 1024
++    * successful submits to keep SETPROPERTY out of the ordinary frame path.
++    */
++   return successful_submissions != 0 &&
++          (successful_submissions & 1023u) == 0u;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_2633_a810_profile_turbo.h b/src/freedreno/vulkan/frane_mesa_2633_a810_profile_turbo.h
+new file mode 100644
+index 0000000..09e7017
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_2633_a810_profile_turbo.h
+@@ -0,0 +1,74 @@
++/* SPDX-License-Identifier: MIT
++ * Frane Mesa 26.3.3 A810 PROFILE-TURBO EXP.
++ * Experimental downstream patchset; not an official Mesa release.
++ */
++#ifndef FRANE_MESA_2633_A810_PROFILE_TURBO_H
++#define FRANE_MESA_2633_A810_PROFILE_TURBO_H
++
++#include <algorithm>
++#include <cstdint>
++
++static inline uint64_t
++frane_2633_mix64(uint64_t x)
++{
++   x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
++   x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
++   return x ^ (x >> 31);
++}
++
++/* Per-thread decision stream: removes a contended atomic RMW from the
++ * PROFILED render-mode hot path while preserving randomized exploration.
++ */
++static inline uint64_t
++frane_2633_decision_draw(uint64_t rp_hash)
++{
++   static thread_local uint64_t ticket = UINT64_C(0x243f6a8885a308d3);
++   ticket += UINT64_C(0x9e3779b97f4a7c15);
++   return frane_2633_mix64(ticket ^ rp_hash);
++}
++
++static inline uint32_t
++frane_2633_profile_interval(uint32_t base, bool is_a810,
++                            bool cache_warmed,
++                            uint64_t sysmem_ticks,
++                            uint64_t gmem_ticks)
++{
++   if (!is_a810)
++      return base;
++
++   const uint64_t low = std::min(sysmem_ticks, gmem_ticks);
++   const uint64_t high = std::max(sysmem_ticks, gmem_ticks);
++
++   if (!low)
++      return std::min(base, 2u);
++
++   /* A persistent per-game profile is already a useful prior. Confirm it,
++    * but don't spend every second frame measuring it again.
++    */
++   if (cache_warmed)
++      return std::min(base, 4u);
++
++   const uint64_t diff = high - low;
++   if (diff <= low / 8)
++      return std::min(base, 2u);   /* close race: keep learning hard */
++   if (diff <= low / 4)
++      return std::min(base, 8u);   /* mild winner */
++   if (diff <= low / 2)
++      return base;                 /* clear winner */
++   return std::max(base, 32u);     /* dominant winner: mostly stop measuring */
++}
++
++static inline bool
++frane_2633_maintenance_due(uint32_t ticket)
++{
++   return (ticket & 255u) == 0u;
++}
++
++static inline bool
++frane_2633_power_refresh_due(uint32_t successful_submissions)
++{
++   return successful_submissions != 0 &&
++          (successful_submissions & 4095u) == 0u;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_2634_a810_gmem_runtime.h b/src/freedreno/vulkan/frane_mesa_2634_a810_gmem_runtime.h
+new file mode 100644
+index 0000000..be3b6b0
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_2634_a810_gmem_runtime.h
+@@ -0,0 +1,182 @@
++/* SPDX-License-Identifier: MIT
++ * Frane Mesa 26.3.4 A810 GMEM-RUNTIME EXP.
++ * Pure policy/state helpers. Experimental downstream code, not official Mesa.
++ */
++#ifndef FRANE_MESA_2634_A810_GMEM_RUNTIME_H
++#define FRANE_MESA_2634_A810_GMEM_RUNTIME_H
++
++#include <cstdint>
++#include <limits>
++
++struct frane_2634_gmem_state {
++   uint8_t score = 0;   /* 0..8 */
++   bool armed = false;  /* hysteretic promotion gate */
++};
++
++struct frane_2634_gmem_layout_input {
++   uint64_t physical_gmem = 0;
++   uint64_t usable_gmem = 0;
++   uint64_t pixels_per_tile = 0;
++   uint64_t pass_pixels = 0;
++   uint32_t drawcalls = 0;
++   uint64_t selected_tile_count = 0; /* 0: legacy estimate */
++};
++
++struct frane_2634_gmem_layout_eval {
++   bool eligible = false;
++   uint64_t estimated_tiles = 0;
++};
++
++struct frane_2634_gmem_decision {
++   bool override_mode = false;
++   bool select_sysmem = false;
++   bool force_measure = false;
++};
++
++/* lhs <= rhs * num / den, for num <= den, without overflowing uint64_t. */
++static inline bool
++frane_2634_ratio_le(uint64_t lhs, uint64_t rhs,
++                    uint32_t num, uint32_t den)
++{
++   if (!den || num > den)
++      return false;
++   const uint64_t q = rhs / den;
++   const uint64_t r = rhs % den;
++   const uint64_t threshold = q * num + (r * num) / den;
++   return lhs <= threshold;
++}
++
++static inline frane_2634_gmem_layout_eval
++frane_2634_eval_layout(const frane_2634_gmem_layout_input &in)
++{
++   frane_2634_gmem_layout_eval out{};
++
++   constexpr uint64_t KiB = 1024ull;
++   constexpr uint64_t MAX_PASS_PIXELS = 1920ull * 1080ull;
++   constexpr uint64_t MAX_ESTIMATED_TILES = 24ull;
++
++   /* These are sanity bounds only. Mesa's real GMEM allocator remains the
++    * hardware authority. If metadata looks strange, the runtime simply does
++    * nothing and the 26.3.3 baseline decision survives unchanged.
++    */
++   const bool geometry_ok =
++      in.physical_gmem >= 256ull * KiB &&
++      in.physical_gmem <= 2048ull * KiB &&
++      in.usable_gmem >= 64ull * KiB &&
++      in.usable_gmem <= in.physical_gmem &&
++      in.pixels_per_tile >= 16 &&
++      in.pass_pixels > 0 &&
++      in.pass_pixels <= MAX_PASS_PIXELS &&
++      in.drawcalls >= 5;
++
++   if (!geometry_ok)
++      return out;
++
++   /* Predict with 1/16 tile headroom. This never alters actual attachment
++    * offsets, tile dimensions or GMEM bytes.
++    */
++   const uint64_t effective_pixels =
++      in.pixels_per_tile - in.pixels_per_tile / 16ull;
++   if (!effective_pixels)
++      return out;
++
++   out.estimated_tiles = in.selected_tile_count ? in.selected_tile_count :
++      in.pass_pixels / effective_pixels +
++      (in.pass_pixels % effective_pixels ? 1ull : 0ull);
++   out.eligible = out.estimated_tiles > 0 &&
++                  out.estimated_tiles <= MAX_ESTIMATED_TILES;
++   return out;
++}
++
++/* Submit-thread state machine fed by measured GPU render-pass durations.
++ * It deliberately needs multiple observations before it can arm and several
++ * weak/bad observations before it disarms, preventing threshold chatter.
++ */
++static inline frane_2634_gmem_state
++frane_2634_update_gmem_state(frane_2634_gmem_state state,
++                             uint64_t sysmem_ticks,
++                             uint64_t gmem_ticks,
++                             uint64_t sysmem_samples,
++                             uint64_t gmem_samples)
++{
++   if (state.score > 8)
++      state.score = 8;
++
++   if (sysmem_samples < 8 || gmem_samples < 8 ||
++       !sysmem_ticks || !gmem_ticks)
++      return state;
++
++   const bool strong =
++      frane_2634_ratio_le(gmem_ticks, sysmem_ticks, 7, 8);   /* >=12.5% win */
++   const bool profitable =
++      frane_2634_ratio_le(gmem_ticks, sysmem_ticks, 15, 16); /* >=6.25% win */
++   const bool hold =
++      frane_2634_ratio_le(gmem_ticks, sysmem_ticks, 31, 32); /* >=3.125% win */
++
++   if (strong) {
++      state.score = state.score >= 6 ? 8 : uint8_t(state.score + 2);
++   } else if (profitable) {
++      if (state.score < 8)
++         state.score++;
++   } else if (!hold) {
++      if (state.score > 0)
++         state.score--;
++   }
++
++   if (!state.armed && state.score >= 6)
++      state.armed = true;
++   else if (state.armed && state.score <= 2)
++      state.armed = false;
++
++   return state;
++}
++
++static inline uint32_t
++frane_2634_pack_gmem_state(frane_2634_gmem_state state)
++{
++   const uint32_t score = state.score > 8 ? 8u : state.score;
++   return score | (state.armed ? (1u << 8) : 0u);
++}
++
++static inline frane_2634_gmem_state
++frane_2634_unpack_gmem_state(uint32_t word)
++{
++   frane_2634_gmem_state state{};
++   state.score = uint8_t(word & 0xffu);
++   if (state.score > 8)
++      state.score = 8;
++   state.armed = (word & (1u << 8)) != 0;
++   if (state.armed && state.score <= 2)
++      state.armed = false;
++   return state;
++}
++
++/* When armed, promote a proven-safe A810 pass to GMEM for 63/64 decisions.
++ * The 1/64 SYSMEM control probe is always measured so scene changes can
++ * eventually disarm the runtime. probability > 40 keeps the baseline
++ * PROFILED behavior untouched: we never promote GMEM against a doubtful
++ * profiler.
++ */
++static inline frane_2634_gmem_decision
++frane_2634_decide_gmem_runtime(bool enabled,
++                               bool layout_eligible,
++                               frane_2634_gmem_state state,
++                               uint32_t sysmem_probability,
++                               uint64_t decision_word)
++{
++   frane_2634_gmem_decision out{};
++   if (!enabled || !layout_eligible || !state.armed ||
++       sysmem_probability > 40)
++      return out;
++
++   out.override_mode = true;
++   if ((decision_word & 63ull) == 0ull) {
++      out.select_sysmem = true;
++      out.force_measure = true;
++   } else {
++      out.select_sysmem = false;
++   }
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26357_a810_tail_guard.h b/src/freedreno/vulkan/frane_mesa_26357_a810_tail_guard.h
+new file mode 100644
+index 0000000..4dc79da
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26357_a810_tail_guard.h
+@@ -0,0 +1,95 @@
++/* SPDX-License-Identifier: MIT
++ * Drnas Turnip V57 A810 PROFILED-TAIL-GUARD.
++ *
++ * Pure selector policy: identify A810 render passes where the aggressive V56
++ * GMEM override should stand aside and let Mesa PROFILED make the decision.
++ */
++#ifndef FRANE_MESA_26357_A810_TAIL_GUARD_H
++#define FRANE_MESA_26357_A810_TAIL_GUARD_H
++
++#include <cstdint>
++
++struct frane_26357_tail_guard_input {
++   bool enabled = false;
++   bool zs_load_store = false;
++   uint64_t pass_pixels = 0;
++   uint64_t estimated_tiles = 0;
++   uint32_t drawcalls = 0;
++   uint32_t sysmem_bandwidth_per_pixel = 0;
++   uint32_t gmem_bandwidth_per_pixel = 0;
++   uint8_t measured_score = 0;
++   bool measured_armed = false;
++   uint32_t sysmem_probability = 0;
++};
++
++struct frane_26357_tail_guard_eval {
++   bool defer_to_profiled = false;
++   bool zs_replay_risk = false;
++   bool large_rt_risk = false;
++   bool strong_gmem_bandwidth_win = false;
++   bool strong_measured_gmem_win = false;
++   uint64_t replay_work = 0;
++};
++
++static inline bool
++frane_26357_ratio_le(uint64_t lhs, uint64_t rhs,
++                     uint32_t num, uint32_t den)
++{
++   if (!den || num > den)
++      return false;
++   const uint64_t q = rhs / den;
++   const uint64_t r = rhs % den;
++   return lhs <= q * num + (r * num) / den;
++}
++
++static inline frane_26357_tail_guard_eval
++frane_26357_eval_tail_guard(const frane_26357_tail_guard_input &in)
++{
++   frane_26357_tail_guard_eval out {};
++   if (!in.enabled || !in.estimated_tiles || !in.drawcalls)
++      return out;
++
++   out.replay_work = in.estimated_tiles * uint64_t(in.drawcalls);
++
++   /* Preserve V56 when Mesa's own render-pass bandwidth accounting predicts
++    * a large GMEM win.  2/3 means >=33% less attachment traffic.
++    */
++   const uint64_t sys = in.sysmem_bandwidth_per_pixel;
++   const uint64_t gm = in.gmem_bandwidth_per_pixel;
++   out.strong_gmem_bandwidth_win =
++      sys && gm && frane_26357_ratio_le(gm, sys, 2, 3);
++
++   /* Preserve V56 when the measured A810 runtime and PROFILED probability both
++    * strongly agree on GMEM.  Structural guesses must not overrule timings.
++    */
++   out.strong_measured_gmem_win =
++      in.measured_armed && in.measured_score >= 7 &&
++      in.sysmem_probability <= 30;
++
++   if (out.strong_gmem_bandwidth_win || out.strong_measured_gmem_win)
++      return out;
++
++   /* Port the useful principle from the A810 Gallium experiment, but make it
++    * less blunt for Turnip: depth/stencil load-store only becomes a tail-risk
++    * once GMEM tile replay work is substantial.
++    */
++   out.zs_replay_risk =
++      in.zs_load_store &&
++      in.estimated_tiles >= 4 &&
++      out.replay_work >= 128;
++
++   /* The Gallium experiment also prefers SYSMEM for large render targets with
++    * many tiles. Keep that as a conservative secondary rule. It does not fire
++    * for the current 720p Crysis benchmark.
++    */
++   constexpr uint64_t FULL_HD_PIXELS = 1920ull * 1080ull;
++   out.large_rt_risk =
++      in.pass_pixels >= FULL_HD_PIXELS &&
++      in.estimated_tiles >= 6 &&
++      out.replay_work >= 192;
++
++   out.defer_to_profiled = out.zs_replay_risk || out.large_rt_risk;
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26358_a810_tail_learner.h b/src/freedreno/vulkan/frane_mesa_26358_a810_tail_learner.h
+new file mode 100644
+index 0000000..d5ca8b4
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26358_a810_tail_learner.h
+@@ -0,0 +1,269 @@
++/* SPDX-License-Identifier: MIT
++ * Drnas Turnip V58 A810 TAIL-LEARNER.
++ *
++ * Small per-render-pass learner for V57 tail-risk passes.
++ *
++ * The learner does not alter GMEM layout, attachment programming, barriers,
++ * LRZ, shaders or synchronization. It consumes measured render-pass duration
++ * samples that Mesa PROFILED already records and publishes a compact
++ * hysteretic preference snapshot for the recording thread.
++ */
++#ifndef FRANE_MESA_26358_A810_TAIL_LEARNER_H
++#define FRANE_MESA_26358_A810_TAIL_LEARNER_H
++
++#include <cstdint>
++#include <limits>
++
++struct frane_26358_mode_stats {
++   uint64_t mean = 0;
++   uint64_t tail = 0;
++   uint16_t samples = 0;
++};
++
++struct frane_26358_tail_state {
++   frane_26358_mode_stats sysmem {};
++   frane_26358_mode_stats gmem {};
++   uint16_t paired_samples = 0;
++   int8_t score = 0; /* -8..8: negative=SYSMEM, positive=GMEM */
++   bool ready = false;
++};
++
++struct frane_26358_tail_snapshot {
++   int8_t score = 0;
++   uint8_t paired_samples = 0;
++   bool ready = false;
++};
++
++struct frane_26358_tail_decision {
++   bool override_mode = false;
++   bool select_sysmem = false;
++   bool force_measure = false;
++   uint8_t confidence = 0;
++   uint8_t probe_log2 = 0;
++};
++
++static inline bool
++frane_26358_ratio_le(uint64_t lhs, uint64_t rhs,
++                     uint32_t num, uint32_t den)
++{
++   if (!den || num > den)
++      return false;
++   const uint64_t q = rhs / den;
++   const uint64_t r = rhs % den;
++   return lhs <= q * num + (r * num) / den;
++}
++
++static inline uint64_t
++frane_26358_step_toward(uint64_t current, uint64_t sample, uint32_t shift)
++{
++   if (current == sample)
++      return current;
++
++   if (sample > current) {
++      const uint64_t delta = sample - current;
++      const uint64_t step = (delta >> shift) + ((delta & ((UINT64_C(1) << shift) - 1u)) != 0);
++      return current + (step ? step : 1);
++   }
++
++   const uint64_t delta = current - sample;
++   const uint64_t step = (delta >> shift) + ((delta & ((UINT64_C(1) << shift) - 1u)) != 0);
++   return current - (step ? step : 1);
++}
++
++static inline frane_26358_mode_stats
++frane_26358_update_mode(frane_26358_mode_stats s, uint64_t sample)
++{
++   if (!sample)
++      return s;
++
++   if (!s.samples) {
++      s.mean = sample;
++      s.tail = sample;
++      s.samples = 1;
++      return s;
++   }
++
++   /* Mean: slow 1/8 EMA. */
++   s.mean = frane_26358_step_toward(s.mean, sample, 3);
++
++   /* Tail envelope: react quickly to a slow sample, decay slowly afterwards.
++    * This is deliberately not a percentile estimator; it is a cheap,
++    * bounded high-latency memory that is useful in the hot submit path.
++    */
++   if (sample > s.tail)
++      s.tail = frane_26358_step_toward(s.tail, sample, 1); /* fast rise */
++   else
++      s.tail = frane_26358_step_toward(s.tail, sample, 5); /* slow decay */
++
++   if (s.tail < s.mean)
++      s.tail = s.mean;
++
++   if (s.samples != UINT16_MAX)
++      s.samples++;
++
++   return s;
++}
++
++static inline uint64_t
++frane_26358_tail_cost(const frane_26358_mode_stats &s)
++{
++   if (!s.samples || !s.mean)
++      return 0;
++
++   const uint64_t penalty = s.tail > s.mean ? s.tail - s.mean : 0;
++   const uint64_t add = penalty / 2; /* 50% weight on the high-latency envelope. */
++   if (s.mean > std::numeric_limits<uint64_t>::max() - add)
++      return std::numeric_limits<uint64_t>::max();
++   return s.mean + add;
++}
++
++static inline frane_26358_tail_state
++frane_26358_update_tail_state(frane_26358_tail_state state,
++                              bool sample_is_sysmem,
++                              uint64_t duration_ticks)
++{
++   if (sample_is_sysmem)
++      state.sysmem = frane_26358_update_mode(state.sysmem, duration_ticks);
++   else
++      state.gmem = frane_26358_update_mode(state.gmem, duration_ticks);
++
++   const uint16_t paired =
++      state.sysmem.samples < state.gmem.samples ?
++      state.sysmem.samples : state.gmem.samples;
++
++   /* Score only once per newly completed pair so an aggressively sampled mode
++    * cannot win merely because it produced more observations.
++    */
++   if (paired <= state.paired_samples)
++      return state;
++
++   state.paired_samples = paired;
++
++   if (paired < 6)
++      return state;
++
++   state.ready = true;
++
++   const uint64_t sys_cost = frane_26358_tail_cost(state.sysmem);
++   const uint64_t gm_cost = frane_26358_tail_cost(state.gmem);
++   if (!sys_cost || !gm_cost)
++      return state;
++
++   int delta = 0;
++   if (frane_26358_ratio_le(gm_cost, sys_cost, 7, 8))
++      delta = 2; /* >=12.5% GMEM tail-aware win */
++   else if (frane_26358_ratio_le(gm_cost, sys_cost, 15, 16))
++      delta = 1; /* >=6.25% GMEM tail-aware win */
++   else if (frane_26358_ratio_le(sys_cost, gm_cost, 7, 8))
++      delta = -2; /* >=12.5% SYSMEM tail-aware win */
++   else if (frane_26358_ratio_le(sys_cost, gm_cost, 15, 16))
++      delta = -1; /* >=6.25% SYSMEM tail-aware win */
++
++   int score = state.score;
++   if (delta > 0)
++      score += delta;
++   else if (delta < 0)
++      score += delta;
++   else if (score > 0)
++      score--;
++   else if (score < 0)
++      score++;
++
++   if (score > 8)
++      score = 8;
++   if (score < -8)
++      score = -8;
++   state.score = int8_t(score);
++
++   return state;
++}
++
++static inline uint32_t
++frane_26358_pack_tail_snapshot(const frane_26358_tail_state &state)
++{
++   int score = state.score;
++   if (score > 8)
++      score = 8;
++   if (score < -8)
++      score = -8;
++
++   const uint32_t encoded_score = uint32_t(score + 8); /* 0..16 */
++   const uint32_t pairs = state.paired_samples > 255 ? 255u : state.paired_samples;
++   return encoded_score |
++          (state.ready ? (1u << 5) : 0u) |
++          (pairs << 8);
++}
++
++static inline frane_26358_tail_snapshot
++frane_26358_unpack_tail_snapshot(uint32_t word)
++{
++   frane_26358_tail_snapshot out {};
++   int score = int(word & 31u) - 8;
++   if (score > 8)
++      score = 8;
++   if (score < -8)
++      score = -8;
++
++   out.score = int8_t(score);
++   out.ready = (word & (1u << 5)) != 0;
++   out.paired_samples = uint8_t((word >> 8) & 0xffu);
++   if (out.paired_samples < 6)
++      out.ready = false;
++   return out;
++}
++
++static inline frane_26358_tail_decision
++frane_26358_decide_tail_learner(bool enabled,
++                                bool structural_tail_risk,
++                                frane_26358_tail_snapshot state,
++                                uint32_t sysmem_probability,
++                                uint64_t decision_word)
++{
++   frane_26358_tail_decision out {};
++   if (!enabled || !structural_tail_risk || !state.ready)
++      return out;
++
++   int confidence = state.score < 0 ? -int(state.score) : int(state.score);
++   if (confidence < 4)
++      return out;
++
++   if (sysmem_probability > 100)
++      sysmem_probability = 100;
++
++   const bool prefer_sysmem = state.score < 0;
++
++   /* Do not casually fight a very strong live PROFILED opinion. Tail evidence
++    * must be near-saturated before it may contradict that signal.
++    */
++   if (!prefer_sysmem && sysmem_probability > 65 && confidence < 7)
++      return out;
++   if (prefer_sysmem && sysmem_probability < 35 && confidence < 7)
++      return out;
++
++   uint8_t probe_log2 = 5; /* 1/32 loser probe at confidence 4. */
++   if (confidence >= 7)
++      probe_log2 = 7;      /* 1/128 */
++   else if (confidence >= 5)
++      probe_log2 = 6;      /* 1/64 */
++
++   const uint64_t mask = (UINT64_C(1) << probe_log2) - 1u;
++   const bool loser_probe = (decision_word & mask) == 0;
++
++   out.override_mode = true;
++   out.confidence = uint8_t(confidence);
++   out.probe_log2 = probe_log2;
++
++   if (prefer_sysmem)
++      out.select_sysmem = !loser_probe; /* sparse GMEM control probe */
++   else
++      out.select_sysmem = loser_probe;  /* sparse SYSMEM control probe */
++
++   /* Always measure the loser probe, and refresh the winner sparsely as well
++    * so regime changes can eventually move the hysteretic score back.
++    */
++   out.force_measure =
++      loser_probe || (((decision_word >> 16) & 63u) == 0u);
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26359_a810_scan_learner.h b/src/freedreno/vulkan/frane_mesa_26359_a810_scan_learner.h
+new file mode 100644
+index 0000000..e91bef7
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26359_a810_scan_learner.h
+@@ -0,0 +1,106 @@
++/* SPDX-License-Identifier: MIT
++ * Drnas Turnip V59 A810 SCAN-LEARNER.
++ *
++ * Bounded early exploration for V57-classified tail-risk render passes.
++ * The goal is to guarantee enough GMEM/SYSMEM measurements for the V58
++ * tail learner without turning the whole benchmark into exploration.
++ *
++ * This file is pure policy. It does not touch GMEM allocation/layout,
++ * registers, barriers, LRZ, shaders or synchronization.
++ */
++#ifndef FRANE_MESA_26359_A810_SCAN_LEARNER_H
++#define FRANE_MESA_26359_A810_SCAN_LEARNER_H
++
++#include <cstdint>
++
++struct frane_26359_scan_snapshot {
++   uint8_t sysmem_samples = 0;
++   uint8_t gmem_samples = 0;
++};
++
++struct frane_26359_scan_decision {
++   bool override_mode = false;
++   bool select_sysmem = false;
++   bool force_measure = false;
++   bool throttled = false;
++};
++
++static inline uint32_t
++frane_26359_pack_scan(uint32_t sysmem_samples, uint32_t gmem_samples)
++{
++   const uint32_t s = sysmem_samples > 255u ? 255u : sysmem_samples;
++   const uint32_t g = gmem_samples > 255u ? 255u : gmem_samples;
++   return s | (g << 8);
++}
++
++static inline frane_26359_scan_snapshot
++frane_26359_unpack_scan(uint32_t word)
++{
++   frane_26359_scan_snapshot out {};
++   out.sysmem_samples = uint8_t(word & 0xffu);
++   out.gmem_samples = uint8_t((word >> 8) & 0xffu);
++   return out;
++}
++
++/* Ten samples/mode is enough for the V58 learner to:
++ * - be past its readiness threshold;
++ * - reach confidence 4 even for a ~6.25% winner;
++ * - still keep the exploration budget tiny compared with a multi-thousand
++ *   frame benchmark.
++ */
++static inline frane_26359_scan_decision
++frane_26359_decide_scan(bool enabled,
++                        bool structural_tail_risk,
++                        frane_26359_scan_snapshot s,
++                        uint32_t sysmem_probability,
++                        uint64_t decision_word)
++{
++   frane_26359_scan_decision out {};
++   if (!enabled || !structural_tail_risk)
++      return out;
++
++   constexpr uint8_t TARGET = 10;
++
++   const bool need_sys = s.sysmem_samples < TARGET;
++   const bool need_gm = s.gmem_samples < TARGET;
++   if (!need_sys && !need_gm)
++      return out;
++
++   bool choose_sys = false;
++
++   if (need_sys && need_gm) {
++      if (s.sysmem_samples < s.gmem_samples)
++         choose_sys = true;
++      else if (s.gmem_samples < s.sysmem_samples)
++         choose_sys = false;
++      else
++         choose_sys = (decision_word & 1u) != 0;
++   } else {
++      choose_sys = need_sys;
++   }
++
++   if (sysmem_probability > 100)
++      sysmem_probability = 100;
++
++   /* If the under-sampled mode contradicts an extreme live PROFILED opinion,
++    * do not hammer it every frame. Probe it at 1/4 cadence until the scan
++    * budget is filled. This bounds first-run regressions while still
++    * converging rapidly inside a normal benchmark.
++    */
++   const bool hostile =
++      (choose_sys && sysmem_probability <= 5) ||
++      (!choose_sys && sysmem_probability >= 95);
++
++   if (hostile && ((decision_word >> 8) & 3u) != 0u) {
++      out.throttled = true;
++      return out;
++   }
++
++   out.override_mode = true;
++   out.select_sysmem = choose_sys;
++   out.force_measure = true;
++   out.throttled = hostile;
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_2635_shader_pipeline.h b/src/freedreno/vulkan/frane_mesa_2635_shader_pipeline.h
+new file mode 100644
+index 0000000..d040d54
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_2635_shader_pipeline.h
+@@ -0,0 +1,50 @@
++/* SPDX-License-Identifier: MIT
++ * Frane Mesa 26.3.5 A810 SHADER-PIPELINE EXP.
++ * Pure policy helpers. Experimental downstream code, not official Mesa.
++ */
++#ifndef FRANE_MESA_2635_SHADER_PIPELINE_H
++#define FRANE_MESA_2635_SHADER_PIPELINE_H
++
++#include <cstdint>
++
++#define FRANE_2635_STAGE_NIR_KEY_SUFFIX 0x4eu /* 'N' */
++#define FRANE_2635_STAGE_NIR_MAX_ENTRIES 384u
++
++static inline bool
++frane_2635_is_a810_chip(uint64_t chip_id)
++{
++   return chip_id == UINT64_C(0x44010000) ||
++          chip_id == UINT64_C(0xffff44010000);
++}
++
++struct frane_2635_stage_probe_state {
++   bool all_hit = true;
++   bool application_hit = true;
++   uint64_t hit_mask = 0;
++};
++
++static inline void
++frane_2635_record_stage_probe(frane_2635_stage_probe_state &state,
++                              unsigned stage,
++                              bool shader_found,
++                              bool application_cache_hit)
++{
++   if (!shader_found) {
++      state.all_hit = false;
++      state.application_hit = false;
++      return;
++   }
++
++   if (stage < 64)
++      state.hit_mask |= UINT64_C(1) << stage;
++
++   state.application_hit &= application_cache_hit;
++}
++
++static inline bool
++frane_2635_stage_was_cached(uint64_t hit_mask, unsigned stage)
++{
++   return stage < 64 && (hit_mask & (UINT64_C(1) << stage));
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26360_a810_frequency_scan.h b/src/freedreno/vulkan/frane_mesa_26360_a810_frequency_scan.h
+new file mode 100644
+index 0000000..923f1f9
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26360_a810_frequency_scan.h
+@@ -0,0 +1,125 @@
++/* SPDX-License-Identifier: MIT
++ * Drnas Turnip V60 A810 FREQUENCY-AWARE SCAN.
++ *
++ * Recurrence-aware exploration layered over V59.
++ *
++ * A render-pass history starts with a tiny scan budget. The budget grows only
++ * after that same pass proves it is frequent by recurring many times. This
++ * prevents rare deterministic passes from being repeatedly sacrificed just to
++ * satisfy a universal learning target.
++ */
++#ifndef FRANE_MESA_26360_A810_FREQUENCY_SCAN_H
++#define FRANE_MESA_26360_A810_FREQUENCY_SCAN_H
++
++#include <cstdint>
++
++#include "frane_mesa_26359_a810_scan_learner.h"
++
++struct frane_26360_frequency_scan_info {
++   uint8_t target_per_mode = 1;
++   uint8_t hostile_probe_log2 = 3; /* 1/8 while cold/rare */
++};
++
++static inline frane_26360_frequency_scan_info
++frane_26360_frequency_scan_info_for(uint32_t occurrences)
++{
++   frane_26360_frequency_scan_info out {};
++
++   /* Lifetime recurrence acts as a cheap, race-free hotness proxy:
++    *
++    * rare/cold     <  16 occurrences : 1 sample/mode
++    * light         <  64             : 2
++    * medium        < 256             : 4
++    * hot           < 512             : 6
++    * very hot      <1024             : 8
++    * sustained hot >=1024            : 10
++    *
++    * Therefore a pass that appears only once per benchmark run can cost at
++    * most two forced measurements total, while a per-frame pass can still
++    * converge to V58's full learner budget within the first long run.
++    */
++   if (occurrences < 16) {
++      out.target_per_mode = 1;
++      out.hostile_probe_log2 = 3; /* 1/8 */
++   } else if (occurrences < 64) {
++      out.target_per_mode = 2;
++      out.hostile_probe_log2 = 3; /* 1/8 */
++   } else if (occurrences < 256) {
++      out.target_per_mode = 4;
++      out.hostile_probe_log2 = 2; /* 1/4 */
++   } else if (occurrences < 512) {
++      out.target_per_mode = 6;
++      out.hostile_probe_log2 = 2; /* 1/4 */
++   } else if (occurrences < 1024) {
++      out.target_per_mode = 8;
++      out.hostile_probe_log2 = 1; /* 1/2 */
++   } else {
++      out.target_per_mode = 10;
++      out.hostile_probe_log2 = 1; /* 1/2 */
++   }
++
++   return out;
++}
++
++static inline frane_26359_scan_decision
++frane_26360_decide_frequency_scan(bool enabled,
++                                  bool structural_tail_risk,
++                                  frane_26359_scan_snapshot s,
++                                  uint32_t occurrences,
++                                  uint32_t sysmem_probability,
++                                  uint64_t decision_word)
++{
++   frane_26359_scan_decision out {};
++   if (!enabled || !structural_tail_risk)
++      return out;
++
++   const auto info = frane_26360_frequency_scan_info_for(occurrences);
++   const uint8_t target = info.target_per_mode;
++
++   const bool need_sys = s.sysmem_samples < target;
++   const bool need_gm = s.gmem_samples < target;
++   if (!need_sys && !need_gm)
++      return out;
++
++   bool choose_sys = false;
++
++   if (need_sys && need_gm) {
++      if (s.sysmem_samples < s.gmem_samples)
++         choose_sys = true;
++      else if (s.gmem_samples < s.sysmem_samples)
++         choose_sys = false;
++      else
++         /* Use recurrence parity, not only the random decision stream.
++          * Completed GPU timestamps can lag recording; parity keeps two
++          * back-to-back scan requests from repeatedly choosing the same mode
++          * while the first result is still pending.
++          */
++         choose_sys = (occurrences & 1u) != 0u;
++   } else {
++      choose_sys = need_sys;
++   }
++
++   if (sysmem_probability > 100)
++      sysmem_probability = 100;
++
++   const bool hostile =
++      (choose_sys && sysmem_probability <= 5) ||
++      (!choose_sys && sysmem_probability >= 95);
++
++   if (hostile) {
++      const uint64_t mask =
++         (UINT64_C(1) << info.hostile_probe_log2) - 1u;
++      if (((decision_word >> 8) & mask) != 0u) {
++         out.throttled = true;
++         return out;
++      }
++   }
++
++   out.override_mode = true;
++   out.select_sysmem = choose_sys;
++   out.force_measure = true;
++   out.throttled = hostile;
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26361_a810_signature_scan.h b/src/freedreno/vulkan/frane_mesa_26361_a810_signature_scan.h
+new file mode 100644
+index 0000000..7e42e1e
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26361_a810_signature_scan.h
+@@ -0,0 +1,225 @@
++/* SPDX-License-Identifier: MIT
++ * Drnas Turnip V61 A810 SIGNATURE-GATED SCAN.
++ *
++ * V60 proved that recurrence is the right axis for limiting exploration, but
++ * its cold target still forces 1+1 measurements on a rare pass. Those samples
++ * cannot make V58 actionable because the learner needs six paired samples.
++ *
++ * V61 turns the scan into a completion/rescue mechanism:
++ * - rare passes stay on Mesa PROFILED and learn naturally;
++ * - structural pass cost selects how much recurrence is required before a
++ *   forced probe is justified;
++ * - existing natural measurements lower that threshold;
++ * - once the learner is confidently ready, forced scanning stops;
++ * - unresolved very-hot passes may receive a small extra evidence budget.
++ *
++ * Pure policy only: no GMEM layout, attachment programming, LRZ, barriers,
++ * shaders, concurrent binning, WSI or Vulkan synchronization changes.
++ */
++#ifndef FRANE_MESA_26361_A810_SIGNATURE_SCAN_H
++#define FRANE_MESA_26361_A810_SIGNATURE_SCAN_H
++
++#include <cstdint>
++
++#include "frane_mesa_26360_a810_frequency_scan.h"
++#include "frane_mesa_26358_a810_tail_learner.h"
++
++struct frane_26361_signature_info {
++   uint16_t signature = 0;
++   uint16_t start_occurrences = 128;
++   uint8_t cost_class = 0; /* 0=moderate, 1=heavy, 2=very-heavy */
++};
++
++static inline uint8_t
++frane_26361_bucket4(uint64_t v, uint64_t a, uint64_t b, uint64_t c)
++{
++   return v < a ? 0u : v < b ? 1u : v < c ? 2u : 3u;
++}
++
++static inline frane_26361_signature_info
++frane_26361_signature_for(uint64_t replay_work,
++                          uint64_t pass_pixels,
++                          uint64_t estimated_tiles,
++                          uint32_t drawcalls,
++                          bool zs_load_store)
++{
++   frane_26361_signature_info out {};
++
++   const uint8_t tile_bucket =
++      frane_26361_bucket4(estimated_tiles, 6, 8, 12);
++   const uint8_t replay_bucket =
++      frane_26361_bucket4(replay_work, 192, 384, 768);
++   const uint8_t draw_bucket =
++      frane_26361_bucket4(drawcalls, 32, 64, 96);
++   const uint8_t pixel_bucket =
++      frane_26361_bucket4(pass_pixels,
++                          1280ull * 720ull,
++                          1920ull * 1080ull,
++                          2560ull * 1440ull);
++
++   out.signature =
++      uint16_t(tile_bucket) |
++      (uint16_t(replay_bucket) << 2) |
++      (uint16_t(draw_bucket) << 4) |
++      (uint16_t(pixel_bucket) << 6) |
++      (zs_load_store ? uint16_t(1u << 8) : uint16_t(0));
++
++   if (replay_work >= 768 ||
++       estimated_tiles >= 12 ||
++       pass_pixels >= 2560ull * 1440ull) {
++      out.cost_class = 2;
++      out.start_occurrences = 256;
++   } else if (replay_work >= 384 ||
++              estimated_tiles >= 8 ||
++              drawcalls >= 96 ||
++              pass_pixels >= 1920ull * 1080ull) {
++      out.cost_class = 1;
++      out.start_occurrences = 192;
++   } else {
++      out.cost_class = 0;
++      out.start_occurrences = 128;
++   }
++
++   return out;
++}
++
++static inline uint32_t
++frane_26361_sat_mul(uint32_t value, uint32_t mul)
++{
++   if (!mul || !value)
++      return 0;
++   if (value > UINT32_MAX / mul)
++      return UINT32_MAX;
++   return value * mul;
++}
++
++static inline frane_26359_scan_decision
++frane_26361_decide_signature_scan(bool enabled,
++                                  bool structural_tail_risk,
++                                  frane_26359_scan_snapshot scan,
++                                  uint32_t tail_learner_word,
++                                  uint32_t occurrences,
++                                  uint64_t replay_work,
++                                  uint64_t pass_pixels,
++                                  uint64_t estimated_tiles,
++                                  uint32_t drawcalls,
++                                  bool zs_load_store,
++                                  uint32_t sysmem_probability,
++                                  uint64_t decision_word)
++{
++   frane_26359_scan_decision out {};
++   if (!enabled || !structural_tail_risk)
++      return out;
++
++   const auto learned =
++      frane_26358_unpack_tail_snapshot(tail_learner_word);
++   const auto sig =
++      frane_26361_signature_for(replay_work, pass_pixels, estimated_tiles,
++                                drawcalls, zs_load_store);
++
++   const int confidence =
++      learned.score < 0 ? -int(learned.score) : int(learned.score);
++
++   /* Once V58 has enough evidence and a confident preference, exploration has
++    * completed its job. This is the most important hard stop in V61.
++    */
++   if (learned.ready && confidence >= 4)
++      return out;
++
++   uint8_t target = 0;
++   uint32_t activation = sig.start_occurrences;
++   const uint8_t paired =
++      scan.sysmem_samples < scan.gmem_samples ?
++      scan.sysmem_samples : scan.gmem_samples;
++
++   if (!learned.ready) {
++      /* Do not pay for samples that cannot possibly make the learner useful.
++       * Natural PROFILED samples reduce how long we wait before rescuing a
++       * starved history.
++       */
++      if (paired >= 4)
++         activation = sig.start_occurrences;
++      else if (paired >= 2)
++         activation = frane_26361_sat_mul(sig.start_occurrences, 2);
++      else
++         activation = frane_26361_sat_mul(sig.start_occurrences, 4);
++
++      if (occurrences < activation)
++         return out;
++
++      target = 6; /* exact V58 readiness threshold */
++   } else {
++      /* Ready but inconclusive histories are allowed a little more evidence,
++       * only if they are genuinely hot. Never keep scanning a merely warm RP.
++       */
++      const uint32_t hot8 =
++         frane_26361_sat_mul(sig.start_occurrences, 8);
++      const uint32_t hot16 =
++         frane_26361_sat_mul(sig.start_occurrences, 16);
++
++      if (occurrences >= hot16)
++         target = 10;
++      else if (occurrences >= hot8)
++         target = 8;
++      else
++         return out;
++   }
++
++   const bool need_sys = scan.sysmem_samples < target;
++   const bool need_gm = scan.gmem_samples < target;
++   if (!need_sys && !need_gm)
++      return out;
++
++   bool choose_sys;
++   if (need_sys && need_gm) {
++      if (scan.sysmem_samples < scan.gmem_samples)
++         choose_sys = true;
++      else if (scan.gmem_samples < scan.sysmem_samples)
++         choose_sys = false;
++      else
++         choose_sys = (occurrences & 1u) != 0u;
++   } else {
++      choose_sys = need_sys;
++   }
++
++   if (sysmem_probability > 100)
++      sysmem_probability = 100;
++
++   const bool hostile =
++      (choose_sys && sysmem_probability <= 5) ||
++      (!choose_sys && sysmem_probability >= 95);
++
++   if (hostile) {
++      /* Expensive signatures get fewer loser probes. As a pass proves it is
++       * extremely hot, relax the throttle gradually so an actual regime
++       * change can still be discovered.
++       */
++      uint8_t probe_log2 = uint8_t(4 + sig.cost_class); /* 1/16..1/64 */
++      const uint32_t hot8 =
++         frane_26361_sat_mul(sig.start_occurrences, 8);
++      const uint32_t hot16 =
++         frane_26361_sat_mul(sig.start_occurrences, 16);
++
++      if (occurrences >= hot16 && probe_log2 > 2)
++         probe_log2 = 2;
++      else if (occurrences >= hot8 && probe_log2 > 3)
++         probe_log2 = 3;
++
++      if (probe_log2 > 6)
++         probe_log2 = 6;
++
++      const uint64_t mask = (UINT64_C(1) << probe_log2) - 1u;
++      if (((decision_word >> 8) & mask) != 0u) {
++         out.throttled = true;
++         return out;
++      }
++   }
++
++   out.override_mode = true;
++   out.select_sysmem = choose_sys;
++   out.force_measure = true;
++   out.throttled = hostile;
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26362_a810_histogram.h b/src/freedreno/vulkan/frane_mesa_26362_a810_histogram.h
+new file mode 100644
+index 0000000..7c9274c
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26362_a810_histogram.h
+@@ -0,0 +1,296 @@
++/* SPDX-License-Identifier: MIT
++ * Drnas-Turnip S1H A810 DECISION-HISTOGRAM / FRAMETIME-STABILIZER.
++ *
++ * Compact per-render-pass evidence histogram. It is fed only when a new
++ * measured GMEM/SYSMEM pair becomes available. The histogram is recent-weighted
++ * by periodically halving bins, so scene changes can replace old evidence.
++ *
++ * Histogram smoothing is deliberately conservative and optional:
++ * - no allocation, locks, waits or loops with runtime-dependent bounds;
++ * - never acts without measured paired evidence;
++ * - strong contradictory learner / PROFILED evidence can veto it;
++ * - sparse measured loser probes remain active for regime-change detection.
++ */
++#ifndef FRANE_MESA_26362_A810_HISTOGRAM_H
++#define FRANE_MESA_26362_A810_HISTOGRAM_H
++
++#include <cstdint>
++
++#include "frane_mesa_26358_a810_tail_learner.h"
++
++enum frane_26362_hist_bin : uint8_t {
++   FRANE_HIST_GMEM_25 = 0,
++   FRANE_HIST_GMEM_12,
++   FRANE_HIST_GMEM_6,
++   FRANE_HIST_TIE,
++   FRANE_HIST_SYSMEM_6,
++   FRANE_HIST_SYSMEM_12,
++   FRANE_HIST_SYSMEM_25,
++   FRANE_HIST_BIN_COUNT,
++};
++
++enum frane_26362_preference : int8_t {
++   FRANE_HIST_PREF_GMEM = -1,
++   FRANE_HIST_PREF_NONE = 0,
++   FRANE_HIST_PREF_SYSMEM = 1,
++};
++
++struct frane_26362_hist_state {
++   uint16_t bins[FRANE_HIST_BIN_COUNT] {};
++   uint32_t observations = 0;
++   uint16_t switches = 0;
++   int8_t preference = FRANE_HIST_PREF_NONE;
++   uint8_t confidence = 0; /* 0..8 */
++};
++
++struct frane_26362_hist_snapshot {
++   int8_t preference = FRANE_HIST_PREF_NONE;
++   uint8_t confidence = 0;
++   uint8_t recent_observations = 0;
++   uint16_t switches = 0;
++};
++
++struct frane_26362_hist_decision {
++   bool override_mode = false;
++   bool select_sysmem = false;
++   bool force_measure = false;
++   uint8_t confidence = 0;
++   uint8_t probe_log2 = 0;
++};
++
++static inline uint32_t
++frane_26362_recent_total(const frane_26362_hist_state &s)
++{
++   uint32_t total = 0;
++   for (uint32_t i = 0; i < FRANE_HIST_BIN_COUNT; i++)
++      total += s.bins[i];
++   return total;
++}
++
++static inline frane_26362_hist_bin
++frane_26362_classify(uint64_t sys_cost, uint64_t gm_cost)
++{
++   if (gm_cost && sys_cost) {
++      if (frane_26358_ratio_le(gm_cost, sys_cost, 3, 4))
++         return FRANE_HIST_GMEM_25;
++      if (frane_26358_ratio_le(gm_cost, sys_cost, 7, 8))
++         return FRANE_HIST_GMEM_12;
++      if (frane_26358_ratio_le(gm_cost, sys_cost, 15, 16))
++         return FRANE_HIST_GMEM_6;
++
++      if (frane_26358_ratio_le(sys_cost, gm_cost, 3, 4))
++         return FRANE_HIST_SYSMEM_25;
++      if (frane_26358_ratio_le(sys_cost, gm_cost, 7, 8))
++         return FRANE_HIST_SYSMEM_12;
++      if (frane_26358_ratio_le(sys_cost, gm_cost, 15, 16))
++         return FRANE_HIST_SYSMEM_6;
++   }
++
++   return FRANE_HIST_TIE;
++}
++
++static inline uint8_t
++frane_26362_vote_confidence(const frane_26362_hist_state &s,
++                            int8_t *candidate)
++{
++   const uint32_t gm_votes =
++      uint32_t(s.bins[FRANE_HIST_GMEM_25]) * 3u +
++      uint32_t(s.bins[FRANE_HIST_GMEM_12]) * 2u +
++      uint32_t(s.bins[FRANE_HIST_GMEM_6]);
++   const uint32_t sys_votes =
++      uint32_t(s.bins[FRANE_HIST_SYSMEM_25]) * 3u +
++      uint32_t(s.bins[FRANE_HIST_SYSMEM_12]) * 2u +
++      uint32_t(s.bins[FRANE_HIST_SYSMEM_6]);
++
++   const uint32_t votes = gm_votes + sys_votes;
++   const uint32_t decisive =
++      s.bins[FRANE_HIST_GMEM_25] + s.bins[FRANE_HIST_GMEM_12] +
++      s.bins[FRANE_HIST_GMEM_6] + s.bins[FRANE_HIST_SYSMEM_6] +
++      s.bins[FRANE_HIST_SYSMEM_12] + s.bins[FRANE_HIST_SYSMEM_25];
++
++   *candidate = FRANE_HIST_PREF_NONE;
++   if (votes == 0 || decisive < 6)
++      return 0;
++
++   const uint32_t margin =
++      gm_votes > sys_votes ? gm_votes - sys_votes : sys_votes - gm_votes;
++   uint32_t confidence = (margin * 8u + votes / 2u) / votes;
++   if (confidence > 8)
++      confidence = 8;
++
++   if (confidence >= 4) {
++      if (gm_votes > sys_votes)
++         *candidate = FRANE_HIST_PREF_GMEM;
++      else if (sys_votes > gm_votes)
++         *candidate = FRANE_HIST_PREF_SYSMEM;
++   }
++
++   return uint8_t(confidence);
++}
++
++static inline frane_26362_hist_state
++frane_26362_update_histogram(frane_26362_hist_state s,
++                             uint64_t sys_cost,
++                             uint64_t gm_cost)
++{
++   if (!sys_cost || !gm_cost)
++      return s;
++
++   /* Recent-weighted bounded histogram. When the window fills, halve every
++    * bin. This retains long-term direction while letting a new scene replace
++    * old evidence without storing individual frames.
++    */
++   if (frane_26362_recent_total(s) >= 64) {
++      for (uint32_t i = 0; i < FRANE_HIST_BIN_COUNT; i++)
++         s.bins[i] = uint16_t((uint32_t(s.bins[i]) + 1u) >> 1);
++   }
++
++   const auto bin = frane_26362_classify(sys_cost, gm_cost);
++   if (s.bins[bin] != UINT16_MAX)
++      s.bins[bin]++;
++   if (s.observations != UINT32_MAX)
++      s.observations++;
++
++   int8_t candidate = FRANE_HIST_PREF_NONE;
++   const uint8_t evidence_conf = frane_26362_vote_confidence(s, &candidate);
++   const uint32_t total = frane_26362_recent_total(s);
++
++   if (s.preference == FRANE_HIST_PREF_NONE) {
++      if (candidate != FRANE_HIST_PREF_NONE && total >= 8) {
++         s.preference = candidate;
++         s.confidence = evidence_conf;
++      } else if (s.confidence) {
++         s.confidence--;
++      }
++      return s;
++   }
++
++   if (candidate == s.preference) {
++      s.confidence = evidence_conf;
++      return s;
++   }
++
++   if (candidate != FRANE_HIST_PREF_NONE &&
++       candidate != s.preference &&
++       total >= 12 && evidence_conf >= 6) {
++      s.preference = candidate;
++      s.confidence = evidence_conf;
++      if (s.switches != UINT16_MAX)
++         s.switches++;
++      return s;
++   }
++
++   /* During a disputed transition, stop using the histogram as an override
++    * before allowing it to flip. This is the frametime dead-band.
++    */
++   if (candidate != FRANE_HIST_PREF_NONE && candidate != s.preference) {
++      s.confidence = evidence_conf >= 6 ? 0 : uint8_t(6 - evidence_conf);
++      return s;
++   }
++
++   const uint32_t ties = s.bins[FRANE_HIST_TIE];
++   if (total >= 16 && ties * 2u >= total && evidence_conf <= 1) {
++      s.preference = FRANE_HIST_PREF_NONE;
++      s.confidence = 0;
++   } else if (s.confidence) {
++      s.confidence--;
++   }
++
++   return s;
++}
++
++static inline uint32_t
++frane_26362_pack_histogram(const frane_26362_hist_state &s)
++{
++   uint32_t pref = 0;
++   if (s.preference == FRANE_HIST_PREF_GMEM)
++      pref = 1;
++   else if (s.preference == FRANE_HIST_PREF_SYSMEM)
++      pref = 2;
++
++   uint32_t confidence = s.confidence > 8 ? 8u : s.confidence;
++   uint32_t recent = frane_26362_recent_total(s);
++   if (recent > 127)
++      recent = 127;
++   const uint32_t switches = uint32_t(s.switches);
++
++   return pref | (confidence << 2) | (recent << 6) | (switches << 16);
++}
++
++static inline frane_26362_hist_snapshot
++frane_26362_unpack_histogram(uint32_t word)
++{
++   frane_26362_hist_snapshot out {};
++   const uint32_t pref = word & 3u;
++   if (pref == 1)
++      out.preference = FRANE_HIST_PREF_GMEM;
++   else if (pref == 2)
++      out.preference = FRANE_HIST_PREF_SYSMEM;
++
++   out.confidence = uint8_t((word >> 2) & 0xfu);
++   if (out.confidence > 8)
++      out.confidence = 8;
++   out.recent_observations = uint8_t((word >> 6) & 0x7fu);
++   out.switches = uint16_t(word >> 16);
++   return out;
++}
++
++static inline frane_26362_hist_decision
++frane_26362_decide_smoothing(bool enabled,
++                             frane_26362_hist_snapshot hist,
++                             frane_26358_tail_snapshot learned,
++                             uint32_t sysmem_probability,
++                             uint64_t decision_word)
++{
++   frane_26362_hist_decision out {};
++   if (!enabled || hist.preference == FRANE_HIST_PREF_NONE ||
++       hist.confidence < 4 || hist.recent_observations < 8)
++      return out;
++
++   const bool prefer_sys = hist.preference == FRANE_HIST_PREF_SYSMEM;
++   const int learner_conf =
++      learned.score < 0 ? -int(learned.score) : int(learned.score);
++   const bool learner_pref_sys = learned.score < 0;
++
++   /* A newly strong opposite learner means the workload has probably changed.
++    * Stop smoothing immediately and let the newer evidence take control.
++    */
++   if (learned.ready && learner_conf >= 6 &&
++       learned.score != 0 && learner_pref_sys != prefer_sys)
++      return out;
++
++   if (learned.ready && learner_conf >= 4 &&
++       learned.score != 0 && learner_pref_sys != prefer_sys &&
++       hist.confidence < 7)
++      return out;
++
++   if (sysmem_probability > 100)
++      sysmem_probability = 100;
++
++   /* Respect a strong live PROFILED contradiction unless histogram consensus
++    * is near-saturated.
++    */
++   if (!prefer_sys && sysmem_probability > 65 && hist.confidence < 7)
++      return out;
++   if (prefer_sys && sysmem_probability < 35 && hist.confidence < 7)
++      return out;
++
++   uint8_t probe_log2 = 5; /* 1/32 at confidence 4. */
++   if (hist.confidence >= 7)
++      probe_log2 = 7;      /* 1/128 */
++   else if (hist.confidence >= 5)
++      probe_log2 = 6;      /* 1/64 */
++
++   const uint64_t mask = (UINT64_C(1) << probe_log2) - 1u;
++   const bool loser_probe = (decision_word & mask) == 0;
++
++   out.override_mode = true;
++   out.confidence = hist.confidence;
++   out.probe_log2 = probe_log2;
++   out.select_sysmem = prefer_sys ? !loser_probe : loser_probe;
++   out.force_measure =
++      loser_probe || (((decision_word >> 16) & 63u) == 0u);
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26363_a810_smart_performance.h b/src/freedreno/vulkan/frane_mesa_26363_a810_smart_performance.h
+new file mode 100644
+index 0000000..d2bcd63
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26363_a810_smart_performance.h
+@@ -0,0 +1,147 @@
++/* SPDX-License-Identifier: MIT
++ * A810 S1 SMART PERFORMANCE
++ *
++ * History-first GMEM/SYSMEM policy layered on Drnas-Turnip S1/S1H.
++ *
++ * The existing Mesa rp_history map is the scene table: each render-pass hash
++ * already owns measured GMEM/SYSMEM timing state.  This helper turns the
++ * recent weighted histogram into a cheap memoized decision so a hot scene
++ * does not repeatedly pay the full scan/learn path after it has converged.
++ *
++ * The table is deliberately tiny and branch-only:
++ *
++ * confidence  recent  mode       loser probe  winner refresh
++ * 4..5        >=8     WARM       1/64         1/32
++ * 6..7        >=12    TRUSTED    1/128        1/64
++ * 8           >=16    LOCKED     1/256        1/128
++ *
++ * Tail-risk passes require confidence >=6.  Strong contradictory V58 learner
++ * or Mesa PROFILED evidence always releases the memoized decision.  Repeated
++ * preference switches also prevent an unstable history from reaching LOCKED.
++ *
++ * No allocation, locks, waits, disk I/O or unbounded loops are used here.
++ */
++#ifndef FRANE_MESA_26363_A810_SMART_PERFORMANCE_H
++#define FRANE_MESA_26363_A810_SMART_PERFORMANCE_H
++
++#include <cstdint>
++
++#include "frane_mesa_26358_a810_tail_learner.h"
++#include "frane_mesa_26362_a810_histogram.h"
++
++struct frane_26363_policy_row {
++   uint8_t min_confidence;
++   uint8_t min_recent;
++   uint8_t loser_probe_log2;
++   uint8_t winner_refresh_log2;
++   uint8_t gm_profiled_veto;
++   uint8_t sys_profiled_veto;
++};
++
++static constexpr frane_26363_policy_row FRANE_26363_POLICY[3] = {
++   /* WARM */
++   { 4, 8, 6, 5, 70, 30 },
++   /* TRUSTED */
++   { 6, 12, 7, 6, 78, 22 },
++   /* LOCKED */
++   { 8, 16, 8, 7, 85, 15 },
++};
++
++struct frane_26363_decision {
++   bool override_mode = false;
++   bool select_sysmem = false;
++   bool force_measure = false;
++   uint8_t tier = 0;       /* 0=none, 1=warm, 2=trusted, 3=locked */
++   uint8_t confidence = 0;
++   uint8_t probe_log2 = 0;
++};
++
++static inline uint8_t
++frane_26363_abs_score(int8_t score)
++{
++   return uint8_t(score < 0 ? -int(score) : int(score));
++}
++
++static inline frane_26363_decision
++frane_26363_decide_smart_performance(bool enabled,
++                                     bool structural_tail_risk,
++                                     frane_26362_hist_snapshot hist,
++                                     frane_26358_tail_snapshot learned,
++                                     uint32_t sysmem_probability,
++                                     uint64_t decision_word)
++{
++   frane_26363_decision out {};
++   if (!enabled ||
++       hist.preference == FRANE_HIST_PREF_NONE ||
++       hist.confidence < 4)
++      return out;
++
++   if (sysmem_probability > 100)
++      sysmem_probability = 100;
++
++   const bool prefer_sys = hist.preference == FRANE_HIST_PREF_SYSMEM;
++   const uint8_t learner_conf = frane_26363_abs_score(learned.score);
++   const bool learner_pref_sys = learned.score < 0;
++
++   /* A tail-risk pass may use history, but only after stronger evidence. */
++   if (structural_tail_risk && hist.confidence < 6)
++      return out;
++
++   /* A strong newly measured opposite learner is a scene/regime-change signal.
++    * Release the cached decision immediately and let the normal S1 path learn.
++    */
++   if (learned.ready && learned.score != 0 &&
++       learner_pref_sys != prefer_sys) {
++      if (learner_conf >= 6)
++         return out;
++      if (learner_conf >= 4 && hist.confidence < 8)
++         return out;
++   }
++
++   uint8_t row_index = hist.confidence >= 8 ? 2 :
++                       hist.confidence >= 6 ? 1 : 0;
++
++   /* A render-pass that repeatedly changed winner is not a good LOCKED
++    * candidate.  Keep using its history, but one tier more cautiously.
++    */
++   if (hist.switches >= 4 && row_index == 2)
++      row_index = 1;
++   if (hist.switches >= 8 && row_index > 0)
++      row_index--;
++
++   const auto &row = FRANE_26363_POLICY[row_index];
++   if (hist.recent_observations < row.min_recent)
++      return out;
++
++   /* Live Mesa PROFILED remains the escape hatch.  Higher-confidence history
++    * tolerates more short-term noise before being released.
++    */
++   if (!prefer_sys && sysmem_probability > row.gm_profiled_veto)
++      return out;
++   if (prefer_sys && sysmem_probability < row.sys_profiled_veto)
++      return out;
++
++   const uint64_t loser_mask =
++      (UINT64_C(1) << row.loser_probe_log2) - UINT64_C(1);
++   const uint64_t refresh_mask =
++      (UINT64_C(1) << row.winner_refresh_log2) - UINT64_C(1);
++
++   const bool loser_probe = (decision_word & loser_mask) == 0;
++   const bool winner_refresh =
++      !loser_probe && (((decision_word >> 16) & refresh_mask) == 0);
++
++   out.override_mode = true;
++   out.tier = uint8_t(row_index + 1);
++   out.confidence = hist.confidence;
++   out.probe_log2 = row.loser_probe_log2;
++   out.select_sysmem = prefer_sys ? !loser_probe : loser_probe;
++
++   /* Normal cached hits are decision-only: no fresh GPU timestamp request.
++    * Measure only sparse winner refreshes and all loser probes.  This is the
++    * part that avoids re-screening a scene on every recurrence.
++    */
++   out.force_measure = loser_probe || winner_refresh;
++   return out;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_mesa_26364_a810_smart_v2.h b/src/freedreno/vulkan/frane_mesa_26364_a810_smart_v2.h
+new file mode 100644
+index 0000000..ecd37fc
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_mesa_26364_a810_smart_v2.h
+@@ -0,0 +1,146 @@
++/* SPDX-License-Identifier: MIT
++ * S1 Smart v2: bounded fresh-pair evidence, one measurement owner.
++ * All counts are render-pattern occurrences, not frames or milliseconds.
++ */
++#ifndef FRANE_MESA_26364_SMART_V2_H
++#define FRANE_MESA_26364_SMART_V2_H
++#include "frane_mesa_26362_a810_histogram.h"
++struct frane_26364_state {
++   frane_26362_hist_state hist {};
++   uint64_t cost[2] {};
++   uint32_t occurrence[2] {};
++   uint32_t last_pair = 0;
++   uint8_t pending = 0;
++   uint8_t opposite_streak = 0;
++   uint8_t stable_pairs = 0;
++   uint8_t costly_pairs = 0;
++};
++struct frane_26364_decision {
++   bool owns = false;
++   bool sysmem = false;
++   bool measure = false;
++   uint8_t tier = 0;
++};
++static inline uint8_t frane_26364_confidence(const frane_26362_hist_state &h,
++                                            int8_t &pref) {
++   const uint32_t g = 3u*h.bins[0] + 2u*h.bins[1] + h.bins[2];
++   const uint32_t s = h.bins[4] + 2u*h.bins[5] + 3u*h.bins[6];
++   const uint32_t total = g+s+3u*h.bins[3];
++   pref = g>s ? FRANE_HIST_PREF_GMEM : s>g ? FRANE_HIST_PREF_SYSMEM : FRANE_HIST_PREF_NONE;
++   return total ? uint8_t((8u*(g>s ? g-s : s-g))/total) : 0;
++}
++static inline uint64_t frane_26364_pack(const frane_26364_state &s) {
++   return (uint64_t(s.last_pair)<<32) | frane_26362_pack_histogram(s.hist) |
++          (s.costly_pairs>=8 ? (UINT64_C(1)<<13) : 0);
++}
++static inline void frane_26364_feed(frane_26364_state &s, bool sysmem,
++                                    uint64_t duration, uint32_t occurrence) {
++   if (!duration) return;
++   const unsigned mode = sysmem ? 1u : 0u;
++   s.cost[mode] = duration;
++   s.occurrence[mode] = occurrence;
++   s.pending |= uint8_t(1u<<mode);
++   if (s.pending != 3) return;
++   /* Both modes must be freshly measured within eight pattern recurrences.
++    * Unsigned subtraction covers occurrence rollover. Distant pairs retain
++    * only the most recent member; an old sample is never voted twice.
++    */
++   const uint32_t distance = s.occurrence[mode]-s.occurrence[mode^1u];
++   const uint32_t reverse = s.occurrence[mode^1u]-s.occurrence[mode];
++   const bool current_newer = distance < UINT32_C(0x80000000);
++   if (distance > 8 && reverse > 8) {
++      s.pending = uint8_t(1u<<(current_newer ? mode : mode^1u));
++      return;
++   }
++   s.pending = 0;
++   s.last_pair = s.occurrence[current_newer ? mode : mode^1u];
++   auto &h = s.hist;
++   const auto bin = frane_26362_classify(s.cost[1], s.cost[0]);
++   const int8_t fresh_pref = bin<FRANE_HIST_TIE ? FRANE_HIST_PREF_GMEM :
++                            bin>FRANE_HIST_TIE ? FRANE_HIST_PREF_SYSMEM : FRANE_HIST_PREF_NONE;
++   /* Two strong opposite pairs invalidate old evidence. One noisy pair only
++    * reduces confidence. Preserve a bounded instability penalty that heals.
++    */
++   const bool strong = bin==0 || bin==1 || bin==5 || bin==6;
++   if (h.preference && fresh_pref && fresh_pref!=h.preference && strong) {
++      if (++s.opposite_streak >= 2) {
++         const uint16_t switches = h.switches < 8 ? uint16_t(h.switches+1) : 8;
++         h = {};
++         h.switches = switches;
++         s.opposite_streak = 0;
++         s.stable_pairs = 0;
++         s.costly_pairs = 0;
++      }
++   } else { s.opposite_streak = 0; }
++   if (frane_26362_recent_total(h)>=64)
++      for (unsigned i=0;i<7;i++) h.bins[i] = uint16_t(h.bins[i]>>1);
++   ++h.bins[bin];
++   if (h.observations != UINT32_MAX) ++h.observations;
++   int8_t pref = 0;
++   h.confidence = frane_26364_confidence(h, pref);
++   h.preference = h.confidence>=4 ? pref : int8_t(FRANE_HIST_PREF_NONE);
++   /* Require eight consecutive fresh pairs with >=2x loser cost.
++    * Division avoids overflow even for UINT64_MAX timestamp durations.
++    * Any tie, reversal or weaker margin immediately restores v2 cadence.
++    */
++   const uint64_t winner = h.preference==FRANE_HIST_PREF_GMEM ? s.cost[0] : s.cost[1];
++   const uint64_t loser = h.preference==FRANE_HIST_PREF_GMEM ? s.cost[1] : s.cost[0];
++   if (h.preference && fresh_pref==h.preference && loser/2>=winner) {
++      if (s.costly_pairs<8) ++s.costly_pairs;
++   } else { s.costly_pairs=0; }
++   if (h.preference && fresh_pref==h.preference) {
++      if (++s.stable_pairs>=16) {
++         if (h.switches) --h.switches;
++         s.stable_pairs=0;
++      }
++   } else { s.stable_pairs=0; }
++}
++static inline frane_26364_decision
++frane_26364_select(bool enabled, bool tail_risk, uint64_t word,
++                    uint32_t probability, uint32_t occurrence, uint64_t hash,
++                    bool loss_budget = true) {
++   frane_26364_decision d {};
++   if (!enabled) return d;
++   const auto h = frane_26362_unpack_histogram(uint32_t(word));
++   const uint32_t stamp = uint32_t(word>>32);
++   probability = probability>100 ? 100 : probability;
++   uint8_t tier = h.confidence>=8 && h.recent_observations>=16 ? 3 :
++                  h.confidence>=6 && h.recent_observations>=12 ? 2 :
++                  h.confidence>=4 && h.recent_observations>=8 ? 1 : 0;
++   if (h.switches>=4 && tier==3) tier=2;
++   if (h.switches>=8 && tier>1) --tier;
++   const bool sparse = loss_budget && !tail_risk && tier==3 &&
++                       h.switches==0 && (word & (UINT64_C(1)<<13));
++   const uint32_t expiry = sparse ? 1024u : 512u;
++   if (!h.preference || uint32_t(occurrence-stamp)>expiry || (tail_risk && tier<2)) tier=0;
++   const bool sys = h.preference==FRANE_HIST_PREF_SYSMEM;
++   const uint8_t veto[4] = {0,70,78,85};
++   if (tier && ((!sys && probability>veto[tier]) ||
++                 (sys && probability<uint32_t(100-veto[tier])))) tier=0;
++   const uint32_t shift = tier ? tier+5u+uint32_t(sparse) : 3u;
++   const uint32_t mask = (1u<<shift)-1u;
++   /* A bounded jittered slot per period avoids probing the same cyclic
++    * scene phase forever. No shared RNG, atomic ticket or clock is needed.
++    * Both samples stay adjacent and inside one block: exactly two requests
++    * per complete block at a fixed tier. Gaps are bounded by two periods.
++    */
++   uint32_t slot = (occurrence>>shift)^uint32_t(hash)^uint32_t(hash>>32);
++   slot ^= slot>>16; slot *= UINT32_C(0x7feb352d); slot ^= slot>>15;
++   slot &= mask;
++   if (slot==mask) --slot;
++   const uint32_t phase = occurrence&mask;
++   const bool first = phase==slot;
++   const bool second = phase==slot+1u;
++   d.tier=tier;
++   if (tier) {
++      d.owns=true;
++      d.sysmem=second ? !sys : sys;
++      d.measure=first || second;
++   } else if (first || second) {
++      d.owns=true;
++      d.sysmem=second;
++      d.measure=true;
++   }
++   return d;
++}
++#endif
+diff --git a/src/freedreno/vulkan/frane_present_policy.h b/src/freedreno/vulkan/frane_present_policy.h
+new file mode 100644
+index 0000000..93f4e8f
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_present_policy.h
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: MIT
++ * Frane A810 experimental Vulkan WSI presentation policy.
++ * An optional preference, not a Vulkan API layer, compositor or scheduler.
++ */
++#ifndef FRANE_PRESENT_POLICY_H
++#define FRANE_PRESENT_POLICY_H
++#include <string.h>
++
++enum frane_present_choice {
++   FRANE_PRESENT_OFF,
++   FRANE_PRESENT_MAILBOX,
++   FRANE_PRESENT_FIFO,
++   FRANE_PRESENT_RELAXED,
++   FRANE_PRESENT_IMMEDIATE
++};
++
++static inline enum frane_present_choice
++frane_present_parse(const char *value)
++{
++   /* V23 default: prefer MAILBOX if supported; otherwise Mesa keeps the
++    * application's requested mode using its existing WSI validation.
++    */
++   if (!value || !strcmp(value, "auto") || !strcmp(value, "mailbox"))
++      return FRANE_PRESENT_MAILBOX;
++   if (!strcmp(value, "fifo"))
++      return FRANE_PRESENT_FIFO;
++   if (!strcmp(value, "relaxed"))
++      return FRANE_PRESENT_RELAXED;
++   if (!strcmp(value, "immediate"))
++      return FRANE_PRESENT_IMMEDIATE;
++   /* "off" and invalid values fail closed (original client choice). */
++   return FRANE_PRESENT_OFF;
++}
++#endif
+diff --git a/src/freedreno/vulkan/frane_profiled_sampling.h b/src/freedreno/vulkan/frane_profiled_sampling.h
+new file mode 100644
+index 0000000..1051d81
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_profiled_sampling.h
+@@ -0,0 +1,31 @@
++/* SPDX-License-Identifier: MIT
++ * A810 V22: schedule measurement, never choose the rendering mode here.
++ */
++#pragma once
++#include <stdint.h>
++
++/* 0: no more measurements for an already locked history.
++ * 1: measure every occurrence during learning, uncertainty or losing-mode probes.
++ * N: measure every Nth occurrence of the strongly preferred mode.
++ * Caller uses one probability snapshot for mode selection and this decision.
++ */
++static inline uint32_t
++frane_profiled_sample_period(uint32_t probability, bool select_sysmem, uint32_t interval)
++{
++   if (probability == 0 || probability == 100)
++      return 0;
++   const bool preferred = (probability >= 95 && select_sysmem) ||
++                          (probability <= 5 && !select_sysmem);
++   return preferred ? interval : 1;
++}
++
++static inline uint32_t
++frane_profiled_sample_interval(int requested)
++{
++   switch (requested) {
++   case 1: case 2: case 4: case 8: case 16:
++      return (uint32_t)requested;
++   default:
++      return 4;
++   }
++}
+diff --git a/src/freedreno/vulkan/frane_v24_fastpath.h b/src/freedreno/vulkan/frane_v24_fastpath.h
+new file mode 100644
+index 0000000..17ec368
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_v24_fastpath.h
+@@ -0,0 +1,26 @@
++/* SPDX-License-Identifier: MIT
++ * Frane A810 V24: semantic helpers for CPU-only render-pass hot-path.
++ * The PROFILED mode can be constant after a permanent 0/100 lock.
++ */
++#pragma once
++#include <stdbool.h>
++#include <stdint.h>
++
++static inline bool
++frane_v24_is_definite(uint32_t probability)
++{
++   return probability == 0u || probability == 100u;
++}
++
++static inline bool
++frane_v24_definite_sysmem(uint32_t probability)
++{
++   return probability == 100u;
++}
++
++static inline bool
++frane_v24_is_preferred(uint32_t probability, bool sysmem)
++{
++   return (probability >= 95u && sysmem) ||
++          (probability <= 5u && !sysmem);
++}
+diff --git a/src/freedreno/vulkan/frane_v25_power.h b/src/freedreno/vulkan/frane_v25_power.h
+new file mode 100644
+index 0000000..4ce0a43
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_v25_power.h
+@@ -0,0 +1,22 @@
++/* SPDX-License-Identifier: MIT
++ * A810-only experimental KGSL power-constraint gating.
++ * Never write undocumented GPU MMIO registers or disable thermal policy.
++ */
++#pragma once
++#include <stdint.h>
++#include <stdbool.h>
++#include "frane_mesa_2632_a810_turbo.h"
++#include "frane_mesa_2633_a810_profile_turbo.h"
++
++static inline bool
++frane_v25_is_a810(uint64_t chip_id)
++{
++   return chip_id == UINT64_C(0x44010000) ||
++          chip_id == UINT64_C(0xffff44010000);
++}
++
++static inline bool
++frane_v25_refresh_due(uint32_t successful_submissions)
++{
++   return frane_2633_power_refresh_due(successful_submissions);
++}
+diff --git a/src/freedreno/vulkan/frane_v29_fast.h b/src/freedreno/vulkan/frane_v29_fast.h
+new file mode 100644
+index 0000000..8dee113
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_v29_fast.h
+@@ -0,0 +1,34 @@
++/* SPDX-License-Identifier: MIT
++ * Small pure helpers for the V29 FAST-NOAI autotuner experiment.
++ * No model, training runtime, heap allocation or GPU work.
++ */
++#ifndef FRANE_V29_FAST_H
++#define FRANE_V29_FAST_H
++#include <algorithm>
++#include <cstdint>
++
++static inline uint64_t
++frane_v29_fast_mix64(uint64_t x)
++{
++   x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
++   x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
++   return x ^ (x >> 31);
++}
++
++static inline uint32_t
++frane_v29_cache_bucket(uint32_t probability)
++{
++   return probability == 50 ? 50 : probability < 50 ? 40 : 60;
++}
++
++static inline uint32_t
++frane_v29_sample_interval(uint32_t base, bool cache_warmed,
++                          uint64_t sysmem_ticks, uint64_t gmem_ticks)
++{
++   const uint64_t low = std::min(sysmem_ticks, gmem_ticks);
++   const uint64_t high = std::max(sysmem_ticks, gmem_ticks);
++   if (cache_warmed || !low || high - low <= low / 8)
++      return std::min(base, 2u);
++   return base;
++}
++#endif
 diff --git a/src/freedreno/vulkan/tu_autotune.cc b/src/freedreno/vulkan/tu_autotune.cc
 index 5540c15..1500458 100644
 --- a/src/freedreno/vulkan/tu_autotune.cc
