@@ -31,6 +31,8 @@ jobs:
           git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
           git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
           git -C mesa checkout --detach eda9aceb39d5ff169b096444abe366bdf2269e24
+          grep -Fq 'TU_A810_26338_GMEM_SEARCH", true' ../patches/s1.1-complete.patch
+          grep -Fq 'TU_FRANE_GMEM_PRESSURE", false' ../patches/s1.1-complete.patch
           git -C mesa apply --check ../patches/s1.1-complete.patch
           git -C mesa apply ../patches/s1.1-complete.patch
           git -C mesa rev-parse HEAD > mesa-commit.txt
@@ -80,7 +82,7 @@ jobs:
           cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
           python3 - <<'PY'
           import json,pathlib,zipfile
-          meta={'schemaVersion':1,'name':'A810 S1.1','description':'Internal A810 loss-budgeted paired probes; Smart and loss budget default ON','author':'Frane12','packageVersion':'11','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
+          meta={'schemaVersion':1,'name':'A810 S1.1','description':'Internal A810 Smart/loss-budget policy + pure V38 bounded GMEM look-ahead; V39 pressure extension opt-in','author':'Frane12','packageVersion':'11-v38-fusion','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
           pathlib.Path('output/meta.json').write_text(json.dumps(meta,indent=2)+'\n')
           with zipfile.ZipFile('A810-S1.1.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
               z.write('output/libvulkan_freedreno.so','libvulkan_freedreno.so')
