@@ -1,0 +1,128 @@
+name: A810 S1.2 Internal
+on:
+  push:
+    branches: ['drnas-a810-s1-2-internal']
+    paths: ['.github/workflows/turnip-s12-internal.yml', 'patches/s1.2-complete.patch', 'tests/s11_baseline.cpp', 'tests/s11_loss_budget.cpp', 'RELEASE_A810_S12.md', 'tests/s12_gmem_plan.py']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: drnas-a810-s1-2-internal
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y git ninja-build pkg-config python3-pip bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Fetch exact base and apply verified complete patch
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
+          git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
+          git -C mesa checkout --detach eda9aceb39d5ff169b096444abe366bdf2269e24
+          grep -Fq 'TU_A810_26338_GMEM_SEARCH", true' patches/s1.2-complete.patch
+          grep -Fq 'TU_FRANE_GMEM_PRESSURE", false' patches/s1.2-complete.patch
+          git -C mesa apply --check ../patches/s1.2-complete.patch
+          git -C mesa apply ../patches/s1.2-complete.patch
+          git -C mesa rev-parse HEAD > mesa-commit.txt
+          git rev-parse HEAD > frane-commit.txt
+      - name: Policy tests — 716040 boundary cases and regime simulation
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/s11_baseline.cpp -o /tmp/smart2-ubsan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-ubsan | tee smart2-ubsan.log
+          g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/s11_baseline.cpp -o /tmp/smart2-asan
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-asan | tee smart2-asan.log
+      - name: Loss budget tests and scene reversals
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/s11_loss_budget.cpp -o /tmp/s12-loss
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/s12-loss | tee s12-loss.log
+      - name: Actual GMEM allocator equivalence and concurrent ownership
+        run: |
+          set -euo pipefail
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tests/s12_gmem_plan.py --sanitize | tee s12-gmem-sanitized.log
+          python3 tests/s12_gmem_plan.py | tee s12-gmem-release.log
+          S12_DISABLE=1 python3 tests/s12_gmem_plan.py | tee s12-gmem-fallback.log
+          S12_PRESSURE=1 python3 tests/s12_gmem_plan.py | tee s12-gmem-pressure.log
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<CROSS
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          CROSS
+      - name: Compile real Android ARM64 driver
+        run: |
+          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+          meson compile -C mesa/build-android -j 4
+      - name: Package and verify driver plus sources
+        run: |
+          set -euo pipefail
+          mkdir output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          python3 - <<'PY'
+          import json,pathlib,zipfile
+          meta={'schemaVersion':1,'name':'A810 S1.2','description':'Internal A810 S1.2 exact threshold pruning and thread-local GMEM plan cache; Smart loss-budget; V39 pressure opt-in','author':'Frane12','packageVersion':'12-gmem-plan','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
+          pathlib.Path('output/meta.json').write_text(json.dumps(meta,indent=2)+'\n')
+          with zipfile.ZipFile('A810-S1.2.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              z.write('output/libvulkan_freedreno.so','libvulkan_freedreno.so')
+              z.write('output/meta.json','meta.json')
+          with zipfile.ZipFile('A810-S1.2.zip') as z:
+              assert z.testzip() is None
+              assert set(z.namelist())=={'libvulkan_freedreno.so','meta.json'}
+              b=z.read('libvulkan_freedreno.so')
+              assert b[:6]==b'\x7fELF\x02\x01'
+              assert int.from_bytes(b[16:18],'little')==3 and int.from_bytes(b[18:20],'little')==183
+              assert b'A810 S1.2 / Mesa' in b and b'TU_FRANE_SMART' in b
+          PY
+          zip -9 A810-S1.2-Source.zip patches/s1.2-complete.patch tests/s11_baseline.cpp tests/s11_loss_budget.cpp tests/s12_gmem_plan.py patches/s1.1-complete.patch RELEASE_A810_S12.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log s12-loss.log s12-gmem-*.log
+          sha256sum A810-S1.2.zip A810-S1.2-Source.zip patches/s1.2-complete.patch > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: A810-S1.2
+          path: |
+            A810-S1.2.zip
+            A810-S1.2-Source.zip
+            SHA256SUMS.txt
+            *log
+      - name: Create or update INTERNAL DRAFT only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=a810-s1-2-internal
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/smart2-release.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("/tmp/smart2-release.json"))["isDraft"], "Refusing to modify a published release"'
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "A810 S1.2" --notes-file RELEASE_A810_S12.md
+            gh release upload "$TAG" A810-S1.2.zip A810-S1.2-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" A810-S1.2.zip A810-S1.2-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "A810 S1.2" --notes-file RELEASE_A810_S12.md --draft
+          fi
+
