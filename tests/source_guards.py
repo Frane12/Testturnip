@@ -20,3 +20,10 @@ s=(v/'tu_suballoc.cc').read_text();assert 'suballoc->bo = NULL;' in s
 s=(v/'tu_knl_kgsl.cc').read_text()
 for token in ['munmap','ION_IOC_FREE','close(share.fd)','IOCTL_KGSL_GPUMEM_FREE_ID']: assert token in s
 print('A830 source guards: PASS (default quarantine, debug ordering, scope, early ownership, cache underflow, KGSL cleanup)')
+
+s=(v/'tu_autotune.cc').read_text()
+f=s[s.index('tu_autotune::rp_key::rp_key(const struct tu_render_pass *pass,'):s.index('tu_autotune::rp_key::rp_key(const rp_key &key,')]
+for token in ['scope_words = a830_scope ? 8u : 0u', 'area.offset.x', 'area.offset.y', 'area.extent.width', 'area.extent.height', 'pass->autotune_hash >> 32', 'draws ? 32u - __builtin_clz(draws) : 0u', 'uint32_t(cmd->state.gmem_layout)', '3 + scope_words']:
+ assert token in f,token
+assert f.count('*ptr++')==11
+print('A830 history signature: PASS (GPU scoped, area, pass structure, draw bucket, layout; fixed key capacity)')

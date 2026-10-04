@@ -2659,7 +2659,7 @@ index 00000000..8dee113f
 +}
 +#endif
 diff --git a/src/freedreno/vulkan/tu_autotune.cc b/src/freedreno/vulkan/tu_autotune.cc
-index 5540c15c..00b688c8 100644
+index 5540c15c..e04b03e9 100644
 --- a/src/freedreno/vulkan/tu_autotune.cc
 +++ b/src/freedreno/vulkan/tu_autotune.cc
 @@ -4,6 +4,18 @@
@@ -3000,7 +3000,45 @@ index 5540c15c..00b688c8 100644
  
        std::scoped_lock lock(device->autotune->suballoc_mutex);
        VkResult result = tu_suballoc_bo_alloc(&bo, &device->autotune->suballoc, total_size, alignof(rp_gpu_data));
-@@ -1002,9 +1238,29 @@ struct tu_autotune::rp_history {
+@@ -846,11 +1082,25 @@ tu_autotune::rp_key::rp_key(const struct tu_render_pass *pass,
+       bool store_stencil;
+    };
+ 
++   const bool a830_scope = frane_26320_a830_gpu(cmd->device);
++   const uint32_t scope_words = a830_scope ? 8u : 0u;
+    auto get_hash = [&](uint32_t *data, size_t size) {
+       uint32_t *ptr = data;
+       *ptr++ = framebuffer->width;
+       *ptr++ = framebuffer->height;
+       *ptr++ = framebuffer->layers;
++      if (a830_scope) {
++         const auto &area = cmd->state.render_areas[0];
++         *ptr++ = uint32_t(area.offset.x);
++         *ptr++ = uint32_t(area.offset.y);
++         *ptr++ = area.extent.width;
++         *ptr++ = area.extent.height;
++         *ptr++ = uint32_t(pass->autotune_hash);
++         *ptr++ = uint32_t(pass->autotune_hash >> 32);
++         const uint32_t draws = cmd->state.rp.drawcall_count;
++         *ptr++ = draws ? 32u - __builtin_clz(draws) : 0u;
++         *ptr++ = uint32_t(cmd->state.gmem_layout);
++      }
+ 
+       for (unsigned i = 0; i < pass->attachment_count; i++) {
+          /* Every image reaching a render pass must have an identity (see
+@@ -878,9 +1128,9 @@ tu_autotune::rp_key::rp_key(const struct tu_render_pass *pass,
+    /* We do a manual Boost-style "small vector" optimization here where the stack is used for the vast majority of
+     * cases, while only extreme cases need to allocate on the heap.
+     */
+-   size_t data_count = 3 + (pass->attachment_count * sizeof(packed_att_properties) / sizeof(uint32_t));
++   size_t data_count = 3 + scope_words + (pass->attachment_count * sizeof(packed_att_properties) / sizeof(uint32_t));
+    constexpr size_t STACK_MAX_DATA_COUNT =
+-      3 + (5 * (sizeof(packed_att_properties) / sizeof(uint32_t))); /* in u32 units, up to 5 attachments. */
++      3 + 8 + (5 * (sizeof(packed_att_properties) / sizeof(uint32_t))); /* in u32 units, up to 5 attachments. */
+ 
+    if (data_count <= STACK_MAX_DATA_COUNT) {
+       /* If the data is small enough, we can use the stack. */
+@@ -1002,9 +1252,29 @@ struct tu_autotune::rp_history {
   public:
     uint64_t hash; /* The hash of the renderpass, just for debug output. */
     uint32_t duplicates; /* The amount of times we've seen this RP, used for identifying repeated RPs. */
@@ -3030,7 +3068,7 @@ index 5540c15c..00b688c8 100644
  
     rp_history(uint64_t hash): hash(hash), last_use_ts(os_time_get_nano()), profiled(hash)
     {
-@@ -1014,6 +1270,10 @@ struct tu_autotune::rp_history {
+@@ -1014,6 +1284,10 @@ struct tu_autotune::rp_history {
     struct bandwidth_algo {
      private:
        exponential_average<uint32_t> mean_samples_passed;
@@ -3041,7 +3079,7 @@ index 5540c15c..00b688c8 100644
  
      public:
        void update(uint32_t samples)
-@@ -1025,7 +1285,12 @@ struct tu_autotune::rp_history {
+@@ -1025,7 +1299,12 @@ struct tu_autotune::rp_history {
                                     const struct tu_cmd_state *cmd_state,
                                     const struct tu_render_pass *pass,
                                     const struct tu_framebuffer *framebuffer,
@@ -3055,7 +3093,7 @@ index 5540c15c..00b688c8 100644
        {
           uint32_t pass_pixel_count = 0;
           if (cmd_state->per_layer_render_area) {
-@@ -1064,6 +1329,223 @@ struct tu_autotune::rp_history {
+@@ -1064,6 +1343,223 @@ struct tu_autotune::rp_history {
           gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
  
           bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;
@@ -3279,7 +3317,7 @@ index 5540c15c..00b688c8 100644
           render_mode mode = select_sysmem ? render_mode::SYSMEM : render_mode::GMEM;
  
           UNUSED const VkExtent2D &extent = cmd_state->render_areas[0].extent;
-@@ -1089,9 +1571,11 @@ struct tu_autotune::rp_history {
+@@ -1089,9 +1585,11 @@ struct tu_autotune::rp_history {
        constexpr static uint32_t PROBABILITY_PREFER_SYSMEM = 80, PROBABILITY_PREFER_GMEM = 20;
  
        std::atomic<uint32_t> sysmem_probability = PROBABILITY_MID;
@@ -3292,7 +3330,7 @@ index 5540c15c..00b688c8 100644
  
        bool is_sysmem_winning = false;
        uint64_t winning_since_ts = 0;
-@@ -1099,7 +1583,21 @@ struct tu_autotune::rp_history {
+@@ -1099,7 +1597,21 @@ struct tu_autotune::rp_history {
      public:
        profiled_algo(uint64_t hash)
        {
@@ -3315,7 +3353,7 @@ index 5540c15c..00b688c8 100644
        }
  
        void update(rp_history &history, bool immediate)
-@@ -1110,6 +1608,10 @@ struct tu_autotune::rp_history {
+@@ -1110,6 +1622,10 @@ struct tu_autotune::rp_history {
           auto &sysmem_ema = history.sysmem_rp_average;
           auto &gmem_ema = history.gmem_rp_average;
           uint32_t sysmem_prob = sysmem_probability.load(std::memory_order_relaxed);
@@ -3326,7 +3364,7 @@ index 5540c15c..00b688c8 100644
           if (immediate) {
              /* Try to immediately resolve the probability, this is useful for CI running a single trace of frames where
               * the probabilites aren't expected to change from run to run. This environment also gives us a best case
-@@ -1164,28 +1666,32 @@ struct tu_autotune::rp_history {
+@@ -1164,28 +1680,32 @@ struct tu_autotune::rp_history {
                 constexpr uint32_t LOCK_PERCENT_DIFF = 30;
                 constexpr uint64_t LOCK_TIME_WINDOW_NS = 30'000'000'000; /* 30s */
  
@@ -3372,7 +3410,7 @@ index 5540c15c..00b688c8 100644
                 }
              }
           }
-@@ -1199,11 +1705,117 @@ struct tu_autotune::rp_history {
+@@ -1199,11 +1719,117 @@ struct tu_autotune::rp_history {
        }
  
      public:
@@ -3494,7 +3532,7 @@ index 5540c15c..00b688c8 100644
  
           at_log_profiled_h("%" PRIu32 "%% sysmem chance, using %s", history.hash, l_sysmem_probability,
                             render_mode_str(mode));
-@@ -1340,64 +1952,266 @@ struct tu_autotune::rp_history {
+@@ -1340,64 +1966,266 @@ struct tu_autotune::rp_history {
        if (entry_config.test(metric_flag::SAMPLES) && at_config.is_enabled(algorithm::BANDWIDTH))
           bandwidth.update(entry.get_samples_passed());
        if (entry_config.test(metric_flag::TS)) {
@@ -3774,7 +3812,7 @@ index 5540c15c..00b688c8 100644
     return rp_history_handle(history.first->second);
  }
  
-@@ -1526,6 +2340,13 @@ tu_autotune::get_rp_latency_info(uint64_t rp_hash, bool unmark_sensitive)
+@@ -1526,6 +2354,13 @@ tu_autotune::get_rp_latency_info(uint64_t rp_hash, bool unmark_sensitive)
  void
  tu_autotune::process_entries()
  {
@@ -3788,7 +3826,7 @@ index 5540c15c..00b688c8 100644
     uint32_t current_fence = device->global_bo_map->autotune_fence;
  
     while (!active_batches.empty()) {
-@@ -1622,8 +2443,10 @@ tu_autotune::on_submit(struct tu_cmd_buffer **cmd_buffers, uint32_t cmd_buffer_c
+@@ -1622,8 +2457,10 @@ tu_autotune::on_submit(struct tu_cmd_buffer **cmd_buffers, uint32_t cmd_buffer_c
      * processed all entries from prior CBs before we submit any new CBs with the same RP to the GPU.
      */
     process_entries();
@@ -3801,7 +3839,7 @@ index 5540c15c..00b688c8 100644
  
     bool has_results = false;
     for (uint32_t i = 0; i < cmd_buffer_count; i++) {
-@@ -1663,7 +2486,13 @@ tu_autotune::on_submit(struct tu_cmd_buffer **cmd_buffers, uint32_t cmd_buffer_c
+@@ -1663,7 +2500,13 @@ tu_autotune::on_submit(struct tu_cmd_buffer **cmd_buffers, uint32_t cmd_buffer_c
  tu_autotune::tu_autotune(struct tu_device *device, VkResult &result)
      : device(device), supported_mod_flags(get_supported_mod_flags(device)), active_config(get_env_config())
  {
@@ -3816,7 +3854,7 @@ index 5540c15c..00b688c8 100644
  
     if (supports_preempt_latency_tracking()) {
        const char *fail_reason = nullptr;
-@@ -1897,7 +2726,8 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
+@@ -1897,7 +2740,8 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
     else
        key = cb_ctx.generate_rp_key(pass, framebuffer, cmd_buffer);
  
@@ -3826,7 +3864,7 @@ index 5540c15c..00b688c8 100644
     if (config.test(mod_flag::PREEMPT_OPTIMIZE)) {
        if (!latency_info && !key_opt)
           latency_info = get_rp_latency_info(key.hash, true);
-@@ -1917,6 +2747,66 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
+@@ -1917,6 +2761,66 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
           history.preempt_optimize.mark_as_latency_sensitive();
        }
     }
@@ -3893,7 +3931,7 @@ index 5540c15c..00b688c8 100644
     *rp_ctx = cb_ctx.attach_rp_entry(device, history, config, rp_state->drawcall_count);
  
     if (config.test(mod_flag::PREEMPT_OPTIMIZE) && history.preempt_optimize.is_latency_sensitive()) {
-@@ -1936,8 +2826,15 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
+@@ -1936,8 +2840,15 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
     if (config.is_enabled(algorithm::PROFILED) || config.is_enabled(algorithm::PROFILED_IMM))
        return history.profiled.get_optimal_mode(history);
  

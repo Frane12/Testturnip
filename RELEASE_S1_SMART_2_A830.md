@@ -21,6 +21,8 @@ Probni GMEM dopušta samo jedan layer/view, bez FDM, MSRTSS, MSAA i resolve puta
 
 Tablica vrijedi za probni GMEM i legalne PROFILED jednokratne command buffere. Zadana karantena ima prednost nad svim tierovima. Dva mjerenja su susjedni pobjednik/gubitnik, s promjenjivim determinističkim položajem po bloku. Par smije glasati samo ako oba nova uzorka pripadaju istom render obrascu i udaljena su najviše 8 pojavljivanja; stari uzorak ne glasa ponovno. Confidence je ponderirana ocjena slaganja, nije statistička vjerojatnost. Dvije jake suprotne pare poništavaju staru prednost, nestabilnost spušta tier, a povijest bez novog para istječe nakon 512 pojavljivanja. Veliki ili depth/stencil load/store prolazi traže barem TRUSTED. Snažan suprotan PROFILED signal vraća osnovnom učenju.
 
+A830 ključ povijesti dodatno razlikuje render područje (offset i veličinu), strukturu render passa, logaritamski razred broja drawova i GMEM layout. Promjena tog opsega ne preuzima stari memorirani odgovor; male promjene drawova unutar razreda zadržavaju povijest.
+
 Odluka i zahtjev za mjerenje imaju jednog vlasnika. Memorirani odgovor izlazi prije RNG-a, legacy boosta i measurement ticketa. Nema novih alokacija, satova, mutexa ni čekanja u samom Smart helperu. Jedna dodatna atomska occurrence oznaka pripada jednom render obrascu; pakirana povijest objavljuje se atomskim 64-bitnim snapshotom.
 
 ## Prenesene Mesa ispravke
@@ -42,6 +44,7 @@ Pregledano stanje upstream main: `e5f0687867f5c5e88619175d9b0442f8560e8d53` (3. 
 - Sintetska promjena pobjednika u pojavljivanju 4096: novi TRUSTED pobjednik u 4335; 135 zahtjeva za mjerenje u 10.000 ponavljanja. Ovo je model, ne FPS test.
 - **830 slučajeva A830 aritmetike** s nezavisnim 128-bitnim oracleom: GPU gate, cache rezervacije, attachment/stencil raspon, nula, negativni offset i ekstremni overflow.
 - **ASan i UBSan prošli**, bez prijavljenih grešaka; leak detector isključen zbog ograničenja host okruženja.
+- Izvršen stvarni Mesa `rp_key` konstruktor na hostu s mock Vulkan objektima pod ASan/UBSan: promjene opsega razdvajaju ključeve, A810 ostaje izvan A830 dodatka, nula/UINT32_MAX drawova i 0–6 attachmenta provjeravaju stack/heap kapacitet.
 - Izvorne provjere redoslijeda sigurnosnih gateova, scope ograničenja, ranog Smart izlaza i KGSL cleanupa.
 - **Android ARM64 NDK r29 release build prošao** svih 896 build koraka. ZIP integritet, ELF64 AArch64, identitet, runtime opcije i Android shared-library ovisnosti provjereni.
 

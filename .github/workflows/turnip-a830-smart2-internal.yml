@@ -2,7 +2,7 @@ name: A830 S1 Smart Performance 2 Internal
 on:
   push:
     branches: ['drnas-a830-s1-smart-performance-2']
-    paths: ['.github/workflows/turnip-a830-smart2-internal.yml', 'patches/a830-smart2-complete.patch', 'tests/smart_v2.cpp', 'tests/a830_gmem_safety.cpp', 'tests/source_guards.py', 'RELEASE_S1_SMART_2_A830.md']
+    paths: ['.github/workflows/turnip-a830-smart2-internal.yml', 'patches/a830-smart2-complete.patch', 'tests/smart_v2.cpp', 'tests/a830_gmem_safety.cpp', 'tests/source_guards.py', 'tests/history_key.py', 'RELEASE_S1_SMART_2_A830.md']
   workflow_dispatch:
 permissions:
   contents: write
@@ -48,6 +48,7 @@ jobs:
           g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Imesa/src/freedreno/vulkan tests/a830_gmem_safety.cpp -o /tmp/a830-safety
           ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/a830-safety | tee safety-test.log
           python3 tests/source_guards.py | tee source-test.log
+          python3 tests/history_key.py | tee history-key-test.log
       - name: Prepare Android cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -94,7 +95,7 @@ jobs:
               assert int.from_bytes(b[16:18],'little')==3 and int.from_bytes(b[18:20],'little')==183
               assert b'A830 S1 Smart Performance 2 / Mesa' in b and b'TU_FRANE_SMART' in b
           PY
-          zip -9 A830-S1-Smart-Performance-2-Source.zip patches/a830-smart2-complete.patch tests/smart_v2.cpp tests/a830_gmem_safety.cpp tests/source_guards.py safety-test.log source-test.log RELEASE_S1_SMART_2_A830.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log
+          zip -9 A830-S1-Smart-Performance-2-Source.zip patches/a830-smart2-complete.patch tests/smart_v2.cpp tests/a830_gmem_safety.cpp tests/source_guards.py tests/history_key.py history-key-test.log safety-test.log source-test.log RELEASE_S1_SMART_2_A830.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log
           sha256sum A830-S1-Smart-Performance-2.zip A830-S1-Smart-Performance-2-Source.zip patches/a830-smart2-complete.patch > SHA256SUMS.txt
       - name: Create or update INTERNAL DRAFT only
         env:
