@@ -627,8 +627,8 @@ jobs:
           python3 tests/v38r_proof_search.py
           git -C mesa diff --check
           grep -q 'Turnip A810 V38R / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
-          grep -q 'TU_FRANE_V38R_PROOF\", true' mesa/src/freedreno/vulkan/tu_pass.cc
-          grep -q 'TU_FRANE_V38R_MEMO\", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_FRANE_V38R_PROOF", true' mesa/src/freedreno/vulkan/tu_pass.cc
+          grep -q 'TU_FRANE_V38R_MEMO", true' mesa/src/freedreno/vulkan/tu_pass.cc
           grep -q 'frane_v38r_global_upper' mesa/src/freedreno/vulkan/tu_pass.cc
           grep -q 'frane_v38r_memo_seen' mesa/src/freedreno/vulkan/tu_pass.cc
           grep -q 'FRANE_26338_GMEM_SEARCH_MAX_ITEMS 12' mesa/src/freedreno/vulkan/tu_pass.cc
