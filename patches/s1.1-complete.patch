@@ -7100,7 +7100,7 @@ index 5334f90b..cbd80d72 100644
 +frane_a810_gmem_pressure_bound_enabled(void)
 +{
 +   static const bool enabled =
-+      debug_get_bool_option("TU_FRANE_GMEM_PRESSURE", true);
++      debug_get_bool_option("TU_FRANE_GMEM_PRESSURE", false);
 +   return enabled;
 +}
 +
