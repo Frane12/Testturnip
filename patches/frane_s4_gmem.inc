@@ -8,7 +8,12 @@ static uint32_t
 frane_s4_peak_upper(const struct frane_gmem_search_ctx *ctx)
 {
    uint32_t upper = UINT32_MAX;
-   for (unsigned s = 0; s < 64; s++) {
+   uint64_t starts = 0;
+   for (unsigned i = 0; i < ctx->item_count; i++)
+      starts |= UINT64_C(1) << ctx->items[i].first_subpass;
+   while (starts) {
+      const unsigned s = __builtin_ctzll(starts);
+      starts &= starts - 1;
       struct frane_gmem_search_track active[FRANE_26338_GMEM_SEARCH_MAX_ITEMS] = {};
       unsigned count = 0;
       for (unsigned i = 0; i < ctx->item_count; i++) {
@@ -26,6 +31,8 @@ frane_s4_peak_upper(const struct frane_gmem_search_ctx *ctx)
 static void
 frane_s4_multiseed(struct frane_gmem_search_ctx *ctx, unsigned seeds, bool gaps)
 {
+   if (ctx->best_pixels >= ctx->peak_upper)
+      return;
    uint64_t masks[FRANE_26338_GMEM_SEARCH_MAX_ITEMS] = {};
    unsigned degree[FRANE_26338_GMEM_SEARCH_MAX_ITEMS] = {};
    for (unsigned i = 0; i < ctx->item_count; i++) {
