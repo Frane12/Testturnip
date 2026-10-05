@@ -1,8 +1,8 @@
-name: Drnas A810 V38 SH1 Shader Order
+name: Drnas A810 V38 O1 Response
 
 on:
   push:
-    branches: ['experiment/a810-v38-sh1-shaders']
+    branches: ['experiment/a810-v38-o1-response']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: drnas-a810-v38-sh1
+  group: drnas-a810-v38-o1-response
   cancel-in-progress: true
 
 jobs:
@@ -628,6 +628,17 @@ jobs:
           git -C mesa add -N src/freedreno/ir3/frane_sh1_policy.h
           git -C mesa diff --check
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and validate V38 O1 response layer
+        run: |
+          set -eu
+          python3 -m py_compile patches/v38_o1_response.py tests/v38_o1_response.py
+          python3 patches/v38_o1_response.py
+          python3 tests/v38_o1_response.py | tee v38-o1-test.log
+          git -C mesa diff --check
+          grep -q 'Turnip-Drnas A810 V38 O1 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_HOT2' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'const uint32_t pixels = capacity;' mesa/src/freedreno/vulkan/tu_pass.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Compile and validate actual A810 shader corpus on host
         run: |
           set -eu
@@ -671,7 +682,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package Winlator AdrenoTools Drnas-Turnip-A810-V38-SH1.zip and provenance
+      - name: Package Winlator AdrenoTools Drnas-Turnip-A810-V38-O1.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -680,20 +691,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Drnas Turnip A810 V38 SH1',
-            'driverVersion': 'Drnas Turnip A810 V38 SH1', 'description': 'V38 base with pressure-gated IR3 shader ordering. Experimental; performance unverified. TU_FRANE_SHADER_MODE=0 restores V38 shader ordering.',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '38-sh1.0-a810-eda9aceb',
+            'schemaVersion': 1, 'name': 'Drnas Turnip A810 V38 O1',
+            'driverVersion': 'Drnas Turnip A810 V38 O1', 'description': 'V38 SH1 fluidity base with carried GMEM-search capacity and two-choice O(1) hot render-pass cache. TU_FRANE_HOT2=0 restores the original direct-map hot cache.',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': '38-o1.0-a810-eda9aceb',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-A810-V38-SH1.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-A810-V38-O1.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Drnas-Turnip-A810-V38-SH1.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-A810-V38-O1.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -702,18 +713,20 @@ jobs:
               assert so[4:6] == bytes([2, 1]), 'Expected ELF64 little-endian'
               assert int.from_bytes(so[16:18], 'little') == 3, 'Expected shared library'
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
+              assert b'Turnip-Drnas A810 V38 O1 / Mesa' in so
+              assert b'TU_FRANE_HOT2' in so
               assert json.loads(z.read('meta.json'))['schemaVersion']==1
-          print('Driver Drnas-Turnip-A810-V38-SH1.zip verified')
+          print('Driver Drnas-Turnip-A810-V38-O1.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-A810-V38-SH1.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Drnas-Turnip-A810-V38-SH1.zip and full source diff
+          sha256sum Drnas-Turnip-A810-V38-O1.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Drnas-Turnip-A810-V38-O1.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-A810-V38-SH1
+          name: Drnas-Turnip-A810-V38-O1
           path: |
-            Drnas-Turnip-A810-V38-SH1.zip
+            Drnas-Turnip-A810-V38-O1.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -725,3 +738,20 @@ jobs:
             patches/frane_sh1_policy.h
             tests/v38_sh1_policy.c
             tests/v38_sh1_compile.c
+            V38_O1_RESPONSE.md
+            v38-o1-test.log
+            patches/v38_o1_response.py
+            tests/v38_o1_response.py
+      - name: Create or update INTERNAL DRAFT only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=a810-v38-o1-response-internal
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/o1-release.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("/tmp/o1-release.json"))["isDraft"], "Refusing to modify a published release"'
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "Drnas Turnip A810 V38 O1 Response" --notes-file V38_O1_RESPONSE.md
+            gh release upload "$TAG" Drnas-Turnip-A810-V38-O1.zip SHA256SUMS.txt mesa-applied.patch V38_O1_RESPONSE.md v38-o1-test.log --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" Drnas-Turnip-A810-V38-O1.zip SHA256SUMS.txt mesa-applied.patch V38_O1_RESPONSE.md v38-o1-test.log --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Drnas Turnip A810 V38 O1 Response" --notes-file V38_O1_RESPONSE.md --draft
+          fi
