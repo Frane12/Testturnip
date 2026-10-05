@@ -1,0 +1,574 @@
+diff --git a/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h b/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
+index 43a20d3..213d973 100644
+--- a/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
++++ b/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
+@@ -28,6 +28,7 @@ struct frane_26318_smart_gmem_input {
+    bool adaptive = false;
+    uint8_t adaptive_bank = 0;
+    bool *adaptive_owned = nullptr;
++   bool *adaptive_pair = nullptr;
+    uint32_t hist_word = 0;
+ };
+ 
+diff --git a/src/freedreno/vulkan/frane_mesa_26364_a810_smart_v2.h b/src/freedreno/vulkan/frane_mesa_26364_a810_smart_v2.h
+index f64bf75..705b9aa 100644
+--- a/src/freedreno/vulkan/frane_mesa_26364_a810_smart_v2.h
++++ b/src/freedreno/vulkan/frane_mesa_26364_a810_smart_v2.h
+@@ -18,6 +18,7 @@ struct frane_26364_decision {
+    bool owns = false;
+    bool sysmem = false;
+    bool measure = false;
++   bool paired = false;
+    uint8_t tier = 0;
+ };
+ static inline uint8_t frane_26364_confidence(const frane_26362_hist_state &h,
+diff --git a/src/freedreno/vulkan/frane_sc.h b/src/freedreno/vulkan/frane_sc.h
+new file mode 100644
+index 0000000..d544b78
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_sc.h
+@@ -0,0 +1,83 @@
++#ifndef FRANE_SC_H
++#define FRANE_SC_H
++
++#include <condition_variable>
++#include <cstdint>
++#include <cstring>
++#include <mutex>
++#include <thread>
++
++struct frane_sc_compile_gate {
++   static constexpr unsigned slots_count = 32;
++   static constexpr unsigned key_size = 32;
++   struct slot {
++      std::mutex mutex;
++      std::condition_variable condition;
++      bool busy = false;
++      const void *cache = nullptr;
++      unsigned domain = 0;
++      unsigned char key[key_size] {};
++      std::thread::id owner;
++   } slots[slots_count];
++
++   static unsigned index(const void *cache, const unsigned char *key,
++                         unsigned domain)
++   {
++      uint32_t h;
++      std::memcpy(&h, key, sizeof(h));
++      return (h ^ (uintptr_t(cache) >> 4) ^ domain) & (slots_count - 1);
++   }
++};
++
++class frane_sc_compile_guard {
++   frane_sc_compile_gate::slot *held = nullptr;
++public:
++   frane_sc_compile_guard() = default;
++   frane_sc_compile_guard(const frane_sc_compile_guard &) = delete;
++   frane_sc_compile_guard &operator=(const frane_sc_compile_guard &) = delete;
++   ~frane_sc_compile_guard() { release(); }
++
++   bool acquire(frane_sc_compile_gate *gate, const void *cache,
++                const unsigned char *key, unsigned domain)
++   {
++      if (!gate) return false;
++      auto &s = gate->slots[frane_sc_compile_gate::index(cache, key, domain)];
++      std::unique_lock<std::mutex> lock(s.mutex);
++      while (s.busy) {
++         if (s.cache != cache || s.domain != domain ||
++             std::memcmp(s.key, key, sizeof(s.key)) != 0 ||
++             s.owner == std::this_thread::get_id())
++            return false;
++         s.condition.wait(lock);
++      }
++      s.cache = cache;
++      s.domain = domain;
++      std::memcpy(s.key, key, sizeof(s.key));
++      s.owner = std::this_thread::get_id();
++      s.busy = true;
++      held = &s;
++      return true;
++   }
++
++   void release()
++   {
++      if (!held) return;
++      auto *s = held;
++      {
++         std::lock_guard<std::mutex> lock(s->mutex);
++         s->busy = false;
++      }
++      held = nullptr;
++      s->condition.notify_all();
++   }
++};
++
++static inline bool frane_sc_watch_admit(uint32_t &used, bool paired)
++{
++   if (paired) return true;
++   if (used >= 4) return false;
++   ++used;
++   return true;
++}
++
++#endif
+diff --git a/src/freedreno/vulkan/frane_smart_adaptive.h b/src/freedreno/vulkan/frane_smart_adaptive.h
+index abe0c94..758db8d 100644
+--- a/src/freedreno/vulkan/frane_smart_adaptive.h
++++ b/src/freedreno/vulkan/frane_smart_adaptive.h
+@@ -144,7 +144,8 @@ frane_adaptive_select(bool enabled, bool tail_risk, uint64_t word,
+    d.owns = true;
+    d.tier = ready ? uint8_t(fast ? 1 : h.confidence >= 6 ? 3 : 2) : 0;
+    d.sysmem = second ? !sys : sys;
+-   d.measure = first || second || watch;
++   d.paired = first || second;
++   d.measure = d.paired || watch;
+    return d;
+ }
+ #endif
+diff --git a/src/freedreno/vulkan/tu_autotune.cc b/src/freedreno/vulkan/tu_autotune.cc
+index 08592f1..d31aa50 100644
+--- a/src/freedreno/vulkan/tu_autotune.cc
++++ b/src/freedreno/vulkan/tu_autotune.cc
+@@ -16,6 +16,7 @@
+ #include "frane_mesa_26362_a810_histogram.h"
+ #include "frane_mesa_26364_a810_smart_v2.h"
+ #include "frane_smart_adaptive.h"
++#include "frane_sc.h"
+ #include "frane_mesa_26318_a810_smart_gmem.h"
+ #include "frane_mesa_26320_a810_gmem_turbo.h"
+ #include "frane_mesa_26319_memory_audit.h"
+@@ -2078,6 +2079,7 @@ struct tu_autotune::rp_history {
+                   in.layout.drawcalls);
+                if (in.smart_owned) *in.smart_owned = true;
+                if (in.adaptive_owned) *in.adaptive_owned = true;
++               if (in.adaptive_pair) *in.adaptive_pair = d.paired;
+                *measure = d.measure;
+                return d.sysmem ? render_mode::SYSMEM : render_mode::GMEM;
+             }
+@@ -3294,9 +3296,11 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
+       bool measure = true;
+       bool smart_owned = false;
+       bool adaptive_owned = false;
++      bool adaptive_pair = false;
+       frane_26318_smart_gmem_input runtime_input {};
+       runtime_input.smart_owned = &smart_owned;
+       runtime_input.adaptive_owned = &adaptive_owned;
++      runtime_input.adaptive_pair = &adaptive_pair;
+       static const bool adaptive = debug_get_bool_option("TU_FRANE_ADAPTIVE", true);
+       runtime_input.adaptive = adaptive && frane_a810_histogram_smooth_enabled(device);
+       runtime_input.adaptive_bank = frane_adaptive_bank(rp_state->drawcall_count);
+@@ -3417,6 +3421,11 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
+          measure = false;
+       }
+ 
++      static const bool frane_sc = debug_get_bool_option("TU_FRANE_SC", true);
++      if (frane_sc && adaptive_owned && measure &&
++          !frane_sc_watch_admit(cb_ctx.batch->frane_sc_watch_samples, adaptive_pair))
++         measure = false;
++
+       if (measure) {
+          *rp_ctx = cb_ctx.attach_rp_entry(device, history, config, rp_state->drawcall_count);
+          (*rp_ctx)->frane_smart_sample = runtime_input.hist_smooth && !adaptive_owned;
+diff --git a/src/freedreno/vulkan/tu_autotune.h b/src/freedreno/vulkan/tu_autotune.h
+index ffbd324..d8f126d 100644
+--- a/src/freedreno/vulkan/tu_autotune.h
++++ b/src/freedreno/vulkan/tu_autotune.h
+@@ -128,6 +128,7 @@ struct tu_autotune {
+       uint32_t fence; /* The fence value which is used to signal the completion of the CB submission. This is used to
+                          determine when the entries can be processed. */
+       std::vector<std::unique_ptr<rp_entry>> entries;
++      uint32_t frane_sc_watch_samples = 0;
+       std::unordered_map<uint64_t, uint32_t> all_renderpasses;
+ 
+       rp_batch_preempt_latency preempt_latency;
+diff --git a/src/freedreno/vulkan/tu_device.cc b/src/freedreno/vulkan/tu_device.cc
+index 4742b7d..d295ce1 100644
+--- a/src/freedreno/vulkan/tu_device.cc
++++ b/src/freedreno/vulkan/tu_device.cc
+@@ -9,6 +9,9 @@
+ 
+ #include "tu_device.h"
+ #include "frane_mesa_2635_shader_pipeline.h"
++#include "frane_sc.h"
++#include "tu_shader.h"
++#include <new>
+ 
+ #include "drm-uapi/drm_fourcc.h"
+ #include "git_sha1.h"
+@@ -1044,7 +1047,7 @@ tu_get_physical_device_properties_1_2(struct tu_physical_device *pdevice,
+             "turnip Mesa driver");
+    memset(p->driverInfo, 0, sizeof(p->driverInfo));
+    snprintf(p->driverInfo, VK_MAX_DRIVER_INFO_SIZE,
+-            "A810 S1 Smart DS2 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
++            "A810 S1 Smart SC1 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
+    p->conformanceVersion = (VkConformanceVersion) {
+       .major = 1,
+       .minor = 4,
+@@ -3003,6 +3006,9 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
+    struct tu6_global *global = NULL;
+    uint32_t global_size = sizeof(struct tu6_global);
+    struct vk_pipeline_cache_create_info pcc_info = { };
++   if (frane_2635_is_a810_chip(physical_device->dev_id.chip_id) &&
++       debug_get_bool_option("TU_FRANE_SC", true))
++      pcc_info.hot_object_ops = &tu_shader_ops;
+ 
+    for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
+       const VkDeviceQueueCreateInfo *queue_create =
+@@ -3198,6 +3204,9 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
+       goto fail_pipeline_cache;
+    }
+ 
++   if (pcc_info.hot_object_ops)
++      device->frane_sc_gate = new (std::nothrow) frane_sc_compile_gate;
++
+    if (frane_2635_is_a810_chip(physical_device->dev_id.chip_id) &&
+        debug_get_bool_option("TU_A810_STAGE_NIR_CACHE", true)) {
+       struct vk_pipeline_cache_create_info frane_nir_info = {};
+@@ -3355,6 +3364,7 @@ fail_prepare_perfcntrs_pass_cs:
+    free(device->perfcntrs_pass_cs_entries);
+ fail_perfcntrs_pass_entries_alloc:
+    tu_cs_finish(&device->sub_cs);
++   delete device->frane_sc_gate;
+    if (device->frane_stage_nir_cache)
+       vk_pipeline_cache_destroy(device->frane_stage_nir_cache,
+                                 &device->vk.alloc);
+@@ -3400,6 +3410,26 @@ fail_queues:
+    return result;
+ }
+ 
++VKAPI_ATTR VkResult VKAPI_CALL
++tu_CreatePipelineCache(VkDevice _device,
++                       const VkPipelineCacheCreateInfo *pCreateInfo,
++                       const VkAllocationCallbacks *pAllocator,
++                       VkPipelineCache *pPipelineCache)
++{
++   VK_FROM_HANDLE(tu_device, device, _device);
++   struct vk_pipeline_cache_create_info info = {};
++   info.pCreateInfo = pCreateInfo;
++   info.skip_disk_cache = device->vk.disable_internal_cache;
++   if (frane_2635_is_a810_chip(device->physical_device->dev_id.chip_id) &&
++       debug_get_bool_option("TU_FRANE_SC", true))
++      info.hot_object_ops = &tu_shader_ops;
++   struct vk_pipeline_cache *cache =
++      vk_pipeline_cache_create(&device->vk, &info, pAllocator);
++   if (!cache) return VK_ERROR_OUT_OF_HOST_MEMORY;
++   *pPipelineCache = vk_pipeline_cache_to_handle(cache);
++   return VK_SUCCESS;
++}
++
+ VKAPI_ATTR void VKAPI_CALL
+ tu_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+ {
+@@ -3440,6 +3470,7 @@ tu_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
+ 
+    ir3_compiler_destroy(device->compiler);
+ 
++   delete device->frane_sc_gate;
+    if (device->frane_stage_nir_cache)
+       vk_pipeline_cache_destroy(device->frane_stage_nir_cache,
+                                 &device->vk.alloc);
+diff --git a/src/freedreno/vulkan/tu_device.h b/src/freedreno/vulkan/tu_device.h
+index 229ef30..0970ad0 100644
+--- a/src/freedreno/vulkan/tu_device.h
++++ b/src/freedreno/vulkan/tu_device.h
+@@ -329,6 +329,7 @@ struct tu_device
+    struct vk_pipeline_cache *frane_stage_nir_cache;
+    uint32_t frane_stage_nir_cache_inserts;
+    uint32_t frane_stage_nir_cache_bytes;
++   struct frane_sc_compile_gate *frane_sc_gate;
+ 
+    struct vk_meta_device meta;
+ 
+diff --git a/src/freedreno/vulkan/tu_pipeline.cc b/src/freedreno/vulkan/tu_pipeline.cc
+index 9d53903..558adf6 100644
+--- a/src/freedreno/vulkan/tu_pipeline.cc
++++ b/src/freedreno/vulkan/tu_pipeline.cc
+@@ -9,6 +9,7 @@
+ 
+ #include "tu_pipeline.h"
+ #include "frane_mesa_2635_shader_pipeline.h"
++#include "frane_sc.h"
+ 
+ #include "nir/nir.h"
+ #include "nir/nir_builder.h"
+@@ -33,6 +34,8 @@
+ #include "tu_pass.h"
+ #include "tu_rmv.h"
+ 
++static_assert(BLAKE3_KEY_LEN == frane_sc_compile_gate::key_size);
++
+ /* Emit IB that preloads the descriptors that the shader uses */
+ 
+ static void
+@@ -1597,9 +1600,13 @@ tu_hash_compute(unsigned char *hash,
+ static struct tu_shader *
+ tu_pipeline_cache_lookup(struct vk_pipeline_cache *cache,
+                          const void *key_data, size_t key_size,
+-                         bool *application_cache_hit)
++                         bool *application_cache_hit,
++                         bool memory_only = false)
+ {
+    struct vk_pipeline_cache_object *object =
++      memory_only ?
++      vk_pipeline_cache_lookup_object_in_memory(cache, key_data, key_size,
++                                                 &tu_shader_ops, application_cache_hit) :
+       vk_pipeline_cache_lookup_object(cache, key_data, key_size,
+                                       &tu_shader_ops, application_cache_hit);
+    if (object)
+@@ -1776,6 +1783,8 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
+    char *nir_initial_disasm[ARRAY_SIZE(stage_infos)] = { NULL };
+    bool cache_hit = false;
+    uint64_t frane_shader_cache_hit_mask = 0;
++   frane_sc_compile_guard frane_compile_guard;
++   bool frane_compile_rechecked = false;
+ 
+    struct tu_shader_key keys[ARRAY_SIZE(stage_infos)] = { };
+    for (mesa_shader_stage stage = MESA_SHADER_VERTEX;
+@@ -1965,6 +1974,7 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
+    memcpy(nir_blake3, pipeline_blake3, sizeof(pipeline_blake3));
+    nir_blake3[BLAKE3_KEY_LEN] = 'N';
+ 
++frane_sc_lookup:
+    if (!executable_info) {
+       frane_2635_stage_probe_state frane_probe {};
+ 
+@@ -1979,7 +1989,8 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
+             shaders[stage] =
+                tu_pipeline_cache_lookup(builder->cache, &shader_blake3,
+                                         sizeof(shader_blake3),
+-                                        &shader_application_cache_hit);
++                                        &shader_application_cache_hit,
++                                        frane_compile_rechecked);
+ 
+             /* Deliberately do not break on a miss. Later stages may still be
+              * available, which lets tu_compile_shaders() skip their IR3
+@@ -2034,6 +2045,22 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
+          return VK_PIPELINE_COMPILE_REQUIRED;
+       }
+ 
++      if (!frane_compile_rechecked && !executable_info && !retain_nir &&
++          builder->device->frane_sc_gate && builder->cache->object_cache) {
++         frane_compile_rechecked = true;
++         frane_compile_guard.acquire(builder->device->frane_sc_gate,
++                                     builder->cache, pipeline_blake3, 1);
++         for (auto &shader : shaders) {
++            if (shader)
++               vk_pipeline_cache_object_unref(&builder->device->vk, &shader->base);
++            shader = NULL;
++         }
++         frane_shader_cache_hit_mask = 0;
++         pipeline_feedback.flags &=
++            ~VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
++         goto frane_sc_lookup;
++      }
++
+       /* 26.3.6: full compiled-cache hits need no intermediate keys. */
+       if (frane_stage_nir_enabled) {
+          for (mesa_shader_stage stage = MESA_SHADER_VERTEX;
+@@ -2096,6 +2123,7 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
+    }
+ 
+ done:
++   frane_compile_guard.release();
+ 
+    /* Create empty shaders which contain the draw states to initialize
+     * registers for unused shader stages.
+@@ -5083,6 +5111,7 @@ tu_compute_pipeline_create(VkDevice device,
+    tu_hash_compute(pipeline_blake3, flags, stage_info, layout, &key);
+ 
+    struct tu_shader *shader = NULL;
++   frane_sc_compile_guard frane_compile_guard;
+ 
+    const bool executable_info = flags &
+       VK_PIPELINE_CREATE_2_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
+@@ -5095,6 +5124,13 @@ tu_compute_pipeline_create(VkDevice device,
+                                   &application_cache_hit);
+    }
+ 
++   if (!shader && !executable_info && dev->frane_sc_gate && cache->object_cache &&
++       !(flags & VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_KHR)) {
++      frane_compile_guard.acquire(dev->frane_sc_gate, cache, pipeline_blake3, 2);
++      shader = tu_pipeline_cache_lookup(cache, pipeline_blake3,
++                                        sizeof(pipeline_blake3), &application_cache_hit, true);
++   }
++
+    if (application_cache_hit && cache != dev->mem_cache) {
+       pipeline_feedback.flags |=
+          VK_PIPELINE_CREATION_FEEDBACK_APPLICATION_PIPELINE_CACHE_HIT_BIT;
+@@ -5140,6 +5176,7 @@ tu_compute_pipeline_create(VkDevice device,
+ 
+    pipeline->base.active_desc_sets = shader->active_desc_sets;
+ 
++   frane_compile_guard.release();
+    v = shader->variant;
+ 
+    tu_pipeline_set_linkage(&pipeline->base.program.link[MESA_SHADER_COMPUTE],
+diff --git a/src/vulkan/runtime/vk_pipeline_cache.c b/src/vulkan/runtime/vk_pipeline_cache.c
+index 225ba3a..57247b5 100644
+--- a/src/vulkan/runtime/vk_pipeline_cache.c
++++ b/src/vulkan/runtime/vk_pipeline_cache.c
+@@ -126,6 +126,37 @@ vk_raw_data_cache_object_create(struct vk_device *device,
+    return data_obj;
+ }
+ 
++#define VK_HOT_OBJECT_SLOTS 128u
++
++static struct vk_pipeline_cache_object *
++vk_pipeline_cache_hot_lookup(struct vk_pipeline_cache *cache,
++                             const struct vk_pipeline_cache_object *key,
++                             uint32_t hash,
++                             const struct vk_pipeline_cache_object_ops *ops)
++{
++   if (!cache || !cache->hot_objects || cache->hot_object_ops != ops)
++      return NULL;
++   struct vk_pipeline_cache_object *object =
++      p_atomic_read(&cache->hot_objects[hash & (VK_HOT_OBJECT_SLOTS - 1)]);
++   if (!object || object->ops != ops || object->key_size != key->key_size ||
++       memcmp(object->key_data, key->key_data, key->key_size) != 0)
++      return NULL;
++   return vk_pipeline_cache_object_ref(object);
++}
++
++static void
++vk_pipeline_cache_hot_publish(struct vk_pipeline_cache *cache,
++                              struct vk_pipeline_cache_object *object,
++                              uint32_t hash)
++{
++   if (!cache->hot_objects || object->ops != cache->hot_object_ops)
++      return;
++   struct vk_pipeline_cache_object **slot =
++      &cache->hot_objects[hash & (VK_HOT_OBJECT_SLOTS - 1)];
++   if (p_atomic_read_relaxed(slot) != object)
++      p_atomic_set(slot, object);
++}
++
+ static bool
+ object_keys_equal(const void *void_a, const void *void_b)
+ {
+@@ -158,6 +189,38 @@ vk_pipeline_cache_unlock(struct vk_pipeline_cache *cache)
+       simple_mtx_unlock(&cache->lock);
+ }
+ 
++struct vk_pipeline_cache_object *
++vk_pipeline_cache_lookup_object_in_memory(struct vk_pipeline_cache *cache,
++                                          const void *key_data, size_t key_size,
++                                          const struct vk_pipeline_cache_object_ops *ops,
++                                          bool *cache_hit)
++{
++   assert(key_size <= UINT32_MAX);
++   assert(ops != NULL);
++   if (cache_hit) *cache_hit = false;
++   if (!cache || !cache->object_cache) return NULL;
++   struct vk_pipeline_cache_object key = {
++      .key_data = key_data,
++      .key_size = (uint32_t)key_size,
++   };
++   uint32_t hash = object_key_hash(&key);
++   struct vk_pipeline_cache_object *object =
++      vk_pipeline_cache_hot_lookup(cache, &key, hash, ops);
++   if (!object) {
++      vk_pipeline_cache_lock(cache);
++      struct set_entry *entry =
++         _mesa_set_search_pre_hashed(cache->object_cache, hash, &key);
++      if (entry && ((struct vk_pipeline_cache_object *)entry->key)->ops == ops)
++         object = vk_pipeline_cache_object_ref((void *)entry->key);
++      vk_pipeline_cache_unlock(cache);
++   }
++   if (object) {
++      if (cache_hit) *cache_hit = true;
++      vk_pipeline_cache_hot_publish(cache, object, hash);
++   }
++   return object;
++}
++
+ /* cache->lock must be held when calling */
+ static void
+ vk_pipeline_cache_remove_object(struct vk_pipeline_cache *cache,
+@@ -325,6 +388,7 @@ vk_pipeline_cache_insert_object(struct vk_pipeline_cache *cache,
+          vk_pipeline_cache_object_weak_ref(cache, result);
+    }
+    vk_pipeline_cache_unlock(cache);
++   vk_pipeline_cache_hot_publish(cache, result, hash);
+ 
+    if (found) {
+       vk_pipeline_cache_object_unref(cache->base.device, object);
+@@ -350,7 +414,12 @@ vk_pipeline_cache_lookup_object(struct vk_pipeline_cache *cache,
+    };
+    uint32_t hash = object_key_hash(&key);
+ 
+-   struct vk_pipeline_cache_object *object = NULL;
++   struct vk_pipeline_cache_object *object =
++      vk_pipeline_cache_hot_lookup(cache, &key, hash, ops);
++   if (object) {
++      if (cache_hit) *cache_hit = true;
++      return object;
++   }
+ 
+    if (cache != NULL && cache->object_cache != NULL) {
+       vk_pipeline_cache_lock(cache);
+@@ -423,6 +492,7 @@ vk_pipeline_cache_lookup_object(struct vk_pipeline_cache *cache,
+    }
+ 
+    assert(object->ops == ops);
++   vk_pipeline_cache_hot_publish(cache, object, hash);
+ 
+    return object;
+ }
+@@ -664,6 +734,15 @@ vk_pipeline_cache_create(struct vk_device *device,
+                                              object_keys_equal);
+    }
+ 
++   if (cache->object_cache && !cache->weak_ref && info->hot_object_ops &&
++       info->hot_object_ops != &vk_raw_data_cache_object_ops) {
++      cache->hot_objects = vk_zalloc(device, pAllocator,
++         VK_HOT_OBJECT_SLOTS * sizeof(*cache->hot_objects), 8,
++         VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
++      if (cache->hot_objects)
++         cache->hot_object_ops = info->hot_object_ops;
++   }
++
+    if (cache->object_cache && pCreateInfo->initialDataSize > 0) {
+       vk_pipeline_cache_load(cache, pCreateInfo->pInitialData,
+                              pCreateInfo->initialDataSize);
+@@ -676,6 +755,7 @@ void
+ vk_pipeline_cache_destroy(struct vk_pipeline_cache *cache,
+                           const VkAllocationCallbacks *pAllocator)
+ {
++   vk_free(cache->base.device, pAllocator, cache->hot_objects);
+    if (cache->object_cache) {
+       if (!cache->weak_ref) {
+          set_foreach(cache->object_cache, entry) {
+diff --git a/src/vulkan/runtime/vk_pipeline_cache.h b/src/vulkan/runtime/vk_pipeline_cache.h
+index 05f778b..4c63258 100644
+--- a/src/vulkan/runtime/vk_pipeline_cache.h
++++ b/src/vulkan/runtime/vk_pipeline_cache.h
+@@ -163,6 +163,8 @@ struct vk_pipeline_cache {
+    simple_mtx_t lock;
+ 
+    struct set *object_cache;
++   const struct vk_pipeline_cache_object_ops *hot_object_ops;
++   struct vk_pipeline_cache_object **hot_objects;
+ };
+ 
+ VK_DEFINE_NONDISP_HANDLE_CASTS(vk_pipeline_cache, base, VkPipelineCache,
+@@ -202,6 +204,7 @@ struct vk_pipeline_cache_create_info {
+ 
+    /** If non-NULL, use this disk cache object instead of the default one. */
+    struct disk_cache *disk_cache;
++   const struct vk_pipeline_cache_object_ops *hot_object_ops;
+ };
+ 
+ struct vk_pipeline_cache *
+@@ -238,6 +241,12 @@ vk_pipeline_cache_lookup_object(struct vk_pipeline_cache *cache,
+                                 const struct vk_pipeline_cache_object_ops *ops,
+                                 bool *cache_hit);
+ 
++struct vk_pipeline_cache_object * MUST_CHECK
++vk_pipeline_cache_lookup_object_in_memory(struct vk_pipeline_cache *cache,
++                                          const void *key_data, size_t key_size,
++                                          const struct vk_pipeline_cache_object_ops *ops,
++                                          bool *cache_hit);
++
+ /** Adds an object to the pipeline cache
+  *
+  * This function adds the given object to the pipeline cache.  We do not

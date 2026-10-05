@@ -1,0 +1,142 @@
+name: A810 S1 Smart SC1 Internal
+on:
+  push:
+    branches: ['drnas-a810-s1-smart-sc1']
+    paths: ['.github/workflows/turnip-s1-smart-sc1-internal.yml', 'patches/s1-smart2-complete.patch', 'patches/s1-smart-ds2.patch', 'patches/s1-smart-sc1.patch', 'tests/sc1_*', 'tests/ds1_*', 'tests/ds2_*', 'tests/mesa_26364_a810_smart_v2.cpp', 'RELEASE_S1_SMART_SC1_A810.md']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: drnas-a810-s1-smart-sc1
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y git ninja-build pkg-config python3-pip bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Fetch exact base and apply verified complete patch
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
+          git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
+          git -C mesa checkout --detach eda9aceb39d5ff169b096444abe366bdf2269e24
+          git -C mesa apply --check ../patches/s1-smart2-complete.patch
+          git -C mesa apply ../patches/s1-smart2-complete.patch
+          git -C mesa apply --check ../patches/s1-smart-ds2.patch
+          git -C mesa apply ../patches/s1-smart-ds2.patch
+          git -C mesa apply --check ../patches/s1-smart-sc1.patch
+          git -C mesa apply ../patches/s1-smart-sc1.patch
+          git -C mesa rev-parse HEAD > mesa-commit.txt
+          git rev-parse HEAD > frane-commit.txt
+      - name: Policy tests — 716040 boundary cases and regime simulation
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/mesa_26364_a810_smart_v2.cpp -o /tmp/smart2-ubsan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-ubsan | tee smart2-ubsan.log
+          g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/mesa_26364_a810_smart_v2.cpp -o /tmp/smart2-asan
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-asan | tee smart2-asan.log
+      - name: DS2 aspect semantics and bounds tests
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/ds1_policy.cpp -o /tmp/ds1-ubsan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/ds1-ubsan | tee ds1-ubsan.log
+          g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/ds1_policy.cpp -o /tmp/ds1-asan
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/ds1-asan | tee ds1-asan.log
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tests/ds1_mesa_ops.py | tee ds1-mesa-ops.log
+      - name: Adaptive load histories and abrupt-change tests
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/ds2_adaptive.cpp -o /tmp/ds2-ubsan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/ds2-ubsan | tee ds2-ubsan.log
+          g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/ds2_adaptive.cpp -o /tmp/ds2-asan
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/ds2-asan | tee ds2-asan.log
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tests/ds2_mesa_guard.py | tee ds2-mesa-guard.log
+      - name: Compiler coordination and actual cache helper tests
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O2 -g -pthread -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/sc1_compile.cpp -o /tmp/sc1-compile
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/sc1-compile | tee sc1-compile.log
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 python3 tests/sc1_cache.py | tee sc1-cache.log
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<CROSS
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          CROSS
+      - name: Compile real Android ARM64 driver
+        run: |
+          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+          meson compile -C mesa/build-android -j 4
+      - name: Package and verify driver plus sources
+        run: |
+          set -euo pipefail
+          mkdir output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          python3 - <<'PY'
+          import json,pathlib,zipfile
+          meta={'schemaVersion':1,'name':'A810 S1 Smart SC1','description':'Experimental A810 DS2 baseline with exact hot shader lookup, in-flight compile coordination and bounded supplemental adaptive watches. SC1 default ON; hardware testing pending.','author':'Frane12','packageVersion':'1','vendor':'Mesa','driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),'minApi':34,'libraryName':'libvulkan_freedreno.so'}
+          pathlib.Path('output/meta.json').write_text(json.dumps(meta,indent=2)+'\n')
+          with zipfile.ZipFile('A810-S1-Smart-SC1.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              z.write('output/libvulkan_freedreno.so','libvulkan_freedreno.so')
+              z.write('output/meta.json','meta.json')
+          with zipfile.ZipFile('A810-S1-Smart-SC1.zip') as z:
+              assert z.testzip() is None
+              assert set(z.namelist())=={'libvulkan_freedreno.so','meta.json'}
+              b=z.read('libvulkan_freedreno.so')
+              assert b[:6]==b'\x7fELF\x02\x01'
+              assert int.from_bytes(b[16:18],'little')==3 and int.from_bytes(b[18:20],'little')==183
+              assert b'A810 S1 Smart SC1 / Mesa' in b and b'TU_FRANE_SMART' in b and b'TU_FRANE_SC' in b
+              assert b'Turnip-Drnas A810' in b and b'TU_FRANE_ADAPTIVE' in b
+          PY
+          zip -9 A810-S1-Smart-SC1-Source.zip patches/s1-smart2-complete.patch patches/s1-smart-ds1.patch patches/s1-smart-ds2.patch patches/s1-smart-sc1.patch tests/sc1_compile.cpp tests/sc1_cache.py tests/ds1_policy.cpp tests/ds1_mesa_ops.py tests/ds2_adaptive.cpp tests/ds2_mesa_guard.py tests/mesa_26364_a810_smart_v2.cpp .github/workflows/turnip-s1-smart-sc1-internal.yml RELEASE_S1_SMART_SC1_A810.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log ds1-ubsan.log ds1-asan.log ds1-mesa-ops.log ds2-ubsan.log ds2-asan.log ds2-mesa-guard.log sc1-compile.log sc1-cache.log
+          sha256sum A810-S1-Smart-SC1.zip A810-S1-Smart-SC1-Source.zip patches/s1-smart2-complete.patch patches/s1-smart-ds1.patch patches/s1-smart-ds2.patch patches/s1-smart-sc1.patch > SHA256SUMS.txt
+      - name: Retain install package and verification logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: A810-S1-Smart-SC1
+          path: |
+            A810-S1-Smart-SC1.zip
+            A810-S1-Smart-SC1-Source.zip
+            SHA256SUMS.txt
+            *-*.log
+          if-no-files-found: error
+      - name: Create or update INTERNAL DRAFT only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=a810-s1-smart-sc1-internal
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/smart2-release.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("/tmp/smart2-release.json"))["isDraft"], "Refusing to modify a published release"'
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" --title "A810 S1 Smart SC1" --notes-file RELEASE_S1_SMART_SC1_A810.md
+            gh release upload "$TAG" A810-S1-Smart-SC1.zip A810-S1-Smart-SC1-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" A810-S1-Smart-SC1.zip A810-S1-Smart-SC1-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "A810 S1 Smart SC1" --notes-file RELEASE_S1_SMART_SC1_A810.md --draft
+          fi
