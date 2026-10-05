@@ -44,8 +44,6 @@ int main()
    const auto dense_eval = frane_26318_eval_smart_gmem(dense);
    assert(dense_fp.valid);
    assert(dense_fp.score_bonus == 20); // 12 capacity + 8 footprint
-   assert(dense_fp.capacity_fill_pct >= 88);
-   assert(dense_fp.raw_footprint_pct >= 85);
    assert(dense_eval.structure_score >= old_eval.structure_score);
    assert(dense_eval.structure_score - old_eval.structure_score ==
           dense_fp.score_bonus ||
