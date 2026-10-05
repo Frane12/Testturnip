@@ -139,99 +139,6 @@ edit(
 
 
 # ---------------------------------------------------------------------------
-# 1b. Inherited V29 persistent-profile link repair.
-#
-# The final V38 stack still declares/calls these helpers, but a later cleanup
-# can leave their out-of-line bodies absent. Host shader tests do not link the
-# Vulkan DSO, so catch/repair that inherited condition here before Android link.
-# This restores the V29 implementation; it does not alter O1 policy.
-# ---------------------------------------------------------------------------
-autotune_path = V / "tu_autotune.cc"
-_profile_src = autotune_path.read_text()
-_profile_sig = """tu_autotune::frane_load_profile(uint64_t hash, uint32_t *value) const"""
-if _profile_sig not in _profile_src:
-    if "frane_load_profile(key.hash, &saved)" not in _profile_src or \
-       "frane_save_profile(hash," not in _profile_src:
-        raise SystemExit("V38 O1 profile-link repair: expected V29 call sites missing")
-
-    _profile_anchor = """tu_autotune::rp_history_handle
-tu_autotune::find_or_create_rp_history"""
-    if _profile_src.count(_profile_anchor) != 1:
-        raise SystemExit("V38 O1 profile-link repair: find/create anchor drift")
-
-    _profile_helpers = r'''bool
-tu_autotune::frane_profile_key(uint64_t rp_hash, cache_key key) const
-{
-   const bool legacy_enabled =
-      debug_get_bool_option("TU_A810_PROFILE_CACHE", true);
-   if (!debug_get_bool_option("TU_FRANE_PROFILE_CACHE", legacy_enabled) ||
-       !frane_v28_universal_profiled(device) ||
-       !device->physical_device->vk.disk_cache)
-      return false;
-
-   const char *name = debug_get_option("TU_FRANE_PROFILE_ID", nullptr);
-   if (!name || !*name)
-      name = debug_get_option("TU_A810_PROFILE_ID", nullptr);
-   if (!name || !*name)
-      name = device->instance->vk.app_info.app_name;
-
-   if (!name || !*name || !strcmp(name, "DXVK") || !strcmp(name, "Wine"))
-      return false;
-
-   std::string input = std::string("frane-universal-v29-fast:") + name + ":" +
-                       std::to_string(rp_hash);
-   input.append((const char *)device->physical_device->device_uuid, VK_UUID_SIZE);
-   input.append((const char *)device->physical_device->cache_uuid, VK_UUID_SIZE);
-
-   disk_cache_compute_key(device->physical_device->vk.disk_cache,
-                          input.data(), input.size(), key);
-   return true;
-}
-
-bool
-tu_autotune::frane_load_profile(uint64_t hash, uint32_t *value) const
-{
-   cache_key key;
-   if (!frane_profile_key(hash, key))
-      return false;
-
-   size_t size = 0;
-   void *data =
-      disk_cache_get(device->physical_device->vk.disk_cache, key, &size);
-   if (!data)
-      return false;
-
-   uint32_t saved = 0;
-   if (size == sizeof(saved))
-      memcpy(&saved, data, sizeof(saved));
-   const bool valid =
-      size == sizeof(saved) && saved >= 1 && saved <= 99;
-   if (valid)
-      *value = saved;
-   free(data);
-   return valid;
-}
-
-void
-tu_autotune::frane_save_profile(uint64_t hash, uint32_t value) const
-{
-   cache_key key;
-   value = frane_v29_cache_bucket(value);
-   if (frane_profile_key(hash, key))
-      disk_cache_put(device->physical_device->vk.disk_cache, key,
-                     &value, sizeof(value), nullptr);
-}
-
-'''
-    _profile_src = _profile_src.replace(
-        _profile_anchor, _profile_helpers + _profile_anchor, 1)
-    autotune_path.write_text(_profile_src)
-    print("V38 O1 PASS restore inherited V29 profile-cache helper bodies", flush=True)
-else:
-    print("V38 O1 PASS inherited V29 profile-cache helpers already present", flush=True)
-
-
-# ---------------------------------------------------------------------------
 # 2. HOTPATH-V2: keep the 64-entry no-replacement cache but add one alternate
 # candidate. First-slot hits pay exactly the old lookup. Only misses mix/probe
 # a second slot before falling back to shared_mutex + unordered_map.
@@ -241,12 +148,14 @@ src = autotune_path.read_text()
 start_marker = """tu_autotune::rp_history_handle
 tu_autotune::find_rp_history(const rp_key &key)
 {"""
-end_marker = """tu_autotune::rp_history_handle
-tu_autotune::find_or_create_rp_history"""
+end_marker = """   return rp_history_handle(nullptr);
+}
+"""
 start = src.find(start_marker)
-end = src.find(end_marker, start)
-if start < 0 or end < 0:
+end_start = src.find(end_marker, start)
+if start < 0 or end_start < 0:
     raise SystemExit("V38 O1 source drift: find_rp_history boundaries")
+end = end_start + len(end_marker)
 
 old_find = src[start:end]
 for needle in (
