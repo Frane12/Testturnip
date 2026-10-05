@@ -59,8 +59,6 @@ frane_26318_eval_smart_gmem(const frane_26318_smart_gmem_input &in)
 helper = r"""struct frane_v38_gf1_eval {
    bool valid = false;
    uint8_t score_bonus = 0; /* bounded 0..22 */
-   uint8_t capacity_fill_pct = 0;
-   uint8_t raw_footprint_pct = 0;
 };
 
 static inline bool
@@ -117,8 +115,6 @@ frane_v38_gf1_eval_footprint(const frane_26318_smart_gmem_input &in)
       return out;
 
    out.valid = true;
-   out.capacity_fill_pct = frane_v38_gf1_pct(tile, capacity);
-   out.raw_footprint_pct = frane_v38_gf1_pct(raw_bytes, usable);
 
    unsigned bonus = 0;
 
@@ -150,7 +146,7 @@ frane_v38_gf1_eval_footprint(const frane_26318_smart_gmem_input &in)
    else if (in.peak_live_planes >= 2)
       bonus += 1;
 
-   out.score_bonus = uint8_t(MIN2(bonus, 22u));
+   out.score_bonus = uint8_t(std::min(bonus, 22u));
    return out;
 }
 
