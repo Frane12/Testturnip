@@ -31,7 +31,7 @@ static nir_shader *make_shader(struct ir3_compiler *c, bool fragment,
          nir_builder_instr_insert(&b, &tex->instr);
          values[i] = nir_fmul_imm(&b, &tex->def, 0.25f + i * 0.01f);
       }
-      b.shader->info.num_textures = b.shader->info.num_samplers = 4;
+      b.shader->info.num_textures = 4;
    } else {
       b.shader->info.workgroup_size[0] = 32;
       b.shader->info.workgroup_size[1] = b.shader->info.workgroup_size[2] = 1;
@@ -90,6 +90,8 @@ int main(void)
                c->frane_sh1_mode = modes[run];
                c->frane_sh1_threshold = 35;
                nir_shader *nir = make_shader(c, fragment, width, seed);
+               ir3_nir_lower_io(nir);
+               nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
                ir3_finalize_nir(c, &options.nir_options, nir);
                nir_validate_shader(nir, "SH1 finalized");
                struct ir3_shader *s = ir3_shader_from_nir(c, nir, &options);
