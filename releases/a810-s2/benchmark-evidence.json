@@ -1,0 +1,50 @@
+{
+  "engine": "CryEngine 2",
+  "benchmark": "Crysis/Bin32/Benchmark_GPU.bat",
+  "resolution": [
+    960,
+    544
+  ],
+  "frames_per_run": 2000,
+  "source": "User-supplied screenshots in this conversation",
+  "previous_test_base": {
+    "avg_fps": [
+      32.08,
+      33.68,
+      33.73
+    ],
+    "min_fps": [
+      21.84,
+      21.84,
+      21.84
+    ],
+    "play_seconds": [
+      62.35,
+      59.38,
+      59.3
+    ]
+  },
+  "tested_s2_base": {
+    "avg_fps": [
+      32.27,
+      34.16,
+      34.17
+    ],
+    "min_fps": [
+      22.0,
+      22.0,
+      22.0
+    ],
+    "play_seconds": [
+      61.97,
+      58.55,
+      58.53
+    ]
+  },
+  "mean_runs": [
+    1,
+    2
+  ],
+  "released_S1_comparison": null,
+  "s2_rebuilt_package_device_test": "not run"
+}
