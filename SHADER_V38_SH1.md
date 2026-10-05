@@ -23,7 +23,7 @@ compiler option initialization, cache identities and display name.
 ## Validation and comparison
 
 Host policy boundary tests, existing V38 checks, real IR3 shader compilation
-with NIR/IR3 validation in a debugoptimized build, and Android cross-compilation
+with NIR/IR3 validation in a debug build with optimization, and Android cross-compilation
 are required by the workflow. The synthetic corpus covers compute loads, texture
 fragment shaders, varying live ranges, ALU/SFU dependencies and divergent branches.
 Repeated mode-0 compilation must be binary-identical; SH1 must change at least
