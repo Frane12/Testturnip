@@ -18,7 +18,7 @@ Two independent IR3 compiler experiments, enabled by default:
 - SFU scheduling: replace the fixed outstanding SS-producer limit with a
   pressure-dependent cap. Default maximum is 6; effective limit decreases to
   4 at 20% estimated pressure, 3 at the SH1 threshold, and 2 at threshold+20.
-  The upstream hard maximum of 8 remains. Legal dependency and synchronization
+  The configured window never exceeds the upstream heuristic limit of 8. Legal dependency and synchronization
   checks stay in their existing paths.
 
 Only compiler ordering, compiler options, cache identities and display name
