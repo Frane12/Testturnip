@@ -9,8 +9,7 @@ S2 is intentionally a synthesis/pruning pass, not another pile of heuristics.
 
 Default policy:
 - keep proven A810 compiler, hotpath, GMEM allocator/search, Smart v2 and CB1 work;
-- restore upstream A810 CCU/cache topology instead of the older downstream
-  guessed cache-size override;
+- preserve the pre-S2 A810 CCU/cache override for an isolated render bisect;
 - make GMEM-TURBO measured-first: no structural cold-start forcing before the
   measured A810 runtime has armed;
 - disable the Crysis-derived fixed depth draw bands by default and let measured
@@ -41,25 +40,10 @@ def edit(rel, old, new, label):
     print(f"S2 PASS {label}", flush=True)
 
 
-# 1) Restore the upstream A810 CCU/cache topology inherited from a8xx_gen1.
-# The older downstream block was speculative and overrides upstream's
-# 128K/256K SYSMEM color/depth and 16K/256K GMEM color/depth values.
-edit(
-    "src/freedreno/common/freedreno_devices.py",
-    '''            sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
-            sysmem_per_ccu_color_cache_size = 64 * 1024,
-            sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
-            sysmem_per_ccu_depth_cache_size = 64 * 1024,
-            gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-            gmem_per_ccu_color_cache_size = 32 * 1024,
-            gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-            gmem_per_ccu_depth_cache_size = 48 * 1024,
-''',
-    '''            # S2: inherit the current upstream a8xx_gen1 CCU/cache
-            # topology. Keep only the A810-specific VPC geometry below.
-''',
-    "restore upstream A810 CCU/cache topology",
-)
+# 1) Preserve the pre-S2 A810 CCU/cache override. The S2 inherited-topology
+# change is the first bisect target after an on-device corruption report.
+# Keep this isolated from performance policy so the next device test can
+# attribute recovery (or lack of recovery) to this rollback alone.
 
 # 2) Remove the benchmark-shaped depth draw window from normal defaults.
 # The code remains available for A/B through TU_FRANE_DEPTH_MODE=1.
@@ -120,7 +104,7 @@ edit(
 edit(
     "src/freedreno/vulkan/tu_device.cc",
     "A810 S1 Smart CB1 / Mesa ",
-    "A810 S2 MaxStable / Mesa ",
+    "A810 S2.1 Render Recovery / Mesa ",
     "S2 display identity",
 )
 
@@ -132,21 +116,21 @@ cmd = (V / "tu_cmd_buffer.cc").read_text()
 device = (V / "tu_device.cc").read_text()
 compiler = (ROOT / "src/freedreno/ir3/ir3_compiler.c").read_text()
 
-assert "A810 S2 MaxStable / Mesa " in device
+assert "A810 S2.1 Render Recovery / Mesa " in device
 assert 'debug_get_num_option("TU_FRANE_DEPTH_MODE", 0)' in autotune
 assert "Aggressive cold-start prior" not in gmem
 assert "S2 measured-first cold path" in gmem
 
-# Upstream cache topology must be inherited, not shadowed by the old A810 block.
+# The rollback must preserve the complete pre-S2 A810 CCU/cache block.
 a810 = devinfo[devinfo.index('GPUId(chip_id=0xffff44010000, name="Adreno (TM) 810")'):]
 a810 = a810[:a810.index("add_gpus([", 200)]
-for forbidden in (
+for required in (
     "sysmem_per_ccu_color_cache_size = 64 * 1024",
     "sysmem_per_ccu_depth_cache_size = 64 * 1024",
     "gmem_per_ccu_color_cache_size = 32 * 1024",
     "gmem_per_ccu_depth_cache_size = 48 * 1024",
 ):
-    assert forbidden not in a810, forbidden
+    assert required in a810, required
 
 # Keep the proven compiler/runtime stack.
 for needle in (
@@ -170,5 +154,5 @@ for needle in (
 queue = (V / "tu_knl_kgsl.cc").read_text()
 assert 'debug_get_bool_option("TU_A810_PWR_MAX", true)' in queue
 
-print("A810 S2 MaxStable synthesis applied", flush=True)
+print("A810 S2.1 render rollback applied", flush=True)
 # CI trigger: S2 synthesis candidate
