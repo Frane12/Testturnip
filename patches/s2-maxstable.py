@@ -171,3 +171,4 @@ queue = (V / "tu_knl_kgsl.cc").read_text()
 assert 'debug_get_bool_option("TU_A810_PWR_MAX", true)' in queue
 
 print("A810 S2 MaxStable synthesis applied", flush=True)
+# CI trigger: S2 synthesis candidate
