@@ -90,6 +90,8 @@ int main(void)
                c->frane_sh1_mode = modes[run];
                c->frane_sh1_threshold = 35;
                nir_shader *nir = make_shader(c, fragment, width, seed);
+               nir_assign_io_var_locations(nir, nir_var_shader_in);
+               nir_assign_io_var_locations(nir, nir_var_shader_out);
                ir3_nir_lower_io(nir);
                nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
                ir3_finalize_nir(c, &options.nir_options, nir);
