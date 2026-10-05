@@ -110,6 +110,47 @@ Current S1 testing is specifically watching for:
 
 ---
 
+## Measured performance & stability history
+
+This table tracks **on-device observations that were actually reproduced during development**. It is intentionally conservative: a result is only listed as measured when it came from a real game / benchmark run on the target hardware. Synthetic policy tests and successful compilation are useful validation, but they are not presented as FPS evidence.
+
+> **Evidence labels**
+>
+> - **Repeated** — reproduced across multiple runs or used repeatedly as a reference result.
+> - **Observed** — seen on-device, but not yet backed by a full controlled benchmark set.
+> - **Experimental** — promising behavior that still needs broader validation.
+
+| GPU | Build / stage | Workload | Measured observation | Evidence |
+|---|---|---|---|---|
+| **A810** | **V38 — GMEM-SEARCH** | Crysis / Dirt 3 development runs | Established the aggressive GMEM-search direction that later builds were compared against. Performance gains were real enough to keep V38 as a long-lived reference build. | **Repeated** |
+| **A810** | **V57 — PROFILED-TAIL-GUARD** | CryEngine / repeated benchmark passes | Preserved the faster GMEM path while adding a measured escape path for expensive or ambiguous tail cases instead of blindly forcing GMEM. Became the stability base for later S1 work. | **Repeated** |
+| **A810** | **Late V60/V61 → S1 policy** | Far Cry 2 | Real gameplay testing reached roughly **85–87 FPS** in the established reference scene, while retaining the newer learner / guard stack. Treat this as a scene-specific measured result, not a universal game average. | **Repeated** |
+| **A810** | **S1 A810** | Far Cry 3 | Observed roughly **38–40 FPS** in the current test setup, with GPU utilization commonly around **75–80%**. | **Observed** |
+| **A810** | **S1 development stack** | Dirt 3 | Multiple consecutive runs were close enough to be useful for A/B comparisons; warm-run behavior was consistently better than a cold first pass. | **Repeated** |
+| **A810** | **S1 development stack** | Crysis | Multi-pass Crysis runs are used as the main depth / GMEM stress reference. Current policy work is judged on repeatability and frametime behavior rather than one isolated minimum-FPS event. | **Repeated** |
+| **A830** | **Early experimental builds** | Crysis / GMEM testing | Early GMEM work could produce severe geometry corruption / spike-like artifacts. Those failures are kept as a correctness reference for later A830 changes. | **Observed** |
+| **A830** | **Current S1 / GMEM + PROFILED path** | Crysis / real rendering tests | Current on-device testing reports clean GMEM + PROFILED rendering without the earlier geometry corruption or obvious visual glitches. Broader game coverage is still required before calling this universally stable. | **Observed** |
+
+### How to read these numbers
+
+These are **development measurements**, not marketing claims. FPS can move with clocks, thermal state, emulator version, DXVK/FEX version, resolution, game scene and cache warmth.
+
+For future releases, the goal is to grow this into a fixed scorecard containing:
+
+| Metric | Why it matters |
+|---|---|
+| Average FPS | Sustained throughput |
+| 1% low / representative low | Smoothness under load |
+| Frametime consistency | Whether reported FPS feels real in motion |
+| RAM after 30 / 60 min | Long-session memory behavior |
+| Artifact / crash count | Correctness and endurance |
+| Test stack | FEX / DXVK / emulator / resolution reproducibility |
+
+When a future result has enough controlled runs, it should replace qualitative text here with a compact numeric entry.
+
+
+---
+
 ## Experimental game adaptation
 
 `TU_FRANE_PROFILE_ID` is an **experimental workload/profile adaptation hook**.
