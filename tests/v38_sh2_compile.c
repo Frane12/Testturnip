@@ -45,9 +45,19 @@ static nir_shader *make_shader(struct ir3_compiler *c, bool fragment,
                                  0.01f * (i + seed + 1));
       }
    }
-   nir_def *sum = values[0];
-   for (unsigned i = 1; i < width; i++)
-      sum = nir_fadd(&b, sum, nir_fsin(&b, values[i]));
+   nir_def *sum;
+   if (seed & 2) {
+      for (unsigned i = 0; i < width; i++)
+         values[i] = nir_fsin(&b, values[i]);
+      for (unsigned count = width; count > 1; count /= 2)
+         for (unsigned i = 0; i < count / 2; i++)
+            values[i] = nir_fadd(&b, values[2 * i], values[2 * i + 1]);
+      sum = values[0];
+   } else {
+      sum = values[0];
+      for (unsigned i = 1; i < width; i++)
+         sum = nir_fadd(&b, sum, nir_fsin(&b, values[i]));
+   }
    if (seed & 1) {
       nir_push_if(&b, nir_flt_imm(&b, nir_channel(&b, sum, 0), 0.5));
       nir_def *left = nir_fmul_imm(&b, sum, 0.9);
