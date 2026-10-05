@@ -1,0 +1,229 @@
+name: A810 S4 Max Internal
+on:
+  push:
+    branches: ['drnas-a810-s4-max']
+    paths:
+      - '.github/workflows/turnip-s4-max-internal.yml'
+      - 'patches/s1-smart2-complete.patch'
+      - 'patches/s1-smart-cb1.py'
+      - 'tests/mesa_26364_a810_smart_v2.cpp'
+      - 'patches/s2-maxstable.py'
+      - 'patches/s3-orchestrator.py'
+      - 'patches/frane_s3_orchestrator.h'
+      - 'patches/s4-max.py'
+      - 'patches/frane_s4_gmem.inc'
+      - 'patches/frane_s4_sched.h'
+      - 'tests/a810_s4_methods.py'
+      - 'tests/a810_s4_source.py'
+      - 'tests/a810_s3_orchestrator.cpp'
+      - 'tests/a810_s3_source.py'
+      - 'A810-S4-Max-Tuning.md'
+      - 'RELEASE_S4_MAX_A810.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: drnas-a810-s4-max
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y git ninja-build pkg-config python3-pip bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+
+      - name: Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+
+      - name: Fetch exact base and apply S1 Smart 2 plus Smart CB1
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
+          git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
+          git -C mesa checkout --detach eda9aceb39d5ff169b096444abe366bdf2269e24
+          git -C mesa apply --check ../patches/s1-smart2-complete.patch
+          git -C mesa apply ../patches/s1-smart2-complete.patch
+          python3 patches/s1-smart-cb1.py
+          python3 patches/s2-maxstable.py
+          python3 patches/s3-orchestrator.py
+          python3 tests/a810_s3_source.py
+          python3 patches/s4-max.py
+          python3 tests/a810_s4_source.py
+          git -C mesa diff --check
+          git -C mesa rev-parse HEAD > mesa-commit.txt
+          git rev-parse HEAD > frane-commit.txt
+
+      - name: Smart Performance policy tests
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/mesa_26364_a810_smart_v2.cpp -o /tmp/smart2-ubsan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-ubsan | tee smart2-ubsan.log
+          g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/mesa_26364_a810_smart_v2.cpp -o /tmp/smart2-asan
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-asan | tee smart2-asan.log
+
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/a810_s3_orchestrator.cpp -o /tmp/s3-ubsan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/s3-ubsan | tee s3-ubsan.log
+          g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Imesa/src/freedreno/vulkan tests/a810_s3_orchestrator.cpp -o /tmp/s3-asan
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/s3-asan | tee s3-asan.log
+
+      - name: S4 actual GMEM and scheduler methods
+        run: |
+          set -euo pipefail
+          python3 tests/a810_s4_methods.py | tee s4-ubsan.log
+          FRANE_TEST_SANITIZERS=address,undefined python3 tests/a810_s4_methods.py | tee s4-asan.log
+
+      - name: S4 Max source invariants
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path('mesa')
+          cmd=(root/'src/freedreno/vulkan/tu_cmd_buffer.cc').read_text()
+          at=(root/'src/freedreno/vulkan/tu_autotune.cc').read_text()
+          dev=(root/'src/freedreno/vulkan/tu_device.cc').read_text()
+          info=(root/'src/freedreno/common/freedreno_devices.py').read_text()
+          turbo=(root/'src/freedreno/vulkan/frane_mesa_26320_a810_gmem_turbo.h').read_text()
+          comp=(root/'src/freedreno/ir3/ir3_compiler.c').read_text()
+          kgsl=(root/'src/freedreno/vulkan/tu_knl_kgsl.cc').read_text()
+
+          assert 'Turnip-Drnas A810 S4 Max / Mesa ' in dev
+          assert 'debug_get_num_option("TU_FRANE_DEPTH_MODE", 0)' in at
+          assert 'S2 measured-first cold path' in turbo
+          assert 'Aggressive cold-start prior' not in turbo
+
+          a810=info[info.index('GPUId(chip_id=0xffff44010000, name="Adreno (TM) 810")'):]
+          a810=a810[:a810.index('add_gpus([',200)]
+          for required in (
+              'sysmem_per_ccu_color_cache_size = 64 * 1024',
+              'sysmem_per_ccu_depth_cache_size = 64 * 1024',
+              'gmem_per_ccu_color_cache_size = 32 * 1024',
+              'gmem_per_ccu_depth_cache_size = 48 * 1024',
+          ):
+              assert required in a810, required
+
+          for x in (
+              'TU_FRANE_SMART_CB", true',
+              'TU_FRANE_SMART_CB_MODE", 1',
+              'PIPE_BV_WAIT_FOR_BR',
+              'PIPE_BR_WAIT_FOR_BV',
+              'TU_ONCHIP_CB_RESLIST_OVERFLOW',
+              'partial LRZ fast clear',
+          ):
+              assert x in cmd, x
+
+          for x in (
+              'debug_get_num_option("TU_A810_26317_TEX_WINDOW_MAX", 6)',
+              'debug_get_bool_option("TU_A810_26311_SAFE_TEX_PREFETCH", true)',
+              'debug_get_bool_option("TU_A810_26315_QUAD_TEX_PREFETCH", true)',
+              'debug_get_bool_option("TU_A810_26315_PREFETCH_DIVERSITY", true)',
+          ):
+              assert x in comp, x
+
+          assert 'debug_get_bool_option("TU_A810_PWR_MAX", true)' in kgsl
+          print('S2 MaxStable invariants PASS')
+          PY
+
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<CROSS
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          CROSS
+
+      - name: Compile real Android ARM64 driver
+        run: |
+          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+          meson compile -C mesa/build-android -j 4
+
+      - name: Package and verify driver plus sources
+        run: |
+          set -euo pipefail
+          mkdir output
+          cp A810-S4-Max-Tuning.md output/
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          python3 - <<'PY'
+          import json,pathlib,zipfile
+          meta={
+            'schemaVersion':1,
+            'name':'A810 S4 Max',
+            'description':'A810 S4 Max: multi-seed GMEM packing, peak lifetime bound, gap fit, latency and pressure shader scheduling; S3 controller and proven CCU',
+            'author':'Frane12',
+            'packageVersion':'4',
+            'vendor':'Mesa',
+            'driverVersion':'Mesa '+pathlib.Path('mesa/VERSION').read_text().strip(),
+            'minApi':34,
+            'libraryName':'libvulkan_freedreno.so'
+          }
+          pathlib.Path('output/meta.json').write_text(json.dumps(meta,indent=2)+'\n')
+          with zipfile.ZipFile('A810-S4-Max.zip','w',zipfile.ZIP_DEFLATED,compresslevel=9) as z:
+              z.write('output/libvulkan_freedreno.so','libvulkan_freedreno.so')
+              z.write('output/meta.json','meta.json')
+          with zipfile.ZipFile('A810-S4-Max.zip') as z:
+              assert z.testzip() is None
+              assert set(z.namelist())=={'libvulkan_freedreno.so','meta.json'}
+              b=z.read('libvulkan_freedreno.so')
+              assert b[:6]==b'\x7fELF\x02\x01'
+              assert int.from_bytes(b[16:18],'little')==3
+              assert int.from_bytes(b[18:20],'little')==183
+              assert b'Turnip-Drnas A810 S4 Max / Mesa' in b
+              assert b'TU_FRANE_SMART_CB' in b
+              assert b'TU_FRANE_SMART_CB_MODE' in b
+              for var in ('TU_FRANE_GMEM_MULTISEED','TU_FRANE_GMEM_PEAK_BOUND','TU_FRANE_GMEM_GAPS','TU_FRANE_GMEM_BUDGET','TU_FRANE_GMEM_SEEDS','TU_FRANE_SCHED_WINDOW','TU_FRANE_SCHED_CRITICAL','TU_FRANE_SCHED_SFU','TU_FRANE_SFU_WINDOW','TU_FRANE_SCHED_SLACK'):
+                  assert var.encode() in b, var
+          PY
+          zip -9 A810-S4-Max-Source.zip .github/workflows/turnip-s4-max-internal.yml patches/s1-smart2-complete.patch patches/s1-smart-cb1.py patches/s2-maxstable.py patches/s3-orchestrator.py patches/frane_s3_orchestrator.h patches/s4-max.py patches/frane_s4_gmem.inc patches/frane_s4_sched.h tests/a810_s4_methods.py tests/a810_s4_source.py tests/a810_s3_orchestrator.cpp tests/a810_s3_source.py A810-S3-Orchestrator-Tuning.md A810-S4-Max-Tuning.md tests/mesa_26364_a810_smart_v2.cpp RELEASE_S4_MAX_A810.md mesa-commit.txt frane-commit.txt smart2-ubsan.log smart2-asan.log s3-ubsan.log s3-asan.log s4-ubsan.log s4-asan.log
+          sha256sum A810-S4-Max.zip A810-S4-Max-Source.zip patches/s1-smart2-complete.patch patches/s1-smart-cb1.py patches/s2-maxstable.py patches/s3-orchestrator.py patches/frane_s3_orchestrator.h patches/s4-max.py patches/frane_s4_gmem.inc patches/frane_s4_sched.h A810-S4-Max-Tuning.md > SHA256SUMS.txt
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: A810-S4-Max
+          path: |
+            A810-S4-Max.zip
+            A810-S4-Max-Source.zip
+            SHA256SUMS.txt
+            A810-S4-Max-Tuning.md
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create or update INTERNAL DRAFT only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=a810-s4-max-internal
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/cb1-release.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("/tmp/cb1-release.json"))["isDraft"], "Refusing to modify a published release"'
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "A810 S4 Max" --notes-file RELEASE_S4_MAX_A810.md
+            gh release upload "$TAG" A810-S4-Max.zip A810-S4-Max-Source.zip SHA256SUMS.txt A810-S4-Max-Tuning.md --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" A810-S4-Max.zip A810-S4-Max-Source.zip SHA256SUMS.txt A810-S4-Max-Tuning.md --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "A810 S4 Max" --notes-file RELEASE_S4_MAX_A810.md --draft
+          fi
