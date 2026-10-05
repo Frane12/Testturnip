@@ -3,7 +3,7 @@ on:
   push:
     branches: ['drnas-a810-s2-maxstable']
     paths:
-      - '.github/workflows/turnip-s1-smart-cb1-internal.yml'
+      - '.github/workflows/turnip-s2-maxstable-internal.yml'
       - 'patches/s1-smart2-complete.patch'
       - 'patches/s1-smart-cb1.py'
       - 'tests/mesa_26364_a810_smart_v2.cpp'
