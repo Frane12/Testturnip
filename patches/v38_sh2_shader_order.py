@@ -75,11 +75,15 @@ for fn, end in [('choose_instr_dec', 'enum choose_instr_inc_rank'),
    struct ir3_sched_node *chosen = NULL;''', 1)
     anchor = '      if (!better && rank == chosen_rank) {'
     assert body.count(anchor) == 1
-    live = 'live' if fn == 'choose_instr_dec' else 'live_effect(n->instr)'
+    if fn == 'choose_instr_inc':
+        body = body.replace('int live_growth = pressure_priority ?',
+                            'int live_growth = (pressure_priority || sh2_critical) ?', 1)
+    live = 'live' if fn == 'choose_instr_dec' else 'live_growth'
+    distance = '0u' if fn == 'choose_instr_dec' else 'distance'
     body = body.replace(anchor, f'''      int64_t sh2_score = 0;
       if (sh2_critical)
          sh2_score = frane_sh2_score(sh2_pressure, n->max_delay,
-                                     nearest_use(n->instr), {live});
+                                     {distance}, {live});
 
       if (!better && rank == chosen_rank && sh2_critical &&
           sh2_score != chosen_score) {{

@@ -11,7 +11,8 @@ Two independent IR3 compiler experiments, enabled by default:
 
 - Critical-path ordering: among legal instructions of the same existing CSR
   rank, below the SH1 pressure threshold, combine existing max-delay,
-  nearest-consumer distance, and live-register growth. At or above the
+  and live-register growth, with existing nearest-consumer distance on the
+  register-growing path. At or above the
   threshold, keep SH1 ordering. This uses the existing block-local pressure
   estimate, not measured GPU occupancy.
 - SFU scheduling: replace the fixed outstanding SS-producer limit with a
@@ -24,9 +25,12 @@ Only compiler ordering, compiler options, cache identities and display name
 change. V38 GMEM, LRZ, queue submission and texture window remain unchanged.
 No floating-point precision or mathematical operation is changed.
 
-The added score is constant work per existing ready candidate; it adds no
-extra DAG traversal or shader-variant compilation in the driver. The original
-scheduler's asymptotic complexity is unchanged.
+The score arithmetic is constant work per existing ready candidate. Consumer
+distance is reused on the existing register-growing path; the new score does
+not add a consumer scan on the register-freeing path. The growing path also
+uses the existing live-effect calculation below the pressure threshold. No
+extra DAG traversal or variant compilation is added; the original scheduler's
+asymptotic complexity is unchanged.
 
 ## Controls
 
