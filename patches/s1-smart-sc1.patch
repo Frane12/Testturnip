@@ -404,7 +404,7 @@ index 9d53903..558adf6 100644
  
     tu_pipeline_set_linkage(&pipeline->base.program.link[MESA_SHADER_COMPUTE],
 diff --git a/src/vulkan/runtime/vk_pipeline_cache.c b/src/vulkan/runtime/vk_pipeline_cache.c
-index 225ba3a..57247b5 100644
+index 225ba3a..d05a040 100644
 --- a/src/vulkan/runtime/vk_pipeline_cache.c
 +++ b/src/vulkan/runtime/vk_pipeline_cache.c
 @@ -126,6 +126,37 @@ vk_raw_data_cache_object_create(struct vk_device *device,
@@ -520,7 +520,7 @@ index 225ba3a..57247b5 100644
  
 +   if (cache->object_cache && !cache->weak_ref && info->hot_object_ops &&
 +       info->hot_object_ops != &vk_raw_data_cache_object_ops) {
-+      cache->hot_objects = vk_zalloc(device, pAllocator,
++      cache->hot_objects = vk_zalloc2(&device->alloc, pAllocator,
 +         VK_HOT_OBJECT_SLOTS * sizeof(*cache->hot_objects), 8,
 +         VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 +      if (cache->hot_objects)
@@ -534,7 +534,7 @@ index 225ba3a..57247b5 100644
  vk_pipeline_cache_destroy(struct vk_pipeline_cache *cache,
                            const VkAllocationCallbacks *pAllocator)
  {
-+   vk_free(cache->base.device, pAllocator, cache->hot_objects);
++   vk_free2(&cache->base.device->alloc, pAllocator, cache->hot_objects);
     if (cache->object_cache) {
        if (!cache->weak_ref) {
           set_foreach(cache->object_cache, entry) {

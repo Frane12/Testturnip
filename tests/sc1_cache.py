@@ -131,5 +131,6 @@ with tempfile.TemporaryDirectory() as td:
 
 assert 'cache->object_cache && !cache->weak_ref && info->hot_object_ops' in source
 assert 'info->hot_object_ops != &vk_raw_data_cache_object_ops' in source
-assert 'vk_free(cache->base.device, pAllocator, cache->hot_objects)' in source
+assert 'vk_zalloc2(&device->alloc, pAllocator,' in source
+assert 'vk_free2(&cache->base.device->alloc, pAllocator, cache->hot_objects)' in source
 print('PASS: weak/disabled/raw caches excluded, allocation failure falls back, cache-local allocation freed with original callbacks')
