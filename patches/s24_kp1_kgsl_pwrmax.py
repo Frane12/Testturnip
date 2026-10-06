@@ -107,9 +107,11 @@ edit(
 )
 
 edit(
-"""      timestamp = req.timestamp;
-   } else {""",
-"""      if (frane_a810_kgsl_pwrmax_enabled(queue->device)) {
+"""                       IOCTL_KGSL_GPU_COMMAND, &req);
+""",
+"""                       IOCTL_KGSL_GPU_COMMAND, &req);
+
+      if (frane_a810_kgsl_pwrmax_enabled(queue->device)) {
          /* Re-assert occasionally instead of issuing an ioctl every submit. */
          static uint32_t frane_kp1_refresh_counter = 0;
          const uint32_t count =
@@ -123,9 +125,7 @@ edit(
                          strerror(errno));
          }
       }
-
-      timestamp = req.timestamp;
-   } else {""",
+""",
 "periodically re-assert PWR_MAX",
 )
 
