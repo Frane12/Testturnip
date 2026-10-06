@@ -649,7 +649,7 @@ jobs:
           python3 patches/s2x_a810_aggressive.py
           python3 tests/s2x_aggressive_policy.py
           git -C mesa diff --check
-          grep -Fq 'Turnip-Drnas A810 S2-X-X / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -Fq 'Turnip-Drnas A810 S2-X / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
           grep -Fq 'TU_FRANE_S2X_GMEM", true' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -Fq 'TU_FRANE_S2X_STICKY", true' mesa/src/freedreno/vulkan/tu_autotune.cc
           grep -Fq 'TU_FRANE_S2X_SCHED", true' mesa/src/freedreno/ir3/ir3_compiler.c
@@ -672,7 +672,7 @@ jobs:
       - name: Verify S2-X identity after shader corpus
         run: |
           set -eu
-          grep -Fq 'Turnip-Drnas A810 S2-X-X / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -Fq 'Turnip-Drnas A810 S2-X / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
           git -C mesa diff --check
           git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
