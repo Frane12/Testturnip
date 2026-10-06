@@ -81,9 +81,7 @@ edit(
 
 edit(
 """   queue->msm_queue_id = req.drawctxt_id;
-
-   return 0;
-}""",
+""",
 """   queue->msm_queue_id = req.drawctxt_id;
 
    if (frane_pwrmax) {
@@ -93,9 +91,7 @@ edit(
          mesa_logw("S2.4 KP1: initial KGSL PWR_MAX request failed: %s",
                    strerror(errno));
    }
-
-   return 0;
-}""",
+""",
 "request PWR_MAX at queue creation",
 )
 
