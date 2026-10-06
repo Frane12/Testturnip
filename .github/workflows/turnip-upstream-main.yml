@@ -1,8 +1,8 @@
-name: Publish Turnip-Drnas S2 A810
+name: Build Turnip-Drnas S2.2 Q-LRZ A810 (internal)
 
 on:
   push:
-    branches: ['drnas-a810-s2']
+    branches: ['drnas-a810-s2-2-q-lrz-internal']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: drnas-a810-s2-public
+  group: drnas-a810-s2-2-q-lrz-internal
   cancel-in-progress: true
 
 jobs:
@@ -642,6 +642,19 @@ jobs:
           grep -Fq 'frane_v38_gf1_eval_footprint' mesa/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
           grep -Fq 'Turnip-Drnas A810 V38 SH1 GF1 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
           git -C mesa diff > mesa-applied.patch
+      - name: Apply and validate S2.2 Q-LRZ renderpass policy
+        run: |
+          set -eu
+          python3 -m py_compile patches/s22_q_render_policy.py
+          python3 patches/s22_q_render_policy.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined tests/s22_q_policy.cpp -o /tmp/s22-q-policy
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/s22-q-policy
+          git -C mesa add -N src/freedreno/vulkan/frane_s22_q_policy.h
+          git -C mesa diff --check
+          grep -Fq 'TU_FRANE_S22_Q_POLICY", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -Fq 'frane_s22_lrz_candidate_draw_count' mesa/src/freedreno/vulkan/tu_cmd_buffer.h
+          grep -Fq 'frane_s22_q_eval' mesa/src/freedreno/vulkan/frane_mesa_26318_a810_smart_gmem.h
+          git -C mesa diff > mesa-applied.patch
       - name: Compile and validate actual A810 shader corpus on host
         run: |
           set -eu
@@ -657,7 +670,7 @@ jobs:
           cp mesa/build-host/meson-logs/testlog.txt shader-corpus-testlog.txt
           git -C mesa restore src/freedreno/ir3/meson.build
           rm mesa/src/freedreno/ir3/tests/frane_sh1_compile.c
-      - name: Apply S2 display name without changing rendering policy
+      - name: Apply S2.2 Q-LRZ display name without changing rendering policy
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -665,7 +678,7 @@ jobs:
           text = p.read_text()
           old = 'Turnip-Drnas A810 V38 SH1 GF1 / Mesa '
           assert text.count(old) == 1
-          p.write_text(text.replace(old, 'Turnip-Drnas A810 S2 / Mesa '))
+          p.write_text(text.replace(old, 'Turnip-Drnas A810 S2.2 Q-LRZ.2 Q-LRZ / Mesa '))
           PY
           git -C mesa diff --check
           git -C mesa diff > mesa-applied.patch
@@ -697,7 +710,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4 | tee android-build.log
-      - name: Package Winlator AdrenoTools Turnip-A810-S2.zip and provenance
+      - name: Package Winlator AdrenoTools Turnip-A810-S2.2-Q-LRZ.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -707,20 +720,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Turnip-Drnas A810 S2',
-            'driverVersion': 'Mesa 26.3.0-devel', 'description': 'Adreno 810 driver with allocator-aware GMEM decisions and pressure-aware shader scheduling. GMEM footprint enabled by default.',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': 's2.0.0-a810-eda9aceb',
+            'schemaVersion': 1, 'name': 'Turnip-Drnas A810 S2.2 Q-LRZ',
+            'driverVersion': 'Mesa 26.3.0-devel', 'description': 'Adreno 810 internal S2.2 build with allocator-aware GMEM, pressure-aware shader scheduling, and bounded renderpass-aware Q-LRZ policy. Q-policy and GMEM footprint enabled by default.',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': 's2.2.0-q-lrz-a810-eda9aceb',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Turnip-A810-S2.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Turnip-A810-S2.2-Q-LRZ.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Turnip-A810-S2.zip') as z:
+          with zipfile.ZipFile('Turnip-A810-S2.2-Q-LRZ.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -731,20 +744,20 @@ jobs:
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               meta = json.loads(z.read('meta.json'))
               assert meta['schemaVersion'] == 1
-              assert meta['name'] == 'Turnip-Drnas A810 S2'
+              assert meta['name'] == 'Turnip-Drnas A810 S2.2 Q-LRZ'
               assert meta['driverVersion'] == 'Mesa 26.3.0-devel'
-              assert b'Turnip-Drnas A810 S2 / Mesa 26.3.0-devel' in so
-          print('Driver Turnip-A810-S2.zip verified')
+              assert b'Turnip-Drnas A810 S2.2 Q-LRZ / Mesa 26.3.0-devel' in so
+          print('Driver Turnip-A810-S2.2-Q-LRZ.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Turnip-A810-S2.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Turnip-A810-S2.zip and full source diff
+          sha256sum Turnip-A810-S2.2-Q-LRZ.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Turnip-A810-S2.2-Q-LRZ.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
           name: Turnip-A810-S2
           path: |
-            Turnip-A810-S2.zip
+            Turnip-A810-S2.2-Q-LRZ.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -760,6 +773,9 @@ jobs:
             patches/frane_sh1_policy.h
             tests/v38_sh1_policy.c
             tests/v38_sh1_compile.c
+            patches/s22_q_render_policy.py
+            patches/frane_s22_q_policy.h
+            tests/s22_q_policy.cpp
       - name: Assemble S2 source and build provenance
         run: |
           cp output/meta.json releases/a810-s2/meta.json
@@ -784,31 +800,6 @@ jobs:
               'Use NDK r29 and adapt android-aarch64.ini paths to your environment.\n'
           )
           PY
-          zip -9 -r Turnip-A810-S2-Source.zip mesa-applied.patch android-aarch64.ini android-build.log mesa-commit.txt frane-commit.txt shader-corpus-testlog.txt provenance.json BUILD.txt patches tests releases/a810-s2 .github/workflows/turnip-upstream-main.yml
-          sha256sum Turnip-A810-S2.zip Turnip-A810-S2-Source.zip > SHA256SUMS.txt
+          zip -9 -r Turnip-A810-S2.2-Q-LRZ-Source.zip mesa-applied.patch android-aarch64.ini android-build.log mesa-commit.txt frane-commit.txt shader-corpus-testlog.txt provenance.json BUILD.txt patches tests releases/a810-s2 .github/workflows/turnip-upstream-main.yml
+          sha256sum Turnip-A810-S2.2-Q-LRZ.zip Turnip-A810-S2.2-Q-LRZ-Source.zip > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
-      - name: Publish public S2 release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: drnas-turnip-s2-a810
-        run: |
-          set -euo pipefail
-          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            echo "Release tag already exists; refusing to overwrite it."
-            exit 1
-          fi
-          gh release create "$RELEASE_TAG" Turnip-A810-S2.zip Turnip-A810-S2-Source.zip SHA256SUMS.txt \
-            --target "$GITHUB_SHA" \
-            --title "Turnip-Drnas S2 A810 — GMEM & Shader Scheduling" \
-            --notes-file releases/a810-s2/RELEASE.md \
-            --draft
-          gh release view "$RELEASE_TAG" --json assets,isDraft > release-verification.json
-          python3 - <<'PY'
-          import json
-          release = json.load(open('release-verification.json'))
-          assert release['isDraft']
-          assert {a['name'] for a in release['assets']} == {
-              'Turnip-A810-S2.zip', 'Turnip-A810-S2-Source.zip', 'SHA256SUMS.txt'
-          }
-          PY
-          gh release edit "$RELEASE_TAG" --draft=false --latest
