@@ -702,7 +702,7 @@ jobs:
         run: |
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
-        run: meson compile -C mesa/build-android -j 4 | tee android-build.log
+        run: set -o pipefail; meson compile -C mesa/build-android -j 4 | tee android-build.log
       - name: Package Winlator AdrenoTools Turnip-A810-S2X.zip and provenance
         run: |
           set -eu
