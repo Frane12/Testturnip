@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """S2.4 KP1: A810 KGSL PWR_MAX performance path.
 
-Different direction from MH1: do not change SMART-GMEM, Q2, LRZ, shader order,
-or render-pass policy. Use the public Qualcomm KGSL power-constraint uAPI to
-request maximum GPU power level for the A810 context, mark normal command
-submissions as carrying a power constraint, and periodically re-assert PWR_MAX.
+Keep S2.3 Q2 rendering policy unchanged. Use the public Qualcomm KGSL
+power-constraint uAPI to request maximum GPU power level for the A810 context,
+mark normal command submissions as carrying a power constraint, and periodically
+re-assert PWR_MAX.
 
 TU_FRANE_KGSL_PWRMAX=0 disables this experiment in the same binary.
 """
@@ -70,20 +70,8 @@ kgsl_submitqueue_new(struct tu_device *dev, struct tu_queue *queue)
 )
 
 edit(
-"""   struct kgsl_drawctxt_create req = {
-      .flags = KGSL_CONTEXT_SAVE_GMEM |
-              KGSL_CONTEXT_NO_GMEM_ALLOC |
-              KGSL_CONTEXT_PREAMBLE,
-   };
-
-   int ret = safe_ioctl(dev->physical_device->local_fd, IOCTL_KGSL_DRAWCTXT_CREATE, &req);""",
-"""   struct kgsl_drawctxt_create req = {
-      .flags = KGSL_CONTEXT_SAVE_GMEM |
-              KGSL_CONTEXT_NO_GMEM_ALLOC |
-              KGSL_CONTEXT_PREAMBLE,
-   };
-
-   const bool frane_pwrmax = frane_a810_kgsl_pwrmax_enabled(dev);
+"""   int ret = safe_ioctl(dev->physical_device->local_fd, IOCTL_KGSL_DRAWCTXT_CREATE, &req);""",
+"""   const bool frane_pwrmax = frane_a810_kgsl_pwrmax_enabled(dev);
    if (frane_pwrmax)
       req.flags |= KGSL_CONTEXT_PWR_CONSTRAINT;
 
@@ -112,16 +100,6 @@ edit(
 )
 
 edit(
-"""      struct kgsl_gpu_command req = {
-         .flags = KGSL_CMDBATCH_SUBMIT_IB_LIST,
-         .cmdlist = (uintptr_t) submit->commands.data,""",
-"""      struct kgsl_gpu_command req = {
-         .flags = KGSL_CMDBATCH_SUBMIT_IB_LIST,
-         .cmdlist = (uintptr_t) submit->commands.data,""",
-"locate normal KGSL command submission",
-)
-
-edit(
 """      if (obj_idx) {
          req.flags |= KGSL_CMDBATCH_PROFILING;""",
 """      if (frane_a810_kgsl_pwrmax_enabled(queue->device))
@@ -136,10 +114,7 @@ edit(
 """      timestamp = req.timestamp;
    } else {""",
 """      if (frane_a810_kgsl_pwrmax_enabled(queue->device)) {
-         /* Re-assert occasionally instead of issuing an ioctl every submit.
-          * This mirrors the public KGSL performance approach while keeping
-          * userspace overhead negligible.
-          */
+         /* Re-assert occasionally instead of issuing an ioctl every submit. */
          static uint32_t frane_kp1_refresh_counter = 0;
          const uint32_t count =
             p_atomic_inc_return(&frane_kp1_refresh_counter);
