@@ -678,7 +678,7 @@ jobs:
           text = p.read_text()
           old = 'Turnip-Drnas A810 V38 SH1 GF1 / Mesa '
           assert text.count(old) == 1
-          p.write_text(text.replace(old, 'Turnip-Drnas A810 S2.2 Q-LRZ.2 Q-LRZ / Mesa '))
+          p.write_text(text.replace(old, 'Turnip-Drnas A810 S2.2 Q-LRZ / Mesa '))
           PY
           git -C mesa diff --check
           git -C mesa diff > mesa-applied.patch
@@ -755,7 +755,7 @@ jobs:
       - name: Upload compiled Turnip-A810-S2.2-Q-LRZ.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Turnip-A810-S2
+          name: Turnip-A810-S2.2-Q-LRZ
           path: |
             Turnip-A810-S2.2-Q-LRZ.zip
             mesa-commit.txt
