@@ -21,12 +21,26 @@ int main()
       assert(out.score_delta == 0);
    }
    {
+      /* Positive bias requires bandwidth + density + LRZ quality together. */
       auto in = base();
-      in.draw_count = 4;
-      in.gmem_bandwidth_per_pixel = 28;
+      in.lrz_candidate_draw_count = 40;
+      in.lrz_late_draw_count = 4;
       auto out = frane_s22_q_eval(in);
-      assert(out.valid);
-      assert(out.score_delta < 0);
+      assert(out.score_delta > 0);
+      assert(out.score_delta <= 4);
+
+      auto no_lrz = in;
+      no_lrz.lrz_candidate_draw_count = 0;
+      no_lrz.lrz_late_draw_count = 0;
+      assert(frane_s22_q_eval(no_lrz).score_delta <= 0);
+
+      auto sparse = in;
+      sparse.draw_count = 20;
+      assert(frane_s22_q_eval(sparse).score_delta <= 0);
+
+      auto poor_bw = in;
+      poor_bw.gmem_bandwidth_per_pixel = 24;
+      assert(frane_s22_q_eval(poor_bw).score_delta <= 0);
    }
    {
       auto in = base();
@@ -35,8 +49,8 @@ int main()
       in.lrz_candidate_draw_count = 100;
       in.lrz_late_draw_count = 10;
       auto out = frane_s22_q_eval(in);
-      assert(out.score_delta > 0);
-      assert(out.score_delta <= 10);
+      assert(out.score_delta >= 3);
+      assert(out.score_delta <= 4);
    }
    {
       auto good = base();
@@ -44,13 +58,24 @@ int main()
       good.lrz_late_draw_count = 4;
       auto bad = good;
       bad.lrz_late_draw_count = 30;
-      bad.lrz_disabled_at_draw_plus1 = 2; /* disabled at draw 1 */
+      bad.lrz_disabled_at_draw_plus1 = 2;
       bad.lrz_write_disabled_at_draw_plus1 = 3;
       assert(frane_s22_q_eval(bad).score_delta <
              frane_s22_q_eval(good).score_delta);
    }
    {
       auto in = base();
+      in.draw_count = 4;
+      in.gmem_bandwidth_per_pixel = 28;
+      auto out = frane_s22_q_eval(in);
+      assert(out.valid);
+      assert(out.score_delta < 0);
+      assert(out.score_delta >= -4);
+   }
+   {
+      auto in = base();
+      in.lrz_candidate_draw_count = 40;
+      in.lrz_late_draw_count = 4;
       in.stencil_draw_count = 8;
       in.stencil_last_draw = 63;
       const auto late = frane_s22_q_eval(in).score_delta;
@@ -59,7 +84,6 @@ int main()
       assert(late <= early);
    }
    {
-      /* Fuzz boundaries and verify the policy can never become a force knob. */
       uint64_t x = 0x9e3779b97f4a7c15ULL;
       for (unsigned i = 0; i < 200000; i++) {
          x ^= x << 7; x ^= x >> 9; x ^= x << 8;
@@ -78,10 +102,10 @@ int main()
             in.lrz_write_disabled_at_draw_plus1 = 1 + uint32_t((x >> 30) & 1023);
          auto out = frane_s22_q_eval(in);
          assert(out.valid);
-         assert(out.score_delta >= -12 && out.score_delta <= 10);
+         assert(out.score_delta >= -4 && out.score_delta <= 4);
       }
    }
 
-   std::cout << "S2.2 Q-LRZ policy tests passed\n";
+   std::cout << "S2.3 Q2 policy tests passed\n";
    return 0;
 }
