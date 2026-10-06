@@ -109,11 +109,13 @@ edit(
     "vulkan/tu_autotune.cc",
     """         const frane_26318_smart_gmem_input *gmem_runtime_input = nullptr,
          bool smart_gmem = false,
-         bool gmem_turbo = false)
+         bool gmem_turbo = false,
+         bool live_profiled = false)
       {""",
     """         const frane_26318_smart_gmem_input *gmem_runtime_input = nullptr,
          bool smart_gmem = false,
          bool gmem_turbo = false,
+         bool live_profiled = false,
          bool s2x_sticky = false)
       {""",
     "carry S2-X sticky gate into profiled decision scope",
@@ -135,10 +137,12 @@ edit(
     "vulkan/tu_autotune.cc",
     """         runtime_input.layout.physical_gmem ? &runtime_input : nullptr,
          frane_a810_smart_gmem_enabled(device),
-         frane_a810_gmem_turbo_enabled(device));""",
+         frane_a810_gmem_turbo_enabled(device),
+         frane_a810_live_profiled(device));""",
     """         runtime_input.layout.physical_gmem ? &runtime_input : nullptr,
          frane_a810_smart_gmem_enabled(device),
          frane_a810_gmem_turbo_enabled(device),
+         frane_a810_live_profiled(device),
          frane_s2x_sticky_enabled(device));""",
     "pass sticky gate from tu_autotune into profiled decision",
 )
