@@ -1,8 +1,8 @@
-name: Publish Turnip-Drnas S2 A810
+name: Build Turnip-Drnas S2.1 A810 Hotpath (internal)
 
 on:
   push:
-    branches: ['drnas-a810-s2']
+    branches: ['experiment/a810-s2.1-hotpath']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: drnas-a810-s2-public
+  group: drnas-a810-s2-1-hotpath-internal
   cancel-in-progress: true
 
 jobs:
@@ -657,17 +657,16 @@ jobs:
           cp mesa/build-host/meson-logs/testlog.txt shader-corpus-testlog.txt
           git -C mesa restore src/freedreno/ir3/meson.build
           rm mesa/src/freedreno/ir3/tests/frane_sh1_compile.c
-      - name: Apply S2 display name without changing rendering policy
+      - name: Apply and validate S2.1 policy-equivalent hotpath
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('mesa/src/freedreno/vulkan/tu_device.cc')
-          text = p.read_text()
-          old = 'Turnip-Drnas A810 V38 SH1 GF1 / Mesa '
-          assert text.count(old) == 1
-          p.write_text(text.replace(old, 'Turnip-Drnas A810 S2 / Mesa '))
-          PY
+          set -eu
+          python3 -m py_compile patches/s21_a810_hotpath.py tests/s21_a810_hotpath.py
+          python3 patches/s21_a810_hotpath.py
+          python3 tests/s21_a810_hotpath.py
           git -C mesa diff --check
+          grep -Fq 'Turnip-Drnas A810 S2.1 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -Fq 'TU_FRANE_HOT2", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -Fq 'num_tracks > 0 && capacity <= ctx->best_pixels' mesa/src/freedreno/vulkan/tu_pass.cc
           git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
@@ -697,7 +696,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4 | tee android-build.log
-      - name: Package Winlator AdrenoTools Turnip-A810-S2.zip and provenance
+      - name: Package Winlator AdrenoTools Turnip-A810-S2.1.zip and provenance
         run: |
           set -eu
           mkdir -p output
@@ -707,20 +706,20 @@ jobs:
           import json, pathlib
           version=pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
-            'schemaVersion': 1, 'name': 'Turnip-Drnas A810 S2',
-            'driverVersion': 'Mesa 26.3.0-devel', 'description': 'Adreno 810 driver with allocator-aware GMEM decisions and pressure-aware shader scheduling. GMEM footprint enabled by default.',
-            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': 's2.0.0-a810-eda9aceb',
+            'schemaVersion': 1, 'name': 'Turnip-Drnas A810 S2.1',
+            'driverVersion': 'Mesa 26.3.0-devel', 'description': 'Internal S2.1 experiment: S2 rendering policy plus policy-equivalent GMEM DFS capacity carry and two-choice render-pass hot cache.',
+            'author': 'Frane12; Mesa/Freedreno contributors', 'packageVersion': 's2.1.0-hotpath-a810-eda9aceb',
             'vendor': 'Mesa', 'minApi': 34, 'libraryName': 'libvulkan_freedreno.so',
             'sourceCommit': pathlib.Path('frane-commit.txt').read_text().strip(),
             'upstreamCommit': pathlib.Path('mesa-commit.txt').read_text().strip()
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data,indent=2)+'\n')
           PY
-          (cd output && zip -9 ../Turnip-A810-S2.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Turnip-A810-S2.1.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
-          with zipfile.ZipFile('Turnip-A810-S2.zip') as z:
+          with zipfile.ZipFile('Turnip-A810-S2.1.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               assert z.read('libvulkan_freedreno.so')[:4] == b'\x7fELF'
@@ -731,20 +730,20 @@ jobs:
               assert int.from_bytes(so[18:20], 'little') == 183, 'Expected AArch64'
               meta = json.loads(z.read('meta.json'))
               assert meta['schemaVersion'] == 1
-              assert meta['name'] == 'Turnip-Drnas A810 S2'
+              assert meta['name'] == 'Turnip-Drnas A810 S2.1'
               assert meta['driverVersion'] == 'Mesa 26.3.0-devel'
-              assert b'Turnip-Drnas A810 S2 / Mesa 26.3.0-devel' in so
-          print('Driver Turnip-A810-S2.zip verified')
+              assert b'Turnip-Drnas A810 S2.1 / Mesa 26.3.0-devel' in so
+          print('Driver Turnip-A810-S2.1.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Turnip-A810-S2.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Turnip-A810-S2.zip and full source diff
+          sha256sum Turnip-A810-S2.1.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Turnip-A810-S2.1.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Turnip-A810-S2
+          name: Turnip-A810-S2.1
           path: |
-            Turnip-A810-S2.zip
+            Turnip-A810-S2.1.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -760,7 +759,9 @@ jobs:
             patches/frane_sh1_policy.h
             tests/v38_sh1_policy.c
             tests/v38_sh1_compile.c
-      - name: Assemble S2 source and build provenance
+            patches/s21_a810_hotpath.py
+            tests/s21_a810_hotpath.py
+      - name: Assemble S2.1 source and build provenance
         run: |
           cp output/meta.json releases/a810-s2/meta.json
           python3 - <<'PY'
@@ -770,7 +771,7 @@ jobs:
               'selected_base_commit': '8d84c7a753f60a33e61339000a2af3e839ae40f5',
               'release_source_commit': p('frane-commit.txt').read_text().strip(),
               'mesa_upstream_commit': p('mesa-commit.txt').read_text().strip(),
-              'change_from_tested_base': 'Vulkan driverInfo display name and importer name/version only.',
+              'change_from_tested_base': 'S2.1 hotpath only: exact-capacity carry in bounded GMEM DFS plus optional two-choice no-replacement render-pass hot cache; S2 rendering policy retained.',
               'rendering_policy_unchanged': True,
               'android_build': 'NDK r29, API34, AArch64, KGSL, release, static C++ runtime',
               'library_sha256': hashlib.sha256(p('output/libvulkan_freedreno.so').read_bytes()).hexdigest(),
@@ -784,31 +785,21 @@ jobs:
               'Use NDK r29 and adapt android-aarch64.ini paths to your environment.\n'
           )
           PY
-          zip -9 -r Turnip-A810-S2-Source.zip mesa-applied.patch android-aarch64.ini android-build.log mesa-commit.txt frane-commit.txt shader-corpus-testlog.txt provenance.json BUILD.txt patches tests releases/a810-s2 .github/workflows/turnip-upstream-main.yml
-          sha256sum Turnip-A810-S2.zip Turnip-A810-S2-Source.zip > SHA256SUMS.txt
+          zip -9 -r Turnip-A810-S2.1-Source.zip mesa-applied.patch android-aarch64.ini android-build.log mesa-commit.txt frane-commit.txt shader-corpus-testlog.txt provenance.json BUILD.txt patches tests releases/a810-s2 .github/workflows/turnip-upstream-main.yml
+          sha256sum Turnip-A810-S2.1.zip Turnip-A810-S2.1-Source.zip > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
-      - name: Publish public S2 release
+      - name: Create internal S2.1 draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: drnas-turnip-s2-a810
+          RELEASE_TAG: a810-s2.1-hotpath-internal
         run: |
           set -euo pipefail
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            echo "Release tag already exists; refusing to overwrite it."
+            echo "Draft release tag already exists; refusing to overwrite it."
             exit 1
           fi
-          gh release create "$RELEASE_TAG" Turnip-A810-S2.zip Turnip-A810-S2-Source.zip SHA256SUMS.txt \
+          gh release create "$RELEASE_TAG" Turnip-A810-S2.1.zip Turnip-A810-S2.1-Source.zip SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
-            --title "Turnip-Drnas S2 A810 — GMEM & Shader Scheduling" \
-            --notes-file releases/a810-s2/RELEASE.md \
+            --title "Turnip-Drnas S2.1 A810 — Hotpath Experiment" \
+            --notes "Internal A/B build. Same S2 rendering policy. Adds exact-capacity carry through the bounded GMEM DFS and a two-choice no-replacement render-pass hot cache. TU_FRANE_HOT2=0 disables the second cache probe; GMEM capacity carry is whole-build A/B only." \
             --draft
-          gh release view "$RELEASE_TAG" --json assets,isDraft > release-verification.json
-          python3 - <<'PY'
-          import json
-          release = json.load(open('release-verification.json'))
-          assert release['isDraft']
-          assert {a['name'] for a in release['assets']} == {
-              'Turnip-A810-S2.zip', 'Turnip-A810-S2-Source.zip', 'SHA256SUMS.txt'
-          }
-          PY
-          gh release edit "$RELEASE_TAG" --draft=false --latest
