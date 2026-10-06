@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: MIT
- * S2.2 Q-LRZ clean-room renderpass policy.
+ * S2.3 Q2 conservative clean-room renderpass policy.
  *
- * This helper contains no Qualcomm code.  It is an independent, bounded
- * policy derived from public/observable workload categories: draw density,
- * indirect-command density, attachment traffic, and LRZ/stencil behaviour.
+ * No proprietary Qualcomm code. This is an independent bounded prior from
+ * observable workload classes. It must never bypass Turnip LRZ correctness.
  */
 #ifndef FRANE_S22_Q_POLICY_H
 #define FRANE_S22_Q_POLICY_H
@@ -21,18 +20,15 @@ struct frane_s22_q_rp_input {
    uint32_t lrz_candidate_draw_count = 0;
    uint32_t lrz_late_draw_count = 0;
    uint32_t stencil_last_draw = 0;
-
-   /* +1 encoding: zero means "not disabled", one means disabled before draw 0. */
    uint32_t lrz_disabled_at_draw_plus1 = 0;
    uint32_t lrz_write_disabled_at_draw_plus1 = 0;
-
    uint32_t sysmem_bandwidth_per_pixel = 0;
    uint32_t gmem_bandwidth_per_pixel = 0;
 };
 
 struct frane_s22_q_rp_eval {
    bool valid = false;
-   int8_t score_delta = 0; /* deliberately bounded: -12..+10 */
+   int8_t score_delta = 0; /* S2.3 Q2 hard bound: -4..+4 */
 };
 
 static inline bool
@@ -56,73 +52,71 @@ frane_s22_q_eval(const frane_s22_q_rp_input &in)
    const uint64_t sys = in.sysmem_bandwidth_per_pixel;
    const uint64_t gm = in.gmem_bandwidth_per_pixel;
    const bool have_traffic = sys && gm;
-   const bool gmem_clear_win =
+   const bool bw_good =
       have_traffic && frane_s22_q_ratio_le(gm, sys, 7, 8);
-   const bool gmem_clear_loss =
+   const bool bw_very_good =
+      have_traffic && frane_s22_q_ratio_le(gm, sys, 2, 3);
+   const bool bw_bad =
       have_traffic && frane_s22_q_ratio_le(sys, gm, 8, 9);
 
-   /*
-    * A small RP rarely amortizes tile/bin replay unless attachment traffic
-    * clearly favours GMEM.  Conversely, dense RPs get a small extra prior
-    * only when Mesa's own load/store estimate agrees.
-    */
-   if (in.draw_count <= 6 && !gmem_clear_win)
-      delta -= 4;
-   else if (in.draw_count >= 32 && gmem_clear_win)
-      delta += 3;
+   const bool draw_dense = in.draw_count >= 32;
+   const bool draw_very_dense = in.draw_count >= 96;
 
-   if (in.draw_count >= 96 && gmem_clear_win)
-      delta += 2;
-
-   /*
-    * Indirect-heavy work often represents many GPU-generated/CPU-cheap draws.
-    * Treat it as a secondary signal, never as a force-mode decision.
-    */
-   if (in.indirect_draw_count >= 2 &&
-       uint64_t(in.indirect_draw_count) * 4 >= in.draw_count) {
-      if (gmem_clear_win)
-         delta += 2;
-      else if (gmem_clear_loss)
-         delta -= 2;
-   }
-
-   /*
-    * LRZ quality signal.  We never enable LRZ or weaken correctness rules;
-    * this only says whether an RP is likely to retain useful early-Z work.
-    */
+   bool lrz_good = false;
+   bool lrz_bad = false;
    if (in.lrz_candidate_draw_count >= 8) {
-      if (uint64_t(in.lrz_late_draw_count) * 4 <=
-          in.lrz_candidate_draw_count)
-         delta += 2;
-      else if (uint64_t(in.lrz_late_draw_count) * 2 >=
-               in.lrz_candidate_draw_count)
-         delta -= 3;
+      lrz_good =
+         uint64_t(in.lrz_late_draw_count) * 4 <=
+         in.lrz_candidate_draw_count;
+      lrz_bad =
+         uint64_t(in.lrz_late_draw_count) * 2 >=
+         in.lrz_candidate_draw_count;
    }
 
-   /* An early persistent LRZ disable is evidence against an aggressive prior. */
+   bool early_lrz_disable = false;
    if (in.lrz_disabled_at_draw_plus1) {
       const uint32_t at = in.lrz_disabled_at_draw_plus1 - 1;
-      if (uint64_t(at) * 4 <= in.draw_count)
-         delta -= 3;
+      early_lrz_disable = uint64_t(at) * 4 <= in.draw_count;
    }
+   bool early_lrz_write_disable = false;
    if (in.lrz_write_disabled_at_draw_plus1) {
       const uint32_t at = in.lrz_write_disabled_at_draw_plus1 - 1;
-      if (uint64_t(at) * 4 <= in.draw_count)
-         delta -= 2;
+      early_lrz_write_disable = uint64_t(at) * 4 <= in.draw_count;
    }
 
    /*
-    * Late stencil use can reduce the value of optimistic early-Z/bin reuse.
-    * Keep the penalty tiny because Turnip's actual LRZ state machine remains
-    * the correctness authority.
+    * Positive Q2 bias is intentionally strict: bandwidth, draw density and
+    * LRZ quality must all agree. This prevents one attractive signal from
+    * steering an otherwise ambiguous renderpass.
     */
+   if (bw_good && draw_dense && lrz_good &&
+       !early_lrz_disable && !early_lrz_write_disable) {
+      delta += 2;
+      if (bw_very_good && draw_very_dense)
+         delta += 1;
+      if (in.indirect_draw_count >= 2 &&
+          uint64_t(in.indirect_draw_count) * 4 >= in.draw_count)
+         delta += 1;
+   }
+
+   /* Negative evidence stays useful, but is also tightly bounded. */
+   if (in.draw_count <= 6 && !bw_good)
+      delta -= 2;
+   if (bw_bad)
+      delta -= 1;
+   if (lrz_bad)
+      delta -= 2;
+   if (early_lrz_disable)
+      delta -= 2;
+   if (early_lrz_write_disable)
+      delta -= 1;
+
    if (in.stencil_draw_count && in.stencil_last_draw &&
        uint64_t(in.stencil_last_draw) * 4 >=
           uint64_t(in.draw_count) * 3)
       delta -= 1;
 
-   out.score_delta =
-      int8_t(std::clamp(delta, -12, 10));
+   out.score_delta = int8_t(std::clamp(delta, -4, 4));
    return out;
 }
 
