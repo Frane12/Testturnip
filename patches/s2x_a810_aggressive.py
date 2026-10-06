@@ -107,14 +107,40 @@ edit(
 
 edit(
     "vulkan/tu_autotune.cc",
+    """         const frane_26318_smart_gmem_input *gmem_runtime_input = nullptr,
+         bool smart_gmem = false,
+         bool gmem_turbo = false)
+      {""",
+    """         const frane_26318_smart_gmem_input *gmem_runtime_input = nullptr,
+         bool smart_gmem = false,
+         bool gmem_turbo = false,
+         bool s2x_sticky = false)
+      {""",
+    "carry S2-X sticky gate into profiled decision scope",
+)
+
+edit(
+    "vulkan/tu_autotune.cc",
     """frane_26320_decide_gmem_turbo(
                      true, *gmem_runtime_input, runtime_state,
                      l_sysmem_probability, decision_word)""",
     """frane_26320_decide_gmem_turbo(
-                     true, frane_s2x_sticky_enabled(device),
+                     true, s2x_sticky,
                      *gmem_runtime_input, runtime_state,
                      l_sysmem_probability, decision_word)""",
-    "wire sticky policy into GMEM-TURBO decision",
+    "wire local sticky policy into GMEM-TURBO decision",
+)
+
+edit(
+    "vulkan/tu_autotune.cc",
+    """         runtime_input.layout.physical_gmem ? &runtime_input : nullptr,
+         frane_a810_smart_gmem_enabled(device),
+         frane_a810_gmem_turbo_enabled(device));""",
+    """         runtime_input.layout.physical_gmem ? &runtime_input : nullptr,
+         frane_a810_smart_gmem_enabled(device),
+         frane_a810_gmem_turbo_enabled(device),
+         frane_s2x_sticky_enabled(device));""",
+    "pass sticky gate from tu_autotune into profiled decision",
 )
 
 # Broaden the armed window and make very strong measured winners much stickier.
@@ -321,6 +347,8 @@ for needle in (
     'TU_FRANE_S2X_GMEM", true',
     'TU_FRANE_S2X_STICKY", true',
     "frane_s2x_sticky_enabled",
+    "bool s2x_sticky = false",
+    "frane_s2x_sticky_enabled(device));",
 ):
     assert needle in autotune, needle
 
