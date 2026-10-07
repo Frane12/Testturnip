@@ -11,7 +11,7 @@ cmd = (v / "tu_cmd_buffer.cc").read_text()
 dev = (v / "tu_device.cc").read_text()
 sched = (i / "ir3_sched.c").read_text()
 compiler = (i / "ir3_compiler.c").read_text()
-cache = (i / "ir3_disk_cache.c").read_text()
+cache = (i / "ir3_disk_cache.cpp").read_text()
 
 for token in [
     "allocator_capacity_pixels",
