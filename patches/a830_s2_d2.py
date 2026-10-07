@@ -319,7 +319,7 @@ print("S2-D2 PASS pressure-gated scheduler tie-break", flush=True)
 # Runtime compile options change generated code. Keep shader disk cache
 # separated when these knobs differ.
 edit(
-    I / "ir3_disk_cache.c",
+    I / "ir3_disk_cache.cpp",
     """   _mesa_blake3_update(&ctx, &compiler->options.uche_trap_base,
                      sizeof(compiler->options.uche_trap_base));
    _mesa_blake3_final(&ctx, blake3);""",
@@ -347,7 +347,7 @@ smart = (V / "frane_mesa_26318_a810_smart_gmem.h").read_text()
 auto = (V / "tu_autotune.cc").read_text()
 sched = (I / "ir3_sched.c").read_text()
 compiler = (I / "ir3_compiler.c").read_text()
-cache = (I / "ir3_disk_cache.c").read_text()
+cache = (I / "ir3_disk_cache.cpp").read_text()
 device = (V / "tu_device.cc").read_text()
 
 for needle in (
@@ -389,7 +389,7 @@ expected = {
     "ir3/frane_a830_s2d2_sched.h",
     "ir3/ir3_compiler.c",
     "ir3/ir3_compiler.h",
-    "ir3/ir3_disk_cache.c",
+    "ir3/ir3_disk_cache.cpp",
     "ir3/ir3_sched.c",
     "vulkan/frane_a830_s2d2_gmem.h",
     "vulkan/frane_mesa_26318_a810_smart_gmem.h",
