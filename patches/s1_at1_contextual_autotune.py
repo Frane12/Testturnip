@@ -155,9 +155,11 @@ edit(
                const auto at1_snapshot = frane_s1at1_unpack_snapshot(
                   history.frane_s1at1_word.load(std::memory_order_relaxed));
 
+               const auto at1_layout =
+                  frane_2634_eval_layout(gmem_runtime_input->layout);
                frane_s1at1_context_input at1_in {};
                at1_in.pass_pixels = gmem_runtime_input->layout.pass_pixels;
-               at1_in.estimated_tiles = layout.estimated_tiles;
+               at1_in.estimated_tiles = at1_layout.estimated_tiles;
                at1_in.drawcalls = gmem_runtime_input->layout.drawcalls;
                at1_in.sysmem_bandwidth_per_pixel =
                   gmem_runtime_input->sysmem_bandwidth_per_pixel;
