@@ -57,9 +57,9 @@ jobs:
           set -euo pipefail
           git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
           git -C mesa fetch --depth 1 origin f1a6b0d71ade2b1304cc9b466ae6d27402b7e7c8
+          git -C mesa fetch --depth 1 origin eeca16aa41e89a114e53e76439df623c7efb9519
           git -C mesa checkout --detach f1a6b0d71ade2b1304cc9b466ae6d27402b7e7c8
-          git -C mesa apply --check ../patches/a830-smart2-complete.patch
-          git -C mesa apply ../patches/a830-smart2-complete.patch
+          git -C mesa apply --3way ../patches/a830-smart2-complete.patch
           python3 patches/a830_s2_d2.py
           git -C mesa diff --check
           git -C mesa diff > A830-S2-D2-complete.patch
