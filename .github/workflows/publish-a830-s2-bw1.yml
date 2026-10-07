@@ -1,0 +1,21 @@
+name: Publish A830 S2-BW1
+
+on:
+  push:
+    branches: ['drnas-a830-s2-bw1-internal']
+    paths:
+      - '.github/workflows/publish-a830-s2-bw1.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Publish existing S2-BW1 draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release edit a830-s2-bw1-internal             --repo "$GITHUB_REPOSITORY"             --draft=false             --prerelease             --title "Turnip-Drnas A830 S2-BW1 — Experimental"
