@@ -7,6 +7,7 @@ on:
       - '.github/workflows/turnip-a830-s2-d2-internal.yml'
       - 'patches/a830-smart2-complete.patch'
       - 'patches/a830_s2_d2.py'
+      - 'patches/a830_upstream_rebase.py'
       - 'patches/frane_a830_s2d2_gmem.h'
       - 'patches/frane_a830_s2d2_sched.h'
       - 'tests/smart_v2.cpp'
@@ -59,7 +60,25 @@ jobs:
           git -C mesa fetch --depth 1 origin f1a6b0d71ade2b1304cc9b466ae6d27402b7e7c8
           git -C mesa fetch --depth 1 origin eeca16aa41e89a114e53e76439df623c7efb9519
           git -C mesa checkout --detach f1a6b0d71ade2b1304cc9b466ae6d27402b7e7c8
-          git -C mesa apply --3way ../patches/a830-smart2-complete.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('patches/a830-smart2-complete.patch').read_text()
+          skip = {
+              'src/freedreno/vulkan/tu_lrz.cc',
+              'src/freedreno/vulkan/tu_suballoc.cc',
+          }
+          out = []
+          parts = src.split('diff --git ')
+          out.append(parts[0])
+          for part in parts[1:]:
+              header = part.splitlines()[0]
+              path = header.split(' b/', 1)[1] if ' b/' in header else ''
+              if path not in skip:
+                  out.append('diff --git ' + part)
+          Path('/tmp/a830-smart2-upstream.patch').write_text(''.join(out))
+          PY
+          git -C mesa apply --3way /tmp/a830-smart2-upstream.patch
+          python3 patches/a830_upstream_rebase.py
           python3 patches/a830_s2_d2.py
           git -C mesa diff --check
           git -C mesa diff > A830-S2-D2-complete.patch
