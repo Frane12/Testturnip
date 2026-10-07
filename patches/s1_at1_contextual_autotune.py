@@ -143,79 +143,94 @@ edit(
 
 edit(
     "src/freedreno/vulkan/tu_autotune.cc",
-    """               runtime_decision.override_mode = smart_decision.override_mode;
-               runtime_decision.select_sysmem = smart_decision.select_sysmem;
-               runtime_decision.force_measure = smart_decision.force_measure;""",
-    """               runtime_decision.override_mode = smart_decision.override_mode;
-               runtime_decision.select_sysmem = smart_decision.select_sysmem;
-               runtime_decision.force_measure = smart_decision.force_measure;
+    """            if (runtime_decision.override_mode) {
+               select_sysmem = runtime_decision.select_sysmem;
+               runtime_force_measure = runtime_decision.force_measure;
+            }""",
+    """            /* AT1 runs after every S1 refinement (including V48 sticky)
+             * and only overwrites the final S1 choice when contextual evidence
+             * is active. With TU_FRANE_AT1=0 this block is a strict no-op.
+             */
+            if (s1at1_context) {
+               const auto at1_snapshot = frane_s1at1_unpack_snapshot(
+                  history.frane_s1at1_word.load(std::memory_order_relaxed));
 
-               /* AT1 is an overlay, not a replacement for S1. Compute S1 first,
-                * then let contextual evidence overwrite only when it is active.
-                * TU_FRANE_AT1=0 therefore leaves byte-identical S1 decisions.
-                */
-               if (s1at1_context) {
-                  const auto at1_snapshot = frane_s1at1_unpack_snapshot(
-                     history.frane_s1at1_word.load(std::memory_order_relaxed));
+               frane_s1at1_context_input at1_in {};
+               at1_in.pass_pixels = gmem_runtime_input->layout.pass_pixels;
+               at1_in.estimated_tiles = layout.estimated_tiles;
+               at1_in.drawcalls = gmem_runtime_input->layout.drawcalls;
+               at1_in.sysmem_bandwidth_per_pixel =
+                  gmem_runtime_input->sysmem_bandwidth_per_pixel;
+               at1_in.gmem_bandwidth_per_pixel =
+                  gmem_runtime_input->gmem_bandwidth_per_pixel;
+               at1_in.occurrences = gmem_runtime_input->tail_occurrences;
+               at1_in.sysmem_probability = l_sysmem_probability;
+               at1_in.zs_load_store = gmem_runtime_input->zs_load_store;
 
-                  frane_s1at1_context_input at1_in {};
-                  at1_in.pass_pixels = gmem_runtime_input->layout.pass_pixels;
-                  at1_in.estimated_tiles = layout.estimated_tiles;
-                  at1_in.drawcalls = gmem_runtime_input->layout.drawcalls;
-                  at1_in.sysmem_bandwidth_per_pixel =
-                     gmem_runtime_input->sysmem_bandwidth_per_pixel;
-                  at1_in.gmem_bandwidth_per_pixel =
-                     gmem_runtime_input->gmem_bandwidth_per_pixel;
-                  at1_in.occurrences = gmem_runtime_input->tail_occurrences;
-                  at1_in.sysmem_probability = l_sysmem_probability;
-                  at1_in.zs_load_store = gmem_runtime_input->zs_load_store;
+               const auto at1 = frane_s1at1_decide(
+                  true, at1_in, at1_snapshot, decision_word);
+               if (at1.override_mode) {
+                  runtime_decision.override_mode = true;
+                  runtime_decision.select_sysmem = at1.select_sysmem;
+                  runtime_decision.force_measure = at1.force_measure;
+               }
+            }
 
-                  const auto at1 = frane_s1at1_decide(
-                     true, at1_in, at1_snapshot, decision_word);
-
-                  if (at1.override_mode) {
-                     runtime_decision.override_mode = true;
-                     runtime_decision.select_sysmem = at1.select_sysmem;
-                     runtime_decision.force_measure = at1.force_measure;
-                  }
-               }""",
-    "overlay contextual policy on exact S1 decision",
+            if (runtime_decision.override_mode) {
+               select_sysmem = runtime_decision.select_sysmem;
+               runtime_force_measure = runtime_decision.force_measure;
+            }""",
+    "overlay contextual policy after all exact S1 refinements",
 )
 
 edit(
     "src/freedreno/vulkan/tu_autotune.cc",
-    """      const render_mode mode = history.profiled.get_optimal_mode(
+    """      render_mode mode = history.profiled.get_optimal_mode(
          history, &measure, frane_a810_v24_fastpath(),
          runtime_input.layout.physical_gmem ? &runtime_input : nullptr,
          frane_a810_smart_gmem_enabled(device),
          frane_a810_gmem_turbo_enabled(device),
          frane_a810_live_profiled(device));""",
-    """      if (frane_a810_s1at1_enabled(device) &&
-          runtime_input.layout.physical_gmem && *rp_ctx) {
-         const auto layout = frane_2634_eval_layout(runtime_input.layout);
-         frane_s1at1_context_input at1_in {};
-         at1_in.pass_pixels = runtime_input.layout.pass_pixels;
-         at1_in.estimated_tiles = layout.estimated_tiles;
-         at1_in.drawcalls = runtime_input.layout.drawcalls;
-         at1_in.sysmem_bandwidth_per_pixel =
-            runtime_input.sysmem_bandwidth_per_pixel;
-         at1_in.gmem_bandwidth_per_pixel =
-            runtime_input.gmem_bandwidth_per_pixel;
-         at1_in.occurrences = runtime_input.tail_occurrences;
-         at1_in.sysmem_probability = 50;
-         at1_in.zs_load_store = runtime_input.zs_load_store;
-         (*rp_ctx)->frane_s1at1_signature =
-            frane_s1at1_catalog_for(at1_in).signature;
-      }
-
-      const render_mode mode = history.profiled.get_optimal_mode(
+    """      render_mode mode = history.profiled.get_optimal_mode(
          history, &measure, frane_a810_v24_fastpath(),
          runtime_input.layout.physical_gmem ? &runtime_input : nullptr,
          frane_a810_smart_gmem_enabled(device),
          frane_a810_gmem_turbo_enabled(device),
          frane_a810_live_profiled(device),
          frane_a810_s1at1_enabled(device));""",
-    "attach exact catalog signature and enable AT1",
+    "enable AT1 on S1 fast PROFILED path",
+)
+
+edit(
+    "src/freedreno/vulkan/tu_autotune.cc",
+    """      if (measure)
+         *rp_ctx = cb_ctx.attach_rp_entry(device, history, config, rp_state->drawcall_count);
+      return mode;""",
+    """      if (measure) {
+         *rp_ctx =
+            cb_ctx.attach_rp_entry(device, history, config, rp_state->drawcall_count);
+
+         if (frane_a810_s1at1_enabled(device) &&
+             runtime_input.layout.physical_gmem && *rp_ctx) {
+            const auto at1_layout =
+               frane_2634_eval_layout(runtime_input.layout);
+            frane_s1at1_context_input at1_in {};
+            at1_in.pass_pixels = runtime_input.layout.pass_pixels;
+            at1_in.estimated_tiles = at1_layout.estimated_tiles;
+            at1_in.drawcalls = runtime_input.layout.drawcalls;
+            at1_in.sysmem_bandwidth_per_pixel =
+               runtime_input.sysmem_bandwidth_per_pixel;
+            at1_in.gmem_bandwidth_per_pixel =
+               runtime_input.gmem_bandwidth_per_pixel;
+            at1_in.occurrences = runtime_input.tail_occurrences;
+            at1_in.sysmem_probability = 50;
+            at1_in.zs_load_store = runtime_input.zs_load_store;
+            (*rp_ctx)->frane_s1at1_signature =
+               frane_s1at1_catalog_for(at1_in).signature;
+         }
+      }
+      return mode;""",
+    "attach exact AT1 catalog signature to measured entry",
 )
 
 edit(
