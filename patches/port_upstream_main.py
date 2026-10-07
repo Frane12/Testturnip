@@ -149,6 +149,7 @@ tu_autotune::rp_history_handle::~rp_history_handle()
    rp_history &history = *history_owner;""", "V16 retain history during use")
     replace("src/freedreno/vulkan/tu_suballoc.cc",
             """      tu_bo_finish(suballoc->dev, suballoc->bo);
+      suballoc->bo = NULL;
       return VK_ERROR_OUT_OF_HOST_MEMORY;""",
             """      tu_bo_finish(suballoc->dev, suballoc->bo);
       suballoc->bo = NULL;
