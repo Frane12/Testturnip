@@ -89,7 +89,7 @@ edit('vulkan/tu_device.cc',
 
 # IR3's own cache has a separate namespace. Hash resolved compiler fields,
 # including the scheduler window which need not change the input NIR.
-edit('ir3/ir3_disk_cache.c',
+edit('ir3/ir3_disk_cache.cpp',
      '''   _mesa_blake3_update(&ctx, &compiler->options.uche_trap_base,
                      sizeof(compiler->options.uche_trap_base));''',
      '''   _mesa_blake3_update(&ctx, &compiler->options.uche_trap_base,
