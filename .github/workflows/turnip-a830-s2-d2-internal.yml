@@ -1,8 +1,8 @@
-name: A830 S2-D2 Internal
+name: A830 S2-D2 Upstream 20261007
 
 on:
   push:
-    branches: ['drnas-a830-s2-d2-internal']
+    branches: ['drnas-a830-s2-d2-upstream-20261007']
     paths:
       - '.github/workflows/turnip-a830-s2-d2-internal.yml'
       - 'patches/a830-smart2-complete.patch'
@@ -22,7 +22,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: drnas-a830-s2-d2-internal
+  group: drnas-a830-s2-d2-upstream-20261007
   cancel-in-progress: true
 
 jobs:
@@ -52,12 +52,12 @@ jobs:
           g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Ipatches tests/a830_s2_d2_policy.cpp -o /tmp/s2d2-policy-asan
           ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/s2d2-policy-asan | tee s2d2-policy-asan.log
 
-      - name: Fetch exact S1 Mesa base and apply S1 plus S2-D2
+      - name: Fetch Mesa upstream 2026-10-07 and apply S1 plus S2-D2
         run: |
           set -euo pipefail
           git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
-          git -C mesa fetch --depth 1 origin eeca16aa41e89a114e53e76439df623c7efb9519
-          git -C mesa checkout --detach eeca16aa41e89a114e53e76439df623c7efb9519
+          git -C mesa fetch --depth 1 origin f1a6b0d71ade2b1304cc9b466ae6d27402b7e7c8
+          git -C mesa checkout --detach f1a6b0d71ade2b1304cc9b466ae6d27402b7e7c8
           git -C mesa apply --check ../patches/a830-smart2-complete.patch
           git -C mesa apply ../patches/a830-smart2-complete.patch
           python3 patches/a830_s2_d2.py
@@ -126,19 +126,19 @@ jobs:
           meta = {
               'schemaVersion': 1,
               'name': 'Turnip-Drnas A830 S2-D2',
-              'description': 'Internal A830 experiment: allocator-aware GMEM footprint prior plus pressure-gated IR3 scheduler tie-break; complete S1 GMEM safety scope retained.',
+              'description': 'A830 S2-D2 rebased onto Mesa upstream f1a6b0d (2026-10-07): allocator-aware GMEM footprint prior plus pressure-gated IR3 scheduler tie-break; complete S1 GMEM safety scope retained.',
               'author': 'Frane12; Mesa/Freedreno contributors',
-              'packageVersion': 's2-d2-internal',
+              'packageVersion': 's2-d2-upstream-20261007',
               'vendor': 'Mesa',
               'driverVersion': 'Mesa ' + version,
               'minApi': 34,
               'libraryName': 'libvulkan_freedreno.so',
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(meta, indent=2) + '\n')
-          with zipfile.ZipFile('Turnip-A830-S2-D2.zip', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+          with zipfile.ZipFile('Turnip-A830-S2-D2-Upstream.zip', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
               z.write('output/libvulkan_freedreno.so', 'libvulkan_freedreno.so')
               z.write('output/meta.json', 'meta.json')
-          with zipfile.ZipFile('Turnip-A830-S2-D2.zip') as z:
+          with zipfile.ZipFile('Turnip-A830-S2-D2-Upstream.zip') as z:
               assert z.testzip() is None
               assert set(z.namelist()) == {'libvulkan_freedreno.so', 'meta.json'}
               so = z.read('libvulkan_freedreno.so')
@@ -148,19 +148,19 @@ jobs:
               assert b'Turnip-Drnas A830 S2-D2 / Mesa' in so
               assert b'TU_FRANE_A830_FOOTPRINT' in so
               assert b'TU_FRANE_A830_SHADER_PRESSURE' in so
-          print('Turnip-A830-S2-D2.zip verified')
+          print('Turnip-A830-S2-D2-Upstream.zip verified')
           PY
-          zip -9 Turnip-A830-S2-D2-Source.zip             A830-S2-D2-complete.patch             patches/a830-smart2-complete.patch             patches/a830_s2_d2.py             patches/frane_a830_s2d2_gmem.h             patches/frane_a830_s2d2_sched.h             tests/a830_s2_d2_policy.cpp             tests/a830_s2_d2_source.py             tests/smart_v2.cpp             tests/a830_gmem_safety.cpp             tests/source_guards.py             tests/history_key.py             A830_S2_D2_INTERNAL.md             android-aarch64.ini android-build.log mesa-commit.txt frane-commit.txt             s2d2-policy.log s2d2-policy-asan.log smart2-ubsan.log smart2-asan.log             safety-test.log s1-source-test.log history-key-test.log s2d2-source-test.log
-          sha256sum Turnip-A830-S2-D2.zip Turnip-A830-S2-D2-Source.zip A830-S2-D2-complete.patch > SHA256SUMS.txt
+          zip -9 Turnip-A830-S2-D2-Upstream-Source.zip             A830-S2-D2-complete.patch             patches/a830-smart2-complete.patch             patches/a830_s2_d2.py             patches/frane_a830_s2d2_gmem.h             patches/frane_a830_s2d2_sched.h             tests/a830_s2_d2_policy.cpp             tests/a830_s2_d2_source.py             tests/smart_v2.cpp             tests/a830_gmem_safety.cpp             tests/source_guards.py             tests/history_key.py             A830_S2_D2_INTERNAL.md             android-aarch64.ini android-build.log mesa-commit.txt frane-commit.txt             s2d2-policy.log s2d2-policy-asan.log smart2-ubsan.log smart2-asan.log             safety-test.log s1-source-test.log history-key-test.log s2d2-source-test.log
+          sha256sum Turnip-A830-S2-D2-Upstream.zip Turnip-A830-S2-D2-Upstream-Source.zip A830-S2-D2-complete.patch > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
 
       - name: Upload Actions artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Turnip-A830-S2-D2
+          name: Turnip-A830-S2-D2-Upstream
           path: |
-            Turnip-A830-S2-D2.zip
-            Turnip-A830-S2-D2-Source.zip
+            Turnip-A830-S2-D2-Upstream.zip
+            Turnip-A830-S2-D2-Upstream-Source.zip
             SHA256SUMS.txt
             A830_S2_D2_INTERNAL.md
 
@@ -169,12 +169,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG=a830-s2-d2-internal
-          TITLE="Turnip-Drnas A830 S2-D2 — Internal"
+          TAG=a830-s2-d2-upstream-20261007
+          TITLE="Turnip-Drnas A830 S2-D2 — Upstream 2026-10-07"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/s2d2-release.json 2>/dev/null; then
             python3 -c 'import json; assert json.load(open("/tmp/s2d2-release.json"))["isDraft"], "Refusing to modify a published release"'
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TITLE" --notes-file A830_S2_D2_INTERNAL.md
-            gh release upload "$TAG" Turnip-A830-S2-D2.zip Turnip-A830-S2-D2-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" Turnip-A830-S2-D2-Upstream.zip Turnip-A830-S2-D2-Upstream-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$TAG" Turnip-A830-S2-D2.zip Turnip-A830-S2-D2-Source.zip SHA256SUMS.txt               --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE"               --notes-file A830_S2_D2_INTERNAL.md --draft
+            gh release create "$TAG" Turnip-A830-S2-D2-Upstream.zip Turnip-A830-S2-D2-Upstream-Source.zip SHA256SUMS.txt               --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE"               --notes-file A830_S2_D2_INTERNAL.md --draft
           fi
