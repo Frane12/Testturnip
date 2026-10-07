@@ -143,23 +143,17 @@ edit(
 
 edit(
     "src/freedreno/vulkan/tu_autotune.cc",
-    """            if (smart_gmem) {
-               const auto smart_decision =
-                  gmem_turbo ?
-                  frane_26320_decide_gmem_turbo(
-                     true, *gmem_runtime_input, runtime_state,
-                     l_sysmem_probability, decision_word) :
-                  frane_26318_decide_smart_gmem(
-                     true, *gmem_runtime_input, runtime_state,
-                     l_sysmem_probability, decision_word);
-               runtime_decision.override_mode = smart_decision.override_mode;
+    """               runtime_decision.override_mode = smart_decision.override_mode;
+               runtime_decision.select_sysmem = smart_decision.select_sysmem;
+               runtime_decision.force_measure = smart_decision.force_measure;""",
+    """               runtime_decision.override_mode = smart_decision.override_mode;
                runtime_decision.select_sysmem = smart_decision.select_sysmem;
                runtime_decision.force_measure = smart_decision.force_measure;
-            } else {""",
-    """            if (smart_gmem) {
-               frane_26318_smart_gmem_decision smart_decision {};
 
-               bool at1_owned = false;
+               /* AT1 is an overlay, not a replacement for S1. Compute S1 first,
+                * then let contextual evidence overwrite only when it is active.
+                * TU_FRANE_AT1=0 therefore leaves byte-identical S1 decisions.
+                */
                if (s1at1_context) {
                   const auto at1_snapshot = frane_s1at1_unpack_snapshot(
                      history.frane_s1at1_word.load(std::memory_order_relaxed));
@@ -180,32 +174,12 @@ edit(
                      true, at1_in, at1_snapshot, decision_word);
 
                   if (at1.override_mode) {
-                     smart_decision.override_mode = true;
-                     smart_decision.select_sysmem = at1.select_sysmem;
-                     smart_decision.force_measure = at1.force_measure;
-                     smart_decision.probe_log2 = at1.probe_log2;
-                     smart_decision.effective_sysmem_probability =
-                        at1.effective_sysmem_probability;
-                     at1_owned = true;
+                     runtime_decision.override_mode = true;
+                     runtime_decision.select_sysmem = at1.select_sysmem;
+                     runtime_decision.force_measure = at1.force_measure;
                   }
-               }
-
-               if (!at1_owned) {
-                  smart_decision =
-                     gmem_turbo ?
-                     frane_26320_decide_gmem_turbo(
-                        true, *gmem_runtime_input, runtime_state,
-                        l_sysmem_probability, decision_word) :
-                     frane_26318_decide_smart_gmem(
-                        true, *gmem_runtime_input, runtime_state,
-                        l_sysmem_probability, decision_word);
-               }
-
-               runtime_decision.override_mode = smart_decision.override_mode;
-               runtime_decision.select_sysmem = smart_decision.select_sysmem;
-               runtime_decision.force_measure = smart_decision.force_measure;
-            } else {""",
-    "place contextual policy ahead of exact S1 fallback",
+               }""",
+    "overlay contextual policy on exact S1 decision",
 )
 
 edit(
