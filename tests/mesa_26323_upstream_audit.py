@@ -21,7 +21,7 @@ helper = device[start:device.index('static int\ntu_device_get_cache_uuid', start
 compiler = (r / 'ir3/ir3_compiler.c').read_text()
 start = compiler.index('      int gap = debug_get_num_option("TU_A810_26310_UBO_GAP"')
 compiler_body = compiler[start:compiler.index('\n   }', start)]
-disk = (r / 'ir3/ir3_disk_cache.c').read_text()
+disk = (r / 'ir3/ir3_disk_cache.cpp').read_text()
 start = disk.index('      const uint32_t options[] = {')
 disk_array = disk[start:disk.index('      static const char schema', start)]
 assert set(re.findall(r'"(TU_A810_[A-Z0-9_]+)"', compiler_body)) <= set(
