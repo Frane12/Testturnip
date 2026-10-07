@@ -1,0 +1,22 @@
+name: Privatize V53 release
+
+on:
+  push:
+    branches: ['frane-mesa-26.3.53-a810-context-gmem']
+    paths:
+      - '.github/workflows/privatize-v53.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  privatize:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Convert V53 release to unpublished draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          gh release edit a810-v53-context-gmem --repo "${{ github.repository }}" --draft
