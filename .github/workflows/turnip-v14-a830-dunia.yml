@@ -1,0 +1,110 @@
+name: Turnip V14-A A830 Dunia indirect draw diagnostic
+
+on:
+  push:
+    paths:
+      - '.github/workflows/turnip-v14-a830-dunia.yml'
+      - 'patches/v14_a830_dunia.py'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out Frane patches
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+
+      - name: Set up Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+
+      - name: Fetch and pin working DiskDVD A8XX base
+        run: |
+          set -eu
+          SOURCE_SHA=6ccfee74478e63f2993e63697d8b730dd547b03e
+          git clone --depth 1 --single-branch --branch A8XX https://github.com/DiskDVD/A8XX-Y.git mesa
+          if [ "$(git -C mesa rev-parse HEAD)" != "$SOURCE_SHA" ]; then
+            git -C mesa fetch --depth 1 origin "$SOURCE_SHA"
+            git -C mesa checkout --detach "$SOURCE_SHA"
+          fi
+          test "$(git -C mesa rev-parse HEAD)" = "$SOURCE_SHA"
+          git -C mesa rev-parse HEAD | tee mesa-commit.txt
+
+      - name: Apply V14-A source patch and label driver
+        run: |
+          set -eu
+          python3 patches/v14_a830_dunia.py
+          printf '#define TUGEN8_DRV_VERSION "Frane-V14-A-Dunia-WFM"\n' > mesa/src/freedreno/vulkan/tu_version.h
+          grep -n 'V14-A' mesa/src/freedreno/vulkan/tu_cmd_buffer.cc
+
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+
+      - name: Configure Android Turnip with beta extensions
+        run: |
+          cd mesa
+          meson setup build-android --cross-file ../android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+
+      - name: Compile
+        run: meson compile -C mesa/build-android -j 4
+
+      - name: Package separate AdrenoTools ZIP for comparison
+        run: |
+          set -eu
+          mkdir -p output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          SHA=$(git -C mesa rev-parse --short HEAD)
+          export SHA
+          python3 - <<'PY'
+          import json, os
+          metadata = {
+              'schemaVersion': 1,
+              'name': f'Frane Turnip V14-A Dunia WFM A830 {os.environ["SHA"]}',
+              'description': 'Experimental V13 IMAGE-SAFE plus A8XX indirect draw WFM. FC3/FC4 artifact diagnosis; not a verified fix.',
+              'author': 'Frane12',
+              'packageVersion': '14',
+              'vendor': 'Mesa',
+              'minApi': 34,
+              'libraryName': 'libvulkan_freedreno.so',
+          }
+          with open('output/meta.json', 'w') as out:
+              json.dump(metadata, out, indent=2)
+          PY
+          cd output
+          zip -9 "../Frane-Turnip-V14-A-Dunia-WFM.zip" libvulkan_freedreno.so meta.json
+
+      - name: Upload V14-A experimental package and source revision
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frane-Turnip-V14-A-Dunia-WFM
+          path: |
+            Frane-Turnip-V14-A-Dunia-WFM.zip
+            mesa-commit.txt
