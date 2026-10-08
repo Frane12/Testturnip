@@ -44,6 +44,28 @@ int main()
       assert(c.prior_sysmem_bias > 0);
    }
 
+   /* Regression: a fresh history, or an old zero sentinel, must not look
+    * like strong measured evidence for SYSMEM. The structural bandwidth prior
+    * remains effective, but there is no fabricated learned bias.
+    */
+   {
+      frane_s1at1_state initial {};
+      const uint32_t neutral_word = frane_s1at1_pack_snapshot(initial);
+      assert(neutral_word == 16u);
+      const auto neutral = frane_s1at1_unpack_snapshot(neutral_word);
+      const auto zero_sentinel = frane_s1at1_unpack_snapshot(0u);
+      assert(neutral.score == 0 && zero_sentinel.score == 0);
+      assert(neutral.sysmem_samples == 0 && neutral.gmem_samples == 0);
+      assert(zero_sentinel.sysmem_samples == 0 && zero_sentinel.gmem_samples == 0);
+      const auto in = base_context();
+      const auto a = frane_s1at1_decide(true, in, neutral, 0x123456789abcdef0ULL);
+      const auto b = frane_s1at1_decide(true, in, zero_sentinel, 0x123456789abcdef0ULL);
+      assert(a.override_mode && b.override_mode);
+      assert(a.confidence == 0 && b.confidence == 0);
+      assert(a.effective_sysmem_probability == 38u); /* Mesa 50 - BW prior 12 */
+      assert(b.effective_sysmem_probability == a.effective_sysmem_probability);
+   }
+
    frane_s1at1_state state {};
    const auto ctx = base_context();
    const uint16_t sig = frane_s1at1_catalog_for(ctx).signature;

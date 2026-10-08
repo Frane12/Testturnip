@@ -95,7 +95,8 @@ edit(
     * read by recording threads. No lock bit exists by design.
     */
    frane_s1at1_state frane_s1at1_state_data {};
-   std::atomic<uint32_t> frane_s1at1_word { 0 };""",
+   /* Packed initial score 0 is encoded as 16 (score + 16). */
+   std::atomic<uint32_t> frane_s1at1_word { 16u };""",
     "add per-RP AT1 statistics",
 )
 
@@ -251,6 +252,7 @@ for needle in (
     'TU_FRANE_AT1", true',
     "frane_s1at1_state_data",
     "frane_s1at1_word",
+    "frane_s1at1_word { 16u }",
     "entry.frane_s1at1_signature",
     "frane_s1at1_update_state",
     "frane_s1at1_decide",

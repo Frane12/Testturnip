@@ -438,6 +438,11 @@ static inline frane_s1at1_snapshot
 frane_s1at1_unpack_snapshot(uint32_t word)
 {
    frane_s1at1_snapshot out {};
+   /* A fresh atomic history used to be zero. Zero is an uninitialized
+    * sentinel, not a measured score of -16 in favor of SYSMEM.
+    */
+   if (word == 0u)
+      return out;
    int score = int(word & 63u) - 16;
    out.score = int8_t(std::clamp(score, -16, 16));
    out.volatility = uint8_t((word >> 6) & 15u);
