@@ -1,19 +1,18 @@
-name: Drnas-Turnip S1 AT1 A810 Draft
+name: Drnas-Turnip S1 AT2 A810 Artifact-Only Build
 
 on:
   push:
-    branches: ['drnas-a810-s1-at1-contextual-draft']
+    branches: ['experiment/a810-s1-at2-build-draft']
     paths:
       - '.github/workflows/turnip-upstream-main.yml'
       - 'patches/**'
       - 'tests/**'
-  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: drnas-a810-s1-at1-contextual-draft
+  group: experiment-a810-s1-at2-build-draft
   cancel-in-progress: true
 
 jobs:
@@ -1052,6 +1051,20 @@ jobs:
           assert 'TU_FRANE_SIG", true' in a
           PYCODE
           git -C mesa diff > mesa-applied.patch
+      - name: Validate and apply AT2 overlay (no publication)
+        run: |
+          set -eu
+          python3 -m py_compile patches/s1_at2_hysteresis.py
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/s1_at2_hysteresis.cpp -o /tmp/s1-at2-hysteresis
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/s1-at2-hysteresis
+          python3 patches/s1_at2_hysteresis.py
+          git -C mesa add -N src/freedreno/vulkan/frane_s1at2_hysteresis.h
+          git -C mesa diff --check
+          grep -q 'Drnas-Turnip S1 AT2 A810 / Mesa ' mesa/src/freedreno/vulkan/tu_device.cc
+          grep -q 'TU_FRANE_AT2", true' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_s1at2_update_state' mesa/src/freedreno/vulkan/tu_autotune.cc
+          grep -q 'frane_s1at2_decide' mesa/src/freedreno/vulkan/tu_autotune.cc
+          git -C mesa diff > mesa-applied.patch
       - name: Prepare Android ARM64 cross file
         env:
           NDK: ${{ steps.ndk.outputs.ndk-path }}
@@ -1080,7 +1093,7 @@ jobs:
           meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
       - name: Compile real Android ARM64 Vulkan driver
         run: meson compile -C mesa/build-android -j 4
-      - name: Package standard AdrenoTools Drnas-Turnip-S1-AT1-A810.zip
+      - name: Package standard AdrenoTools Drnas-Turnip-S1-AT2-A810.zip
         run: |
           set -eu
           mkdir -p output
@@ -1090,10 +1103,10 @@ jobs:
           version = pathlib.Path('mesa/VERSION').read_text().strip()
           data = {
             'schemaVersion': 1,
-            'name': 'Drnas-Turnip S1 AT1 A810',
-            'description': 'Experimental S1-based A810 contextual autotuner with never-locking statistical adaptation',
+            'name': 'Drnas-Turnip S1 AT2 A810',
+            'description': 'Experimental AT1 + AT2 bounded hysteresis contextual autotuner',
             'author': 'Frane12',
-            'packageVersion': 's1-at1-draft',
+            'packageVersion': 's1-at2-draft',
             'vendor': 'Mesa',
             'driverVersion': f'Mesa {version}',
             'minApi': 34,
@@ -1101,7 +1114,7 @@ jobs:
           }
           pathlib.Path('output/meta.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
-          (cd output && zip -9 ../Drnas-Turnip-S1-AT1-A810.zip libvulkan_freedreno.so meta.json)
+          (cd output && zip -9 ../Drnas-Turnip-S1-AT2-A810.zip libvulkan_freedreno.so meta.json)
           sha256sum output/libvulkan_freedreno.so > driver-sha256.txt
           python3 - <<'PY'
           import json,zipfile
@@ -1110,7 +1123,7 @@ jobs:
               'packageVersion', 'vendor', 'driverVersion',
               'minApi', 'libraryName'
           }
-          with zipfile.ZipFile('Drnas-Turnip-S1-AT1-A810.zip') as z:
+          with zipfile.ZipFile('Drnas-Turnip-S1-AT2-A810.zip') as z:
               assert set(z.namelist()) == {'libvulkan_freedreno.so','meta.json'}
               assert z.testzip() is None
               so = z.read('libvulkan_freedreno.so')
@@ -1123,17 +1136,17 @@ jobs:
               assert set(meta) == expected_keys
               assert meta['schemaVersion'] == 1
               assert meta['libraryName'] == 'libvulkan_freedreno.so'
-          print('Driver Drnas-Turnip-S1-AT1-A810.zip verified')
+          print('Driver Drnas-Turnip-S1-AT2-A810.zip verified')
           PY
       - name: Record package checksums
         run: |
-          sha256sum Drnas-Turnip-S1-AT1-A810.zip mesa-applied.patch > SHA256SUMS.txt
-      - name: Upload compiled Drnas-Turnip-S1-AT1-A810.zip and full source diff
+          sha256sum Drnas-Turnip-S1-AT2-A810.zip mesa-applied.patch > SHA256SUMS.txt
+      - name: Upload compiled Drnas-Turnip-S1-AT2-A810.zip and full source diff
         uses: actions/upload-artifact@v4
         with:
-          name: Drnas-Turnip-S1-A810
+          name: Drnas-Turnip-S1-AT2-A810-draft
           path: |
-            Drnas-Turnip-S1-AT1-A810.zip
+            Drnas-Turnip-S1-AT2-A810.zip
             mesa-commit.txt
             frane-commit.txt
             mesa-applied.patch
@@ -1166,18 +1179,6 @@ jobs:
             patches/frane_s1at1_contextual_autotune.h
             patches/s1_at1_contextual_autotune.py
             tests/s1_at1_contextual_autotune.cpp
-      - name: Publish S1 AT1 experimental draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -eu
-          TAG="drnas-turnip-s1-at1-a810"
-          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" -y --cleanup-tag || true
-          gh release create "$TAG" \
-            Drnas-Turnip-S1-AT1-A810.zip \
-            SHA256SUMS.txt \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Drnas-Turnip S1 AT1 A810 — Experimental Draft" \
-            --notes-file RELEASE_S1_AT1_A810.md \
-            --draft
+            patches/frane_s1at2_hysteresis.h
+            patches/s1_at2_hysteresis.py
+            tests/s1_at2_hysteresis.cpp
