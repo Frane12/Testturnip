@@ -108,7 +108,7 @@ jobs:
 
       - name: Prepare Android cross file
         env:
-          NDK: \${{ steps.ndk.outputs.ndk-path }}
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
           cat > android-aarch64.ini <<CROSS
@@ -137,7 +137,7 @@ jobs:
 
       - name: Package and verify BW2
         env:
-          NDK: \${{ steps.ndk.outputs.ndk-path }}
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
         run: |
           set -euo pipefail
           mkdir -p output
