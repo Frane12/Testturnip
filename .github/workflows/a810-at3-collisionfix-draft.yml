@@ -5,6 +5,7 @@ on:
       - 'experiment/a810-at3-collisionfix-draft'
     paths:
       - 'patches/at3-collisionfix-full.patch'
+      - '.github/workflows/a810-at3-collisionfix-draft.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -37,7 +38,10 @@ jobs:
       - name: Configure Android aarch64 KGSL
         run: |
           set -euo pipefail
-          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
+          NDK="${{ steps.ndk.outputs.ndk-path }}"
+          grep -E "Pkg.Revision" "$NDK/source.properties"
+          grep -qE "Pkg.Revision = 29\\." "$NDK/source.properties"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
           test -d "$NDK"
           BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
           test -x "$BIN/aarch64-linux-android34-clang"
@@ -70,7 +74,7 @@ jobs:
           test -s out/libvulkan_freedreno.so
           file out/libvulkan_freedreno.so
           test "$(file out/libvulkan_freedreno.so | grep -c 'ARM aarch64')" -gt 0
-          "$(find "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" -maxdepth 1 -name llvm-strip | head -1)" --strip-unneeded out/libvulkan_freedreno.so
+          "$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" -maxdepth 1 -name llvm-strip | head -1)" --strip-unneeded out/libvulkan_freedreno.so
           cat > out/meta.json <<'EOF'
           {
             "schemaVersion": 1,
