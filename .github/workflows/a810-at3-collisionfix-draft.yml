@@ -1,0 +1,97 @@
+name: A810 AT3 CollisionFix - Draft artifact only
+on:
+  push:
+    branches:
+      - 'experiment/a810-at3-collisionfix-draft'
+    paths:
+      - 'patches/at3-collisionfix-full.patch'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Fetch pinned Mesa and apply full AT3 CollisionFix
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/chaotic-cx/mesa-mirror.git mesa
+          git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
+          git -C mesa checkout --detach eda9aceb39d5ff169b096444abe366bdf2269e24
+          test "$(cat mesa/VERSION)" = "26.3.0-devel"
+          git -C mesa apply --check ../patches/at3-collisionfix-full.patch
+          git -C mesa apply ../patches/at3-collisionfix-full.patch
+          sha256sum patches/at3-collisionfix-full.patch
+      - name: Configure Android aarch64 KGSL
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
+          test -d "$NDK"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$BIN/aarch64-linux-android34-clang"
+          mkdir -p /tmp/empty-android-pkgconfig
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/empty-android-pkgconfig', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+      - name: Compile Turnip
+        run: ninja -C mesa/build-android -j 8
+      - name: Package installable draft ZIP
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so out/
+          test -s out/libvulkan_freedreno.so
+          file out/libvulkan_freedreno.so
+          test "$(file out/libvulkan_freedreno.so | grep -c 'ARM aarch64')" -gt 0
+          "$(find "$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" -maxdepth 1 -name llvm-strip | head -1)" --strip-unneeded out/libvulkan_freedreno.so
+          cat > out/meta.json <<'EOF'
+          {
+            "schemaVersion": 1,
+            "name": "Drnas-Turnip AT3 CollisionFix A810 (Draft)",
+            "description": "Experimental Adreno 810 GMEM/SYSMEM autotuner: context collision fix, independent sampling, runtime diagnostics",
+            "author": "Frane12",
+            "packageVersion": "3.1",
+            "vendor": "Mesa",
+            "driverVersion": "26.3.0-devel",
+            "minApi": 34,
+            "libraryName": "libvulkan_freedreno.so"
+          }
+          EOF
+          cd out
+          zip -9 ../Drnas-Turnip-AT3-CollisionFix-A810.zip libvulkan_freedreno.so meta.json
+          cd ..
+          sha256sum out/libvulkan_freedreno.so Drnas-Turnip-AT3-CollisionFix-A810.zip > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Drnas-Turnip-AT3-CollisionFix-A810-DRAFT
+          path: |
+            Drnas-Turnip-AT3-CollisionFix-A810.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
