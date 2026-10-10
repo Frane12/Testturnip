@@ -24,7 +24,7 @@ int main()
    assert(!d(true,-7,64,23,48,10500,11500,stable,1).d.owns);
    assert(!d(true,-7,64,48,48,10500,11500,0,1).d.owns);
    assert(!d(true,-7,64,48,48,10500,11500,(3u<<16)|(18u<<8)|18u,1).d.owns);
-   assert(!d(true,-7,64,48,48,9500,10000,stable,1).d.owns); // 5% threshold, but cost not 9600
+   assert(!d(true,-7,64,48,48,8500,9000,stable,1).d.owns); // cost below 9600 ticks
    assert(!d(true,-7,64,48,48,10980,11000,stable,1).d.owns); // <5% win
    /* GMEM can win too, with symmetrical policy. */
    auto hot_gm=d(true,7,64,48,48,12000,11000,stable,1);
