@@ -21,7 +21,8 @@ assert "TU_FRANE_A830_RFC2_TRACE_PATH" in header
 assert "static inline void\nfrane_a830_rfc2_emit" in header
 assert ("Turnip-Drnas A830 S2-RFC2 Measured Render / Mesa " in dev or
         "Turnip-Drnas A830 S2-RFC3 Measured Guard / Mesa " in dev or
-        "Turnip-Drnas A830 S2-RFC4 Adaptive Learning / Mesa " in dev)
+        "Turnip-Drnas A830 S2-RFC4 Adaptive Learning / Mesa " in dev or
+        "Turnip-Drnas A830 S2-RFC5 Hotspot Learning / Mesa " in dev)
 assert "TU_FRANE_A830_BW3" not in auto
 assert "TU_FRANE_A830_CX1" not in auto
 assert "bw2.rollback_sysmem" in adaptive
