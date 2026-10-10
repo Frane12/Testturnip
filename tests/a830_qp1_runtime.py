@@ -83,3 +83,50 @@ assert f.index('A830 GMEM disabled by TU_FRANE_A830_GMEM=0')<f.index('if (TU_DEB
 assert 'Mark all tiles as visible' in s
 assert 'tu7_cb_disable_reason(!use_hw_binning, cmd, "hw binning disabled")' in s
 print('QP1 dataflow/reset/merge/indirect/cache/visibility/CB guards: PASS')
+ir=Path('mesa/src/freedreno/ir3/ir3_compiler_nir.c').read_text()
+start=ir.index('   if (so->type == MESA_SHADER_VERTEX &&\n       (ctx->compiler->dev_id->chip_id')
+end=ir.index('   if (so->type == MESA_SHADER_FRAGMENT) {',start)
+vertex_metadata=ir[start:end]
+tracker=s[s.index('   if (CHIP == A8XX && frane_a830_qp1_enabled(cmd->device)) {'):s.index('   rp->drawcall_bandwidth_per_sample_sum +=',s.index('   if (CHIP == A8XX && frane_a830_qp1_enabled(cmd->device)) {'))]
+metadata_test=r'''
+#include <cassert>
+#include <cstdint>
+#include <cstdio>
+#include "frane_a830_qp1.h"
+enum {MESA_SHADER_VERTEX=0,MESA_SHADER_FRAGMENT=4,MESA_SHADER_GEOMETRY=3,A8XX=8};
+struct fd_dev_id {uint64_t chip_id;};struct compiler {fd_dev_id *dev_id;};
+struct nir {struct {bool writes_memory;} info;};struct context {struct compiler *compiler;nir *s;};
+struct variant {unsigned type;bool has_no_side_effects;};
+void meta(variant *so,context *ctx) {
+'''+vertex_metadata+r'''
+}
+struct shader {variant *variant;};
+struct tu_device {};
+struct RP {uint32_t frane_qp1_vertices=0;bool frane_qp1_unknown=false;};
+struct command {tu_device *device;struct {shader* shaders[5];} state;};
+bool frane_a830_qp1_enabled(const tu_device*){return true;}
+void record(command *cmd,RP *rp,uint32_t draw_count,uint32_t instance_count) {constexpr unsigned CHIP=A8XX;
+'''+tracker+r'''
+}
+int main(){fd_dev_id id{0x44050001};compiler comp{&id};nir n{{false}};context ctx{&comp,&n};variant vs{MESA_SHADER_VERTEX,false};
+ meta(&vs,&ctx);assert(vs.has_no_side_effects);n.info.writes_memory=true;meta(&vs,&ctx);assert(!vs.has_no_side_effects);
+ n.info.writes_memory=false;id.chip_id=0x44010000;meta(&vs,&ctx);assert(!vs.has_no_side_effects);id.chip_id=0x44050001;meta(&vs,&ctx);
+ tu_device dev;shader sh{&vs},gs{nullptr};command cmd{};cmd.device=&dev;cmd.state.shaders[MESA_SHADER_VERTEX]=&sh;cmd.state.shaders[MESA_SHADER_GEOMETRY]=&gs;RP rp;
+ record(&cmd,&rp,3,2);assert(rp.frane_qp1_vertices==6&&!rp.frane_qp1_unknown);
+ record(&cmd,&rp,3,1);assert(rp.frane_qp1_vertices==9&&!rp.frane_qp1_unknown);
+ record(&cmd,&rp,0,UINT32_MAX);assert(rp.frane_qp1_unknown);record(&cmd,&rp,3,1);assert(rp.frane_qp1_unknown);
+ rp={};record(&cmd,&rp,UINT32_MAX,UINT32_MAX-1);assert(rp.frane_qp1_vertices==4096);
+ rp={};vs.has_no_side_effects=false;record(&cmd,&rp,3,1);assert(rp.frane_qp1_unknown);vs.has_no_side_effects=true;
+ rp={};gs.variant=&vs;record(&cmd,&rp,3,1);assert(rp.frane_qp1_unknown);
+ puts("Actual IR3 vertex metadata and Mesa direct/indirect geometry tracking: PASS (ordinary VS active, writes excluded, instancing, saturation, sticky unknown; mocked objects)");
+}
+'''
+metadata_test=metadata_test.replace('struct shader {variant *variant;}','struct shader {struct variant *variant;}')
+with tempfile.TemporaryDirectory() as d:
+ p=Path(d)/'metadata.cpp';p.write_text(metadata_test)
+ subprocess.run(['g++','-std=c++17','-O1','-g','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-fno-omit-frame-pointer','-I'+str(v),str(p),'-o',d+'/meta'],check=True)
+ subprocess.run([d+'/meta'],env=dict(os.environ,ASAN_OPTIONS='detect_leaks=0',UBSAN_OPTIONS='halt_on_error=1'),check=True)
+assert 'VARIANT_CACHE_START' in Path('mesa/src/freedreno/ir3/ir3_shader.h').read_text()
+assert 'VARIANT_CACHE_PTR(v)' in Path('mesa/src/freedreno/ir3/ir3_disk_cache.cpp').read_text()
+assert 'build_id_find_nhdr_for_addr' in Path('mesa/src/freedreno/ir3/ir3_disk_cache.cpp').read_text()
+print('Vertex metadata serialization and build-ID cache invalidation: PASS')

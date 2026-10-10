@@ -214,6 +214,23 @@ diff --git a/src/freedreno/vulkan/tu_device.cc b/src/freedreno/vulkan/tu_device.
     p->conformanceVersion = (VkConformanceVersion) {
        .major = 1,
        .minor = 4,
+diff --git a/src/freedreno/ir3/ir3_compiler_nir.c b/src/freedreno/ir3/ir3_compiler_nir.c
+--- a/src/freedreno/ir3/ir3_compiler_nir.c
++++ b/src/freedreno/ir3/ir3_compiler_nir.c
+@@ -6294,6 +6294,13 @@
+       so->constlen = MAX2(so->constlen, 8);
+    }
+ 
++   if (so->type == MESA_SHADER_VERTEX &&
++       (ctx->compiler->dev_id->chip_id == UINT64_C(0x44050000) ||
++        ctx->compiler->dev_id->chip_id == UINT64_C(0x44050001) ||
++        ctx->compiler->dev_id->chip_id == UINT64_C(0xffff44050000) ||
++        ctx->compiler->dev_id->chip_id == UINT64_C(0xffff44050001)))
++      so->has_no_side_effects = !ctx->s->info.writes_memory;
++
+    if (so->type == MESA_SHADER_FRAGMENT) {
+       so->empty = is_empty(ir) && so->outputs_count == 0 &&
+                   so->num_sampler_prefetch == 0;
 diff --git a/src/freedreno/vulkan/frane_a830_qp1.h b/src/freedreno/vulkan/frane_a830_qp1.h
 new file mode 100644
 --- /dev/null

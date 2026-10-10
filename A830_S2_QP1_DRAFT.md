@@ -9,7 +9,7 @@ For simple color-only single-subpass A830 rendering, 3–16 tiles, at most 16 dr
 
 PROFILED may measure selected 2–4 draw color passes that the baseline ignores: direct geometry at most 192 vertices, 262144–2097152 pixels, at most 16 tiles and a bounded attachment-traffic criterion. Selection still belongs to the existing Smart/PROFILED learner; QP1 does not force GMEM. Reusable/simultaneous-use buffers, preemption-sensitive configuration, explicit algorithm choices and mandatory safety overrides retain their existing behavior.
 
-History keys distinguish the small draw count, geometry class and unknown geometry. Persistent policy cache uses a separate namespace. Shader scheduling and shader cache remain BW1.
+History keys distinguish the small draw count, geometry class and unknown geometry. Persistent policy cache uses a separate namespace. Shader scheduling remains BW1. A830 vertex variants now receive the existing side-effect metadata from NIR writes_memory; this field was previously filled only for fragment variants. It is serialized with the variant. Mesa build-ID based shader and Vulkan pipeline-cache UUIDs prevent reuse of stale metadata.
 
 Controls:
 - TU_FRANE_A830_QP1=1: default.
