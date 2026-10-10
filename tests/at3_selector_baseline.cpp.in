@@ -1,0 +1,263 @@
+render_mode get_optimal_mode(
+         rp_history &history, bool *measure = nullptr,
+         bool lean_fastpath = false,
+         const frane_26318_smart_gmem_input *gmem_runtime_input = nullptr,
+         bool smart_gmem = false,
+         bool gmem_turbo = false,
+         bool live_profiled = false,
+         bool s1at1_context = false,
+         bool s1at3_context = false,
+         bool *at3_controlled = nullptr)
+      {
+         const uint32_t l_sysmem_probability =
+            sysmem_probability.load(std::memory_order_relaxed);
+         /* A locked 0/100 probability cannot change in plain PROFILED.
+          * Do not advance per-history RNG for deterministic locked choices.
+          * In particular, never take this shortcut for PROFILED_IMM,
+          * reusable CBs or externally overridden render modes.
+          */
+         /* An old 0/100 PROFILED decision must NOT disable AT3 and its
+          * exploration floor. Keep the original shortcut for other paths. */
+         const bool definite = measure && lean_fastpath &&
+            !s1at3_context &&
+            frane_v24_is_definite(l_sysmem_probability);
+         const uint64_t decision_word =
+            definite ? 0 : frane_2633_decision_draw(history.hash);
+         bool select_sysmem = definite
+            ? frane_v24_definite_sysmem(l_sysmem_probability)
+            : (decision_word % PROBABILITY_MAX) < l_sysmem_probability;
+
+         bool runtime_force_measure = false;
+         bool at3_sampling = false;
+
+         /* V48: de-duplicate exploration only after SMART-GMEM has a proven
+          * armed winner. Mode 0 is byte-for-byte V47 behavior in the decision
+          * path below.
+          */
+         static const int frane_26348_sticky_mode =
+            debug_get_num_option("TU_FRANE_STICKY", 2);
+         static const int frane_26349_frontier_mode =
+            static_cast<int>(std::clamp<int64_t>(
+               debug_get_num_option("TU_FRANE_GMEM_MODE", 2),
+               INT64_C(0), INT64_C(4)));
+         bool frane_26348_suppress_live_probe = false;
+
+         if (!definite && measure && lean_fastpath && gmem_runtime_input) {
+            const auto runtime_state = frane_2634_unpack_gmem_state(
+               history.frane_gmem_runtime_word.load(std::memory_order_relaxed));
+
+            frane_2634_gmem_decision runtime_decision {};
+            if (smart_gmem) {
+               const auto smart_decision =
+                  gmem_turbo ?
+                  frane_26320_decide_gmem_turbo(
+                     true, *gmem_runtime_input, runtime_state,
+                     l_sysmem_probability, decision_word) :
+                  frane_26318_decide_smart_gmem(
+                     true, *gmem_runtime_input, runtime_state,
+                     l_sysmem_probability, decision_word);
+               runtime_decision.override_mode = smart_decision.override_mode;
+               runtime_decision.select_sysmem = smart_decision.select_sysmem;
+               runtime_decision.force_measure = smart_decision.force_measure;
+
+               /* V49 frontier sweep. Mode 0 preserves the exact V48 block
+                * below. Modes 1..4 only operate on an already-armed measured
+                * GMEM state and never bypass the later V26 correctness gate.
+                */
+               if (!gmem_turbo && runtime_state.armed) {
+                  if (frane_26349_frontier_mode == 0) {
+                     if (frane_26348_sticky_mode > 0 &&
+                         smart_decision.override_mode &&
+                         smart_decision.structure_score >= 65 &&
+                         l_sysmem_probability <= 20) {
+                        frane_26348_suppress_live_probe = true;
+
+                        if (frane_26348_sticky_mode >= 2 &&
+                            runtime_state.score >= 8 &&
+                            smart_decision.structure_score >= 75 &&
+                            l_sysmem_probability <= 10) {
+                           runtime_decision.override_mode = true;
+                           runtime_decision.select_sysmem =
+                              (decision_word & UINT64_C(255)) == 0;
+                           runtime_decision.force_measure =
+                              runtime_decision.select_sysmem;
+                        }
+                     }
+                  } else {
+                     bool frontier_hold = false;
+                     uint64_t probe_mask = UINT64_C(511); /* 1/512 */
+
+                     if (frane_26349_frontier_mode == 1) {
+                        frontier_hold =
+                           smart_decision.override_mode &&
+                           runtime_state.score >= 8 &&
+                           smart_decision.structure_score >= 75 &&
+                           l_sysmem_probability <= 10;
+                     } else if (frane_26349_frontier_mode == 2) {
+                        frontier_hold =
+                           runtime_state.score >= 7 &&
+                           smart_decision.structure_score >= 70 &&
+                           l_sysmem_probability <= 20;
+                     } else if (frane_26349_frontier_mode == 3) {
+                        frontier_hold =
+                           runtime_state.score >= 6 &&
+                           smart_decision.structure_score >= 60 &&
+                           l_sysmem_probability <= 50;
+                        probe_mask = UINT64_C(1023); /* 1/1024 */
+                     } else {
+                        frontier_hold =
+                           runtime_state.score >= 6 &&
+                           smart_decision.structure_score >= 50 &&
+                           l_sysmem_probability <= 60;
+                        probe_mask = UINT64_C(2047); /* 1/2048 */
+                     }
+
+                     if (frontier_hold) {
+                        /* V49 intentionally makes GMEM authoritative inside
+                         * the selected frontier window. The rare SYSMEM probe
+                         * remains timestamped so a changed workload still has
+                         * an escape path through the measured state machine.
+                         */
+                        frane_26348_suppress_live_probe = true;
+                        runtime_decision.override_mode = true;
+                        runtime_decision.select_sysmem =
+                           (decision_word & probe_mask) == 0;
+                        runtime_decision.force_measure =
+                           runtime_decision.select_sysmem;
+                     }
+                  }
+               }
+            } else {
+               const auto layout =
+                  frane_2634_eval_layout(gmem_runtime_input->layout);
+               runtime_decision = frane_2634_decide_gmem_runtime(
+                  gmem_runtime_input->layout.physical_gmem != 0,
+                  layout.eligible, runtime_state,
+                  l_sysmem_probability, decision_word);
+            }
+
+            /* AT1 runs after every S1 refinement (including V48 sticky)
+             * and only overwrites the final S1 choice when contextual evidence
+             * is active. With TU_FRANE_AT1=0 this block is a strict no-op.
+             */
+            if (s1at1_context) {
+
+               const auto at1_layout =
+                  frane_2634_eval_layout(gmem_runtime_input->layout);
+               frane_s1at1_context_input at1_in {};
+               at1_in.pass_pixels = gmem_runtime_input->layout.pass_pixels;
+               at1_in.estimated_tiles = at1_layout.estimated_tiles;
+               at1_in.drawcalls = gmem_runtime_input->layout.drawcalls;
+               at1_in.sysmem_bandwidth_per_pixel =
+                  gmem_runtime_input->sysmem_bandwidth_per_pixel;
+               at1_in.gmem_bandwidth_per_pixel =
+                  gmem_runtime_input->gmem_bandwidth_per_pixel;
+               at1_in.occurrences = gmem_runtime_input->tail_occurrences;
+               at1_in.sysmem_probability = l_sysmem_probability;
+               at1_in.zs_load_store = gmem_runtime_input->zs_load_store;
+
+               frane_s1at1_decision at1 {};
+               if (s1at3_context) {
+                  const auto signature = frane_s1at1_catalog_for(at1_in).signature;
+                  const auto snapshot = frane_s1at3_lookup(
+                     history.frane_s1at3_words, signature);
+                  at1 = frane_s1at3_decide(at1_in, snapshot, decision_word);
+                  at3_sampling = at1.override_mode;
+                  /* Diagnostics are opt-in to avoid atomic cache traffic. */
+                  static const bool at3_trace =
+                     debug_get_bool_option("TU_FRANE_AT3_TRACE", false);
+                  if (at3_trace && at3_sampling) {
+                     const uint64_t count = history.frane_s1at3_decisions.fetch_add(
+                        1, std::memory_order_relaxed) + 1;
+                     if (at1.force_measure)
+                        history.frane_s1at3_probes.fetch_add(
+                           1, std::memory_order_relaxed);
+                     if ((count & 4095u) == 0u) {
+                        mesa_logi( "AT3 A810 rp=%llx decisions=%llu probes=%llu samples=%llu evictions=%llu\n",
+                           (unsigned long long)history.hash,
+                           (unsigned long long)count,
+                           (unsigned long long)history.frane_s1at3_probes.load(
+                              std::memory_order_relaxed),
+                           (unsigned long long)history.frane_s1at3_samples.load(
+                              std::memory_order_relaxed),
+                           (unsigned long long)history.frane_s1at3_evictions.load(
+                              std::memory_order_relaxed));
+                     }
+                  }
+               } else {
+                  const auto snapshot = frane_s1at1_unpack_snapshot(
+                     history.frane_s1at1_word.load(std::memory_order_relaxed));
+                  at1 = frane_s1at1_decide(true, at1_in, snapshot, decision_word);
+               }
+               if (at1.override_mode) {
+                  runtime_decision.override_mode = true;
+                  runtime_decision.select_sysmem = at1.select_sysmem;
+                  runtime_decision.force_measure = at1.force_measure;
+               }
+            }
+
+            if (runtime_decision.override_mode) {
+               select_sysmem = runtime_decision.select_sysmem;
+               runtime_force_measure = runtime_decision.force_measure;
+            }
+         }
+
+         /* Bounded exploration for a strong winner: in every 128 strong
+          * decisions measure the alternative once and the winner once.
+          * Run AFTER SMART-GMEM so its promotion cannot swallow the probe.
+          * Ordinary uncertain decisions keep their existing sampling.
+          * Unsigned wrap is intentional; a power-of-two period preserves it.
+          */
+         if (!at3_sampling && live_profiled && !frane_26348_suppress_live_probe &&
+             (l_sysmem_probability <= 5 ||
+              l_sysmem_probability >= 95)) {
+            const uint32_t phase =
+               live_probe_ticket.fetch_add(1, std::memory_order_relaxed) & 127u;
+            if (phase == 0 || phase == 64) {
+               const bool preferred_sysmem = l_sysmem_probability >= 95;
+               select_sysmem = phase == 0 ? !preferred_sysmem : preferred_sysmem;
+               runtime_force_measure = true;
+            }
+         }
+
+         if (at3_controlled)
+            *at3_controlled = at3_sampling;
+         const render_mode mode =
+            select_sysmem ? render_mode::SYSMEM : render_mode::GMEM;
+
+         if (measure) {
+            if (at3_sampling) {
+               *measure = runtime_force_measure;
+            } else if (runtime_force_measure) {
+               *measure = true;
+            } else if (definite) {
+               /* V22 already skipped instrumentation on permanently locked
+                * histories. V24 also skips the unused RNG and interval read.
+                */
+               *measure = false;
+            } else {
+               /* During uncertain/losing-mode draws, measure every time.
+                * Avoid the static interval getter until a preferred-mode
+                * observation actually needs sampling.
+                */
+               const bool full_measure = lean_fastpath &&
+                  !frane_v24_is_preferred(l_sysmem_probability, select_sysmem);
+               const uint32_t interval = full_measure ? 1 :
+                  history.frane_interval.load(std::memory_order_relaxed);
+               const uint32_t period = full_measure ? 1 :
+                  frane_profiled_sample_period(
+                     l_sysmem_probability, select_sysmem, interval);
+               *measure = period == 1;
+               if (period > 1) {
+                  const uint32_t ticket =
+                     measurement_ticket.fetch_add(1, std::memory_order_relaxed);
+                  *measure = (ticket & (period - 1)) == 0;
+               }
+            }
+         }
+
+         at_log_profiled_h("%" PRIu32 "%% sysmem chance, using %s", history.hash, l_sysmem_probability,
+                           render_mode_str(mode));
+
+         return mode;
+      }

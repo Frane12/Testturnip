@@ -1,0 +1,151 @@
+
+#include <cassert>
+#include <cstdio>
+#include <cstdint>
+#include <atomic>
+#include <array>
+#include <vector>
+#include <cstdarg>
+#include "frane_a810_at4.h"
+#include "frane_mesa_26320_a810_gmem_turbo.h"
+#include "frane_mesa_2633_a810_profile_turbo.h"
+#include "frane_profiled_sampling.h"
+#include "frane_v24_fastpath.h"
+static int64_t debug_get_num_option(const char *, int64_t d) { return d; }
+static bool debug_get_bool_option(const char *, bool d) { return d; }
+static void mesa_logi(const char *, ...) {}
+#define at_log_profiled_h(...)
+static uint64_t fixed_word;
+static uint64_t test_decision_word(uint64_t) {return fixed_word;}
+enum class render_mode { GMEM, SYSMEM };
+struct rp_history {
+ uint64_t hash = 1234567;
+ std::atomic<uint32_t> frane_gmem_runtime_word{0}, frane_s1at1_word{16}, frane_interval{2};
+ std::atomic<uint64_t> frane_s1at3_words[FRANE_AT3_ENTRIES]{};
+ std::atomic<uint64_t> frane_s1at3_decisions{0}, frane_s1at3_probes{0}, frane_s1at3_samples{0}, frane_s1at3_evictions{0};
+};
+struct Engine {
+ std::atomic<uint32_t> sysmem_probability{50}, live_probe_ticket{0}, measurement_ticket{0};
+ static constexpr uint32_t PROBABILITY_MAX = 100;
+METHOD
+};
+struct LegacyEngine {
+ std::atomic<uint32_t> sysmem_probability{50}, live_probe_ticket{0}, measurement_ticket{0};
+ static constexpr uint32_t PROBABILITY_MAX = 100;
+LEGACY
+};
+static frane_s1at1_context_input ctx(uint32_t draws=16) {
+ frane_s1at1_context_input x;
+ x.pass_pixels=1280*720; x.estimated_tiles=4; x.drawcalls=draws;
+ x.sysmem_bandwidth_per_pixel=8; x.gmem_bandwidth_per_pixel=4;
+ x.occurrences=100; x.sysmem_probability=50;
+ return x;
+}
+static frane_26318_smart_gmem_input runtime() {
+ frane_26318_smart_gmem_input x;
+ x.layout.physical_gmem=576*1024; x.layout.usable_gmem=400*1024;
+ x.layout.pixels_per_tile=256*256; x.layout.pass_pixels=1280*720;
+ x.layout.drawcalls=16; x.layout.selected_tile_count=4;
+ x.sysmem_bandwidth_per_pixel=8; x.gmem_bandwidth_per_pixel=4;
+ x.tail_occurrences=100;
+ return x;
+}
+
+int main() {
+ for(unsigned prob: {0u,1u,5u,50u,95u,100u}) {
+  rp_history oldh,newh;LegacyEngine old;Engine now;
+  old.sysmem_probability.store(prob);now.sysmem_probability.store(prob);
+  auto input=runtime();
+  for(unsigned j=0;j<10000;++j) {
+   fixed_word=frane_2633_decision_draw(123);
+   bool om=true,nm=true,oc=false,nc=false;
+   auto a=old.get_optimal_mode(oldh,&om,true,&input,true,true,true,true,true,&oc);
+   auto b=now.get_optimal_mode(newh,&nm,true,&input,true,true,true,true,true,false,&nc);
+   assert(a==b && om==nm && oc==nc);
+  }
+ }
+ puts("AT4=0 decision/measurement/control parity with exact AT3 selector: PASS");
+ auto x=ctx(); const auto sig=frane_s1at1_catalog_for(x).signature;
+ frane_s1at3_state s{}; auto empty=frane_s1at3_unpack(0);
+ unsigned probes=0;
+ for(unsigned j=0;j<100000;++j) {
+  auto d=frane_at4_decide(x,empty,frane_2633_decision_draw(123));
+  assert(!d.override_mode || d.force_measure);
+  probes+=d.force_measure;
+ }
+ assert(probes>2800 && probes<3500);
+ printf("cold learner: S1 preserved outside %u/100000 sparse probes\n",probes);
+ for(unsigned j=0;j<2;++j) {
+  s=frane_s1at3_update(s,true,2000,sig);s=frane_s1at3_update(s,false,1000,sig);
+ }
+ for(unsigned j=0;j<10000;++j) {
+  auto d=frane_at4_decide(x,frane_s1at3_unpack(frane_s1at3_pack(s,63)),frane_2633_decision_draw(123));
+  assert(!d.override_mode || d.force_measure);
+ }
+ puts("two paired samples cannot claim authority: PASS");
+ for(unsigned j=2;j<16;++j) {
+  s=frane_s1at3_update(s,true,2000,sig);s=frane_s1at3_update(s,false,1000,sig);
+ }
+ probes=0;unsigned sys=0,gm=0;
+ for(unsigned j=0;j<1000000;++j) {
+  auto d=frane_at4_decide(x,frane_s1at3_unpack(frane_s1at3_pack(s,63)),frane_2633_decision_draw(123));
+  assert(d.override_mode);
+  if(d.force_measure) {++probes;d.select_sysmem?++sys:++gm;}
+  else assert(!d.select_sysmem);
+ }
+ assert(probes>7000 && probes<8800 && sys>3000 && gm>3000);
+ printf("paired confident GMEM winner: %u/1000000 probes (sys=%u gm=%u)\n",probes,sys,gm);
+ s.mode[0].age=63;
+ auto stale=frane_s1at3_unpack(frane_s1at3_pack(s,63));
+ assert(stale.stale[0]);
+ for(unsigned j=0;j<10000;++j) {
+  auto d=frane_at4_decide(x,stale,frane_2633_decision_draw(123));
+  assert(!d.override_mode || d.force_measure);
+  if(d.force_measure) assert(d.select_sysmem);
+ }
+ for(unsigned j=0;j<5;++j)s=frane_s1at3_update(s,false,4000,sig);
+ assert(!s.mode[0].samples && !s.score);
+ puts("stale renewal and changed-workload confidence reset: PASS");
+ for(unsigned tiles: {0u,25u,32u}) {auto a=x;a.estimated_tiles=tiles;assert(!frane_at4_decide(a,empty,0).override_mode);}
+ auto cold=x;cold.occurrences=15;assert(!frane_at4_active(cold));cold.occurrences=16;assert(frane_at4_active(cold));
+ std::array<frane_s1at3_state,FRANE_AT3_ENTRIES> t{};
+ std::array<std::atomic<uint64_t>,FRANE_AT3_ENTRIES> w{};
+ std::array<uint64_t,FRANE_AT3_ENTRIES> ages{};uint64_t seq=0;
+ std::vector<uint16_t> coll;
+ for(unsigned i=1;i<8192&&coll.size()<5;++i)if(frane_s1at3_slot(i)==0)coll.push_back(i);
+ for(unsigned i=0;i<4;++i)assert(!frane_s1at3_update_table(t.data(),w.data(),ages.data(),seq,true,100,coll[i],63));
+ assert(frane_s1at3_update_table(t.data(),w.data(),ages.data(),seq,false,80,coll[4],63));
+ assert(!frane_s1at3_lookup(w.data(),coll[0]).signature);
+ for(unsigned i=1;i<5;++i)assert(frane_s1at3_lookup(w.data(),coll[i]).signature==coll[i]);
+ assert(frane_s1at3_update_table(t.data(),w.data(),ages.data(),seq,true,100,coll[0],63));
+ assert(frane_s1at3_lookup(w.data(),coll[0]).samples[1]==0);
+ puts("tagged collision eviction and late completion: PASS");
+ auto r=runtime();rp_history h;Engine e;e.sysmem_probability.store(50);
+ h.frane_gmem_runtime_word.store(frane_2634_pack_gmem_state({8,true}));
+ unsigned base=0,at3=0,at4=0,controlled=0;
+ for(unsigned j=0;j<100000;++j) {
+  fixed_word=frane_2633_decision_draw(123);
+  bool m=true,c=false;
+  base+=e.get_optimal_mode(h,&m,true,&r,true,true,true,false,false,false)==render_mode::GMEM;
+  at3+=e.get_optimal_mode(h,&m,true,&r,true,true,true,true,true,false,&c)==render_mode::GMEM;
+  at4+=e.get_optimal_mode(h,&m,true,&r,true,true,true,true,true,true,&c)==render_mode::GMEM;
+  controlled+=c;
+ }
+ assert(base>99000 && at3>59000 && at3<65000 && at4>96000 && controlled>2800 && controlled<3500);
+ printf("actual selector armed S1: baseline=%u AT3=%u AT4=%u GMEM/100000 controlled=%u\n",base,at3,at4,controlled);
+ for(unsigned kind=0;kind<5;++kind) {
+  auto a=r;bool m=true,c=true;
+  if(kind==0)a.tail_occurrences=15;
+  if(kind==1)a.layout.pass_pixels=3840ull*2160;
+  if(kind==2)a.layout.drawcalls=4;
+  e.get_optimal_mode(h,&m,kind!=3,kind==4?nullptr:&a,true,true,true,true,true,true,&c);
+  assert(!c);
+ }
+ puts("actual selector cold, large-area, small-draw, disabled-fastpath, no-input gates: PASS");
+ for(unsigned j=0;j<16;++j){s=frane_s1at3_update(s,true,2000,sig);s=frane_s1at3_update(s,false,1000,sig);}
+ h.frane_s1at3_words[frane_s1at3_slot(sig)].store(frane_s1at3_pack(s,63));
+ unsigned measured=0;
+ for(unsigned j=0;j<100000;++j){fixed_word=frane_2633_decision_draw(123);bool m=false,c=false;e.sysmem_probability.store(100);auto d=e.get_optimal_mode(h,&m,true,&r,true,true,true,true,true,true,&c);assert(c);if(!m)assert(d==render_mode::GMEM);measured+=m;}
+ assert(measured>650 && measured<950);
+ printf("actual selector escapes old 100%% lock; one probe scheduler: %u/100000 measurements\n",measured);
+}
