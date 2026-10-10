@@ -62,7 +62,7 @@ frane_a810_rfc1_emit(const frane_a810_rfc1_row &r)
    if (!sampled)
       return;
    static std::atomic<uint32_t> emitted{0};
-   if (emitted.fetch_add(1, std::memory_order_relaxed) >= 8192u)
+   if (emitted.fetch_add(1, std::memory_order_relaxed) >= 65536u)
       return;
    static std::mutex io_mutex;
    std::lock_guard<std::mutex> lock(io_mutex);
