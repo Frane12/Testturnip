@@ -1,0 +1,249 @@
+name: A830 S2-RFC2 Measured GPU Timing Draft
+
+on:
+  push:
+    branches: ['experiment/a830-s2-rfc2-gpu-timestamps-draft']
+    paths:
+      - '.github/workflows/turnip-a830-s2-rfc2-draft.yml'
+      - 'patches/a830-smart2-complete.patch'
+      - 'patches/a830_upstream_rebase.py'
+      - 'patches/a830_s2_d2.py'
+      - 'patches/a830_s2_bw1.py'
+      - 'patches/a830_s2_bw2.py'
+      - 'patches/a830_rfc1.py'
+      - 'patches/a830_rfc2.py'
+      - 'patches/frane_a830_rfc2.h'
+      - 'patches/frane_a830_rfc1.h'
+      - 'patches/frane_a830_s2d2_gmem.h'
+      - 'patches/frane_a830_s2d2_sched.h'
+      - 'patches/frane_a830_s2_bw1.h'
+      - 'patches/frane_a830_s2_bw2.h'
+      - 'tests/a830_s2_d2_policy.cpp'
+      - 'tests/a830_s2_bw1_policy.cpp'
+      - 'tests/a830_s2_bw2_policy.cpp'
+      - 'tests/a830_s2_bw2_source.py'
+      - 'tests/a830_rfc1_host.cpp'
+      - 'tests/a830_rfc1_source.py'
+      - 'tests/a830_rfc2_host.cpp'
+      - 'tests/a830_rfc2_source.py'
+      - 'tests/smart_v2.cpp'
+      - 'tests/a830_gmem_safety.cpp'
+      - 'tests/source_guards.py'
+      - 'tests/history_key.py'
+      - 'A830_S2_RFC2_GPU_TIMING.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: a830-s2-rfc2-gpu-timestamps-draft
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y git ninja-build pkg-config python3-pip bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+
+      - name: Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+
+      - name: Pure BW1 and BW2 policy tests
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/a830_s2_bw1_policy.cpp -o /tmp/bw1-policy
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/bw1-policy | tee bw1-policy.log
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Ipatches tests/a830_s2_bw2_policy.cpp -o /tmp/bw2-policy
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/bw2-policy | tee bw2-policy.log
+          g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -fsanitize=address,undefined -Ipatches tests/a830_s2_bw2_policy.cpp -o /tmp/bw2-policy-asan
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/bw2-policy-asan | tee bw2-policy-asan.log
+
+      - name: Fetch Mesa and apply S1 plus S2-D2 plus BW1 plus BW2
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/chaotic-cx/mesa-mirror.git mesa
+          git -C mesa fetch --depth 1 origin f1a6b0d71ade2b1304cc9b466ae6d27402b7e7c8
+          git -C mesa fetch --depth 1 origin eeca16aa41e89a114e53e76439df623c7efb9519
+          git -C mesa checkout --detach f1a6b0d71ade2b1304cc9b466ae6d27402b7e7c8
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('patches/a830-smart2-complete.patch').read_text()
+          skip = {
+              'src/freedreno/vulkan/tu_lrz.cc',
+              'src/freedreno/vulkan/tu_suballoc.cc',
+          }
+          out = []
+          parts = src.split('diff --git ')
+          out.append(parts[0])
+          for part in parts[1:]:
+              header = part.splitlines()[0]
+              path = header.split(' b/', 1)[1] if ' b/' in header else ''
+              if path not in skip:
+                  out.append('diff --git ' + part)
+          Path('/tmp/a830-smart2-upstream.patch').write_text(''.join(out))
+          PY
+          git -C mesa apply --3way /tmp/a830-smart2-upstream.patch
+          python3 patches/a830_upstream_rebase.py
+          python3 patches/a830_s2_d2.py
+          python3 patches/a830_s2_bw1.py
+          python3 patches/a830_s2_bw2.py
+          python3 patches/a830_rfc1.py
+          python3 patches/a830_rfc2.py
+          git -C mesa diff --check
+          git -C mesa diff > A830-S2-RFC2-complete.patch
+          git -C mesa rev-parse HEAD > mesa-commit.txt
+          git rev-parse HEAD > frane-commit.txt
+
+      - name: BW2 integration and regression tests
+        run: |
+          set -euo pipefail
+          python3 tests/a830_rfc1_source.py | tee rfc1-source-test.log
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -Imesa/src/freedreno/vulkan tests/a830_rfc1_host.cpp -o /tmp/rfc1-host
+          /tmp/rfc1-host | tee rfc1-host-test.log
+          python3 tests/a830_rfc2_source.py | tee rfc2-source-test.log
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -Imesa/src/freedreno/vulkan tests/a830_rfc2_host.cpp -o /tmp/rfc2-host
+          /tmp/rfc2-host | tee rfc2-host-test.log
+          g++ -std=c++17 -O3 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/smart_v2.cpp -o /tmp/smart2-ubsan
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/smart2-ubsan | tee smart2-ubsan.log
+          g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Imesa/src/freedreno/vulkan tests/a830_gmem_safety.cpp -o /tmp/a830-safety
+          ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1 /tmp/a830-safety | tee safety-test.log
+          python3 tests/source_guards.py | tee s1-source-test.log
+          python3 tests/history_key.py | tee history-key-test.log
+
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<CROSS
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          CROSS
+
+      - name: Compile real Android ARM64 driver
+        run: |
+          set -euo pipefail
+          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+          meson compile -C mesa/build-android -j 4 | tee android-build.log
+
+      - name: Package and verify BW2
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          "$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip" --strip-unneeded output/libvulkan_freedreno.so
+          python3 - <<'PY'
+          import json, pathlib, zipfile
+          version = pathlib.Path('mesa/VERSION').read_text().strip()
+          meta = {
+              'schemaVersion': 1,
+              'name': 'Turnip-Drnas A830 S2-RFC2 Measured Render',
+              'description': 'A830 BW2+RFC1 with opt-in CSV recording true GPU timestamps, selector source, render features and timing confidence; no new GPU queries.',
+              'author': 'Frane12; Mesa/Freedreno contributors',
+              'packageVersion': 's2-rfc2-gpu-timing-draft',
+              'vendor': 'Mesa',
+              'driverVersion': 'Mesa ' + version,
+              'minApi': 34,
+              'libraryName': 'libvulkan_freedreno.so',
+          }
+          pathlib.Path('output/meta.json').write_text(json.dumps(meta, indent=2) + '\n')
+          name = 'Turnip-A830-S2-RFC2-GPU-Timing.zip'
+          with zipfile.ZipFile(name, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+              z.write('output/libvulkan_freedreno.so', 'libvulkan_freedreno.so')
+              z.write('output/meta.json', 'meta.json')
+          with zipfile.ZipFile(name) as z:
+              assert z.testzip() is None
+              assert set(z.namelist()) == {'libvulkan_freedreno.so', 'meta.json'}
+              so = z.read('libvulkan_freedreno.so')
+              assert so[:6] == b'\x7fELF\x02\x01'
+              assert int.from_bytes(so[16:18], 'little') == 3
+              assert int.from_bytes(so[18:20], 'little') == 183
+              assert b'Turnip-Drnas A830 S2-RFC2 Measured Render / Mesa' in so
+              assert b'TU_FRANE_A830_RFC2_TRACE_PATH' in so
+              assert b'TU_FRANE_A830_TRACE_PATH' in so
+              assert b'TU_FRANE_A830_RFC1' in so
+              assert b'TU_FRANE_A830_BW2' in so
+              assert b'TU_FRANE_A830_BW1' in so
+          print(name, 'verified')
+          PY
+          zip -9 Turnip-A830-S2-RFC2-GPU-Timing-Source.zip \
+            A830-S2-RFC2-complete.patch \
+            patches/a830-smart2-complete.patch \
+            patches/a830_upstream_rebase.py \
+            patches/a830_s2_d2.py \
+            patches/a830_s2_bw1.py \
+            patches/a830_s2_bw2.py \
+            patches/a830_rfc1.py \
+            patches/a830_rfc2.py \
+            patches/frane_a830_rfc2.h \
+            patches/frane_a830_rfc1.h \
+            patches/frane_a830_s2d2_gmem.h \
+            patches/frane_a830_s2d2_sched.h \
+            patches/frane_a830_s2_bw1.h \
+            patches/frane_a830_s2_bw2.h \
+            tests/a830_s2_bw1_policy.cpp \
+            tests/a830_s2_bw2_policy.cpp \
+            tests/a830_s2_bw2_source.py \
+            tests/a830_rfc1_host.cpp \
+            tests/a830_rfc1_source.py \
+            tests/a830_rfc2_host.cpp \
+            tests/a830_rfc2_source.py \
+            A830_S2_RFC2_GPU_TIMING.md \
+            android-aarch64.ini android-build.log mesa-commit.txt frane-commit.txt \
+            bw1-policy.log bw2-policy.log bw2-policy-asan.log rfc1-source-test.log rfc1-host-test.log rfc2-source-test.log rfc2-host-test.log \
+            smart2-ubsan.log safety-test.log s1-source-test.log history-key-test.log
+          sha256sum Turnip-A830-S2-RFC2-GPU-Timing.zip \
+            Turnip-A830-S2-RFC2-GPU-Timing-Source.zip \
+            A830-S2-RFC2-complete.patch > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+
+      - name: Upload internal artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Turnip-A830-S2-RFC2-GPU-Timing
+          path: |
+            Turnip-A830-S2-RFC2-GPU-Timing.zip
+            Turnip-A830-S2-RFC2-GPU-Timing-Source.zip
+            SHA256SUMS.txt
+            A830_S2_RFC2_GPU_TIMING.md
+
+      - name: Create or update PRIVATE DRAFT release only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=a830-s2-rfc2-gpu-timing-draft
+          TITLE="Turnip-Drnas A830 S2-RFC2 Measured GPU Timing — PRIVATE DRAFT"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/rfc1-release.json 2>/dev/null; then
+            python3 -c 'import json; assert json.load(open("/tmp/rfc1-release.json"))["isDraft"], "Refusing to modify published release"'
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TITLE" --notes-file A830_S2_RFC2_GPU_TIMING.md
+            gh release upload "$TAG" Turnip-A830-S2-RFC2-GPU-Timing.zip Turnip-A830-S2-RFC2-GPU-Timing-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" Turnip-A830-S2-RFC2-GPU-Timing.zip Turnip-A830-S2-RFC2-GPU-Timing-Source.zip SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE" --notes-file A830_S2_RFC2_GPU_TIMING.md --draft
+          fi
