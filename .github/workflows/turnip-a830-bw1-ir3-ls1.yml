@@ -203,7 +203,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG=a830-a830-ir3-ls1-draft
+          TAG=a830-bw1-ir3-ls1-draft
           TITLE="Turnip-Drnas A830 S2-IR3-LS1 — PRIVATE DRAFT"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft > /tmp/bw1-release.json 2>/dev/null; then
             python3 -c 'import json; assert json.load(open("/tmp/bw1-release.json"))["isDraft"], "Refusing to modify a published release"'
