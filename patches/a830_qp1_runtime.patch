@@ -1,0 +1,263 @@
+diff --git a/src/freedreno/vulkan/tu_cmd_buffer.cc b/src/freedreno/vulkan/tu_cmd_buffer.cc
+--- a/src/freedreno/vulkan/tu_cmd_buffer.cc
++++ b/src/freedreno/vulkan/tu_cmd_buffer.cc
+@@ -1459,6 +1459,45 @@
+    return &tiling->vsc;
+ }
+ 
++bool
++frane_a830_qp1_enabled(const struct tu_device *device)
++{
++   static const bool enabled = debug_get_bool_option("TU_FRANE_A830_QP1", true);
++   return enabled && frane_a830_target(device->physical_device->dev_id.chip_id);
++}
++
++frane_a830_qp1_input
++frane_a830_qp1_get_input(const struct tu_cmd_buffer *cmd)
++{
++   frane_a830_qp1_input in {};
++   const auto &rp = cmd->state.rp;
++   const auto *pass = cmd->state.pass;
++   const auto *tiling = cmd->state.tiling;
++   const auto *fb = cmd->state.framebuffer;
++   if (!pass || !tiling || !fb || !tiling->possible)
++      return in;
++   in.draws = rp.drawcall_count;
++   in.vertices = rp.frane_qp1_vertices;
++   const uint64_t tiles = uint64_t(tiling->vsc.tile_count.width) *
++                           tiling->vsc.tile_count.height;
++   in.tiles = tiles > UINT32_MAX ? UINT32_MAX : uint32_t(tiles);
++   in.blocked = !frane_a830_qp1_enabled(cmd->device) ||
++      rp.frane_qp1_unknown || rp.has_tess || rp.xfb_used ||
++      rp.has_prim_generated_query_in_rp || rp.has_vtx_stats_query_in_rp ||
++      rp.has_zpass_done_sample_count_write_in_rp ||
++      cmd->state.xfb_query_running_before_rp ||
++      cmd->state.prim_generated_query_running_before_rp ||
++      cmd->state.vtx_stats_query_running_before_rp ||
++      cmd->state.prim_counters_running || rp.draw_cs_writes_to_cond_pred ||
++      pass->has_fdm || pass->has_msrtss || pass->num_views > 1 ||
++      fb->layers != 1 || cmd->state.per_layer_render_area ||
++      pass->subpass_count != 1 || pass->subpasses[0].depth_used ||
++      pass->subpasses[0].stencil_used ||
++      TU_DEBUG(FORCEBIN) || TU_DEBUG(NOBIN) ||
++      TU_DEBUG(FORCE_CONCURRENT_BINNING);
++   return in;
++}
++
+ static bool
+ use_hw_binning(struct tu_cmd_buffer *cmd)
+ {
+@@ -1489,6 +1528,17 @@
+       return true;
+    }
+ 
++   if (vsc->binning_possible && vsc->binning_useful &&
++       frane_a830_qp1_enabled(cmd->device) &&
++       frane_a830_qp1_skip_binning(frane_a830_qp1_get_input(cmd))) {
++      perf_debug(cmd->device, "A830 QP1: bounded direct geometry, skip binning");
++      static const bool log = debug_get_bool_option("TU_FRANE_A830_QP1_LOG", false);
++      if (log)
++         mesa_logi("A830 QP1 skip-binning: draws=%u vertices=%u tiles=%u",
++                   cmd->state.rp.drawcall_count, cmd->state.rp.frane_qp1_vertices,
++                   vsc->tile_count.width * vsc->tile_count.height);
++      return false;
++   }
+    return vsc->binning_possible && vsc->binning_useful;
+ }
+ 
+@@ -6462,6 +6512,9 @@
+    }
+ 
+    dst->drawcall_count += src->drawcall_count;
++   dst->frane_qp1_vertices = frane_a830_qp1_add(
++      dst->frane_qp1_vertices, src->frane_qp1_vertices);
++   dst->frane_qp1_unknown |= src->frane_qp1_unknown;
+ }
+ 
+ void
+@@ -8736,7 +8789,7 @@
+                 struct tu_cs *cs,
+                 bool indexed,
+                 /* note: draw_count is 0 for indirect */
+-                uint32_t draw_count)
++                uint32_t draw_count, uint32_t instance_count = UINT32_MAX)
+ {
+    const struct tu_program_state *program = &cmd->state.program;
+    struct tu_render_pass_state *rp = &cmd->state.rp;
+@@ -8767,6 +8820,17 @@
+ 
+    /* Fill draw stats for autotuner */
+    rp->drawcall_count++;
++
++   if (CHIP == A8XX && frane_a830_qp1_enabled(cmd->device)) {
++      const auto *vs = cmd->state.shaders[MESA_SHADER_VERTEX];
++      const auto *gs = cmd->state.shaders[MESA_SHADER_GEOMETRY];
++      rp->frane_qp1_unknown |= instance_count == UINT32_MAX ||
++         (gs && gs->variant) || !vs || !vs->variant ||
++         !vs->variant->has_no_side_effects;
++      if (instance_count != UINT32_MAX)
++         rp->frane_qp1_vertices = frane_a830_qp1_add(
++            rp->frane_qp1_vertices, uint64_t(draw_count) * instance_count);
++   }
+ 
+    rp->drawcall_bandwidth_per_sample_sum +=
+       cmd->state.bandwidth.color_bandwidth_per_sample;
+@@ -9254,7 +9318,7 @@
+ 
+    tu6_emit_vs_params(cmd, 0, firstVertex, firstInstance);
+ 
+-   tu6_draw_common<CHIP>(cmd, cs, false, vertexCount);
++   tu6_draw_common<CHIP>(cmd, cs, false, vertexCount, instanceCount);
+ 
+    tu_cs_emit_pkt7(cs, CP_DRAW_INDX_OFFSET, 3);
+    tu_cs_emit(cs, tu_draw_initiator(cmd, DI_SRC_SEL_AUTO_INDEX));
+@@ -9328,7 +9392,7 @@
+ 
+    tu6_emit_vs_params(cmd, 0, vertexOffset, firstInstance);
+ 
+-   tu6_draw_common<CHIP>(cmd, cs, true, indexCount);
++   tu6_draw_common<CHIP>(cmd, cs, true, indexCount, instanceCount);
+ 
+    tu_cs_emit_pkt7(cs, CP_DRAW_INDX_OFFSET, 7);
+    tu_cs_emit(cs, tu_draw_initiator(cmd, DI_SRC_SEL_DMA));
+diff --git a/src/freedreno/vulkan/tu_cmd_buffer.h b/src/freedreno/vulkan/tu_cmd_buffer.h
+--- a/src/freedreno/vulkan/tu_cmd_buffer.h
++++ b/src/freedreno/vulkan/tu_cmd_buffer.h
+@@ -11,6 +11,7 @@
+ #define TU_CMD_BUFFER_H
+ 
+ #include "tu_common.h"
++#include "frane_a830_qp1.h"
+ 
+ #include "tu_cs.h"
+ #include "tu_descriptor_set.h"
+@@ -359,6 +360,8 @@
+    bool read_only_input_attachments;
+ 
+    uint32_t drawcall_count;
++   uint32_t frane_qp1_vertices;
++   bool frane_qp1_unknown;
+ 
+    /* A calculated "draw cost" value for renderpass, which tries to
+     * estimate the bandwidth-per-sample of all the draws according
+@@ -1075,4 +1078,7 @@
+       (cmd->state.fdm_per_layer ? cmd->state.framebuffer->layers : 1);
+ }
+ 
++bool frane_a830_qp1_enabled(const struct tu_device *device);
++frane_a830_qp1_input frane_a830_qp1_get_input(const struct tu_cmd_buffer *cmd);
++
+ #endif /* TU_CMD_BUFFER_H */
+diff --git a/src/freedreno/vulkan/tu_autotune.cc b/src/freedreno/vulkan/tu_autotune.cc
+--- a/src/freedreno/vulkan/tu_autotune.cc
++++ b/src/freedreno/vulkan/tu_autotune.cc
+@@ -1156,6 +1156,15 @@
+       /* If the data is too large, we have to allocate it on the heap. */
+       std::vector<uint32_t> vec(data_count);
+       hash = get_hash(vec.data(), vec.size());
++   }
++   if (a830_scope && frane_a830_qp1_enabled(cmd->device)) {
++      const auto &rp = cmd->state.rp;
++      const uint32_t geometry[4] = {
++         0x51503101u, rp.drawcall_count < 5 ? rp.drawcall_count : 0u,
++         rp.frane_qp1_vertices <= 192 ? rp.frane_qp1_vertices : 4096u,
++         uint32_t(rp.frane_qp1_unknown),
++      };
++      hash = XXH3_64bits_withSeed(geometry, sizeof(geometry), hash);
+    }
+ }
+ 
+@@ -2176,7 +2185,9 @@
+    if (!name || !*name || !strcmp(name, "DXVK") || !strcmp(name, "Wine"))
+       return false;
+ 
+-   std::string input = std::string("frane-universal-v29-fast:") + name + ":" +
++   const char *prefix = frane_a830_qp1_enabled(device)
++      ? "frane-a830-qp1-v1:" : "frane-universal-v29-fast:";
++   std::string input = std::string(prefix) + name + ":" +
+                        std::to_string(rp_hash);
+    /* Separate different GPUs and automatically invalidate when Mesa's cache
+     * UUID changes due to a driver build/config change.
+@@ -2711,6 +2722,23 @@
+     */
+    bool ignore_small_rp = !config.test(mod_flag::TUNE_SMALL) && rp_state->drawcall_count < 5 &&
+                           (!latency_info || !latency_info->seen_latency_spike);
++
++   if (ignore_small_rp && config.is_enabled(algorithm::PROFILED) &&
++       !config.test(mod_flag::PREEMPT_OPTIMIZE) && !simultaneous_use &&
++       frane_a830_qp1_enabled(device) &&
++       (cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT)) {
++      const auto &extent = cmd_state->render_areas[0].extent;
++      if (frane_a830_qp1_tune_small(frane_a830_qp1_get_input(cmd_buffer),
++          uint64_t(extent.width) * extent.height,
++          pass->gmem_bandwidth_per_pixel,
++          rp_state->drawcall_bandwidth_per_sample_sum)) {
++         ignore_small_rp = false;
++         static const bool log = debug_get_bool_option("TU_FRANE_A830_QP1_LOG", false);
++         if (log)
++            mesa_logi("A830 QP1 tune-small: draws=%u vertices=%u",
++                      rp_state->drawcall_count, rp_state->frane_qp1_vertices);
++      }
++   }
+ 
+    if (!enabled)
+       return forced("Autotuner is disabled", default_mode);
+diff --git a/src/freedreno/vulkan/tu_device.cc b/src/freedreno/vulkan/tu_device.cc
+--- a/src/freedreno/vulkan/tu_device.cc
++++ b/src/freedreno/vulkan/tu_device.cc
+@@ -1020,7 +1020,7 @@
+             "turnip Mesa driver");
+    memset(p->driverInfo, 0, sizeof(p->driverInfo));
+    snprintf(p->driverInfo, VK_MAX_DRIVER_INFO_SIZE,
+-            "Turnip-Drnas A830 S2-BW1 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
++            "Turnip-Drnas A830 S2-QP1 / Mesa " PACKAGE_VERSION MESA_GIT_SHA1);
+    p->conformanceVersion = (VkConformanceVersion) {
+       .major = 1,
+       .minor = 4,
+diff --git a/src/freedreno/vulkan/frane_a830_qp1.h b/src/freedreno/vulkan/frane_a830_qp1.h
+new file mode 100644
+--- /dev/null
++++ b/src/freedreno/vulkan/frane_a830_qp1.h
+@@ -0,0 +1,42 @@
++#ifndef FRANE_A830_QP1_H
++#define FRANE_A830_QP1_H
++
++#include <cstdint>
++
++static inline uint32_t
++frane_a830_qp1_add(uint32_t current, uint64_t amount)
++{
++   return current >= 4096 || amount >= 4096 - current
++      ? 4096u : current + uint32_t(amount);
++}
++
++struct frane_a830_qp1_input {
++   uint32_t draws = 0;
++   uint32_t vertices = 0;
++   uint32_t tiles = 0;
++   bool blocked = true;
++};
++
++static inline bool
++frane_a830_qp1_skip_binning(const frane_a830_qp1_input &in)
++{
++   return !in.blocked && in.draws && in.draws <= 16 &&
++          in.vertices && in.vertices <= 192 &&
++          in.tiles >= 3 && in.tiles <= 16 &&
++          uint64_t(in.vertices) * in.tiles <= 2048;
++}
++
++static inline bool
++frane_a830_qp1_tune_small(const frane_a830_qp1_input &in,
++                          uint64_t pixels, uint32_t gmem_cpp,
++                          uint32_t draw_cpp)
++{
++   return !in.blocked && in.draws >= 2 && in.draws <= 4 &&
++          in.vertices && in.vertices <= 192 &&
++          in.tiles && in.tiles <= 16 &&
++          pixels >= 262144 && pixels <= 2097152 &&
++          gmem_cpp && gmem_cpp <= 32 &&
++          uint64_t(draw_cpp) >= uint64_t(gmem_cpp) * 2;
++}
++
++#endif

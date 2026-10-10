@@ -21,10 +21,12 @@ struct view { uint32_t offset; };
 struct attachment { struct image *image; struct view view; };
 struct tu_device { uint64_t id; };
 struct area { struct {int32_t x,y;} offset; struct {uint32_t width,height;} extent; };
-struct tu_cmd_buffer { tu_device *device; struct { area render_areas[1]; attachment **attachments; struct {uint32_t drawcall_count;} rp; uint32_t gmem_layout;} state; };
+struct tu_cmd_buffer { tu_device *device; struct { area render_areas[1]; attachment **attachments; struct {uint32_t drawcall_count; uint32_t frane_qp1_vertices; bool frane_qp1_unknown;} rp; uint32_t gmem_layout;} state; };
 struct tu_render_pass { uint32_t attachment_count; uint64_t autotune_hash; struct {bool load,store,load_stencil,store_stencil;} attachments[6]; };
 struct tu_framebuffer {uint32_t width,height,layers;};
 bool frane_26320_a830_gpu(const tu_device *d) {return frane_a830_target(d->id);}
+bool qp1_enabled=false;
+bool frane_a830_qp1_enabled(const tu_device *d) {return qp1_enabled && frane_a830_target(d->id);}
 namespace tu_autotune {struct rp_key {uint64_t hash;rp_key(const tu_render_pass*,const tu_framebuffer*,const tu_cmd_buffer*);};}
 '''
 post=r'''
@@ -46,6 +48,11 @@ int main() {
  dev.id=0x44010000;auto other=hash();cmd.state.render_areas[0].extent.width=2;cmd.state.rp.drawcall_count=1;pass.autotune_hash=3;cmd.state.gmem_layout=1;assert(hash()==other);
  dev.id=0x44050001;
  for(unsigned n=0;n<=6;n++){pass.attachment_count=n;cmd.state.rp.drawcall_count=0;auto zero=hash();cmd.state.rp.drawcall_count=1;assert(hash()!=zero);cmd.state.rp.drawcall_count=UINT32_MAX;auto max=hash();assert(hash()==max);}
+ qp1_enabled=true;cmd.state.rp.drawcall_count=2;cmd.state.rp.frane_qp1_vertices=6;auto qp=hash();
+ cmd.state.rp.drawcall_count=3;assert(hash()!=qp);cmd.state.rp.drawcall_count=2;
+ cmd.state.rp.frane_qp1_vertices=12;assert(hash()!=qp);cmd.state.rp.frane_qp1_vertices=6;
+ cmd.state.rp.frane_qp1_unknown=true;assert(hash()!=qp);cmd.state.rp.frane_qp1_unknown=false;
+ qp1_enabled=false;assert(hash()!=qp);
  puts("Actual Mesa rp_key constructor: PASS (scope isolation, draw buckets, zero/UINT32_MAX, stack/heap attachment capacity; mocked Vulkan objects)");
 }
 '''
