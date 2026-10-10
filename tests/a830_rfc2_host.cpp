@@ -39,7 +39,7 @@ int main()
    FILE *f=std::fopen(path,"r");assert(f);
    char row[2048]{};
    assert(std::fgets(row,sizeof(row),f));
-   assert(std::strstr(row,"gpu_ns") && std::strstr(row,"source"));
+   assert(std::strstr(row,"gpu_ticks") && std::strstr(row,"source"));
    assert(std::fgets(row,sizeof(row),f));
    assert(std::strstr(row,"DECISION") && std::strstr(row,"BW2_ROLLBACK"));
    assert(std::strstr(row,"0000000000000abc") && std::strstr(row,",SYSMEM,1"));
