@@ -16,7 +16,7 @@ assert 'TU_FRANE_A830_TRACE_PATH' in rfc
 assert 'frane_a830_rfc1_trace(' in auto
 assert 'mode == render_mode::SYSMEM, measure' in auto
 assert 'frane_26320_a830_gpu(device)' in auto
-assert 'Turnip-Drnas A830 S2-RFC1 Render Features / Mesa ' in dev
+assert ('Turnip-Drnas A830 S2-RFC1 Render Features / Mesa ' in dev or\n        'Turnip-Drnas A830 S2-RFC2 Measured Render / Mesa ' in dev)
 assert 'TU_FRANE_A830_BW3' not in auto
 assert 'TU_FRANE_A830_CX1' not in auto
 assert "frane_a830_s2bw2_evaluate" in s and "frane_a830_s2bw2_evaluate" in a
