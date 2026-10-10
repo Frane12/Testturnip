@@ -22,6 +22,7 @@ for anchor in (
 assert src.index('frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffer)') < src.index('frane_a810_rfc1_decision(')
 for a in ("paired >= 4", "paired >= 8", "at4.force_measure", "frane_at4_active", "s.stale[0]", "out.force_measure = true"):
    assert a in header,a
-assert "A810 AT5 Context Learner / Mesa" in device
+assert ("A810 AT5 Context Learner / Mesa" in device or
+        "A810 AT6 Calibrated Learner / Mesa" in device)
 assert "TU_FRANE_A810_RFC1_TRACE_PATH" in (v/"frane_a810_at4_rfc1.h").read_text()
 print("A810 AT5 runtime selector, scope, policy fallback, optional trace and GMEM guard PASS")
