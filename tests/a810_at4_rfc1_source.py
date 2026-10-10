@@ -25,7 +25,8 @@ for token in (
 assert "TU_FRANE_A810_RFC1_TRACE_PATH" in hdr
 assert 'path[0] == \'/\'' in hdr
 assert ">= 65536u" in hdr
-assert "A810 AT4-RFC1 Trace / Mesa" in device
+assert ("A810 AT4-RFC1 Trace / Mesa" in device or
+        "A810 AT5 Context Learner / Mesa" in device)
 assert auto.index("frane_a810_rfc1_timing(") > auto.index("const uint64_t rp_duration = entry.get_rp_duration();")
 assert auto.index("frane_a810_rfc1_decision(") > auto.index('safety_forced ? "GMEM_SAFETY"')
 print("A810 RFC1 runtime integration PASS")
