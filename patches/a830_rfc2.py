@@ -29,14 +29,8 @@ edit(auto,
      "include standalone native trace")
 
 edit(auto,
-     """         bool frane_smart = false, uint32_t occurrence = 0,
-         bool tail_risk = false)
-       {""",
-     """         bool frane_smart = false, uint32_t occurrence = 0,
-         bool tail_risk = false, uint8_t *rfc2_reason = nullptr)
-       {
-         if (rfc2_reason)
-            *rfc2_reason = FRANE_A830_RFC2_PROFILED;""",
+     "         bool tail_risk = false)",
+     "         bool tail_risk = false, uint8_t *rfc2_reason = nullptr)",
      "mode selection optional source output; no added GPU path")
 
 edit(auto,
