@@ -19,7 +19,8 @@ assert 'frane_26320_a830_gpu(device)' in auto
 assert ('Turnip-Drnas A830 S2-RFC1 Render Features / Mesa ' in dev or
         'Turnip-Drnas A830 S2-RFC2 Measured Render / Mesa ' in dev or
         'Turnip-Drnas A830 S2-RFC3 Measured Guard / Mesa ' in dev or
-        'Turnip-Drnas A830 S2-RFC4 Adaptive Learning / Mesa ' in dev)
+        'Turnip-Drnas A830 S2-RFC4 Adaptive Learning / Mesa ' in dev or
+        'Turnip-Drnas A830 S2-RFC5 Hotspot Learning / Mesa ' in dev)
 assert 'TU_FRANE_A830_BW3' not in auto
 assert 'TU_FRANE_A830_CX1' not in auto
 assert "frane_a830_s2bw2_evaluate" in s and "frane_a830_s2bw2_evaluate" in a
