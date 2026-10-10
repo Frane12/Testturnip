@@ -23,7 +23,8 @@ assert "version,session_id,event" in r
 assert "gpu_ticks,sys_ema_ticks,gmem_ema_ticks" in r
 assert "measured_events.fetch_add" in r
 assert "clock_gettime(CLOCK_MONOTONIC" in r
-assert "Turnip-Drnas A830 S2-RFC4 Adaptive Learning / Mesa " in device
+assert ("Turnip-Drnas A830 S2-RFC4 Adaptive Learning / Mesa " in device or
+        "Turnip-Drnas A830 S2-RFC5 Hotspot Learning / Mesa " in device)
 assert "frane_a830_s2bw2_ratio_le" in h
 assert "sys_average_ticks" in h and "gm_average_ticks" in h
 assert "volatility >= 35u" in h
