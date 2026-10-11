@@ -5,7 +5,7 @@
  */
 #ifndef FRANE_A810_ATULTIMATE_TRACE_H
 #define FRANE_A810_ATULTIMATE_TRACE_H
-#include "frane_a810_atultimate_dynamic.h"
+#include "frane_a810_atultimate_v3.h"
 #include <atomic>
 #include <cerrno>
 #include <cinttypes>
@@ -37,6 +37,7 @@ struct frane_atu_trace_row {
    bool at4_controlled = false;
    bool prior_rejected = false;
    frane_atu_dyn_result dynamic {};
+   frane_atu_v3_result v3 {};
 
    const char *source = "PROFILED";
 };
@@ -56,6 +57,8 @@ frane_atu_trace(const frane_atu_trace_row &r,
       (r.occurrence & 31u) == 0u ||
       (r.prior_rejected && (r.occurrence & 7u) == 0u) ||
       r.dynamic.phase_switch || r.dynamic.winner_switch ||
+      r.v3.phase_switched || r.v3.winner_acquired || r.v3.winner_changed ||
+      (r.v3.blocked && ((r.occurrence & 7u) == 0u)) ||
       (r.dynamic.used && (r.occurrence & 15u) == 0u);
    const bool dump = slots &&
       (r.occurrence == 1u || (r.occurrence & 255u) == 0u);
@@ -86,7 +89,11 @@ frane_atu_trace(const frane_atu_trace_row &r,
          "sys_stale,gmem_stale,lower_saving_us,noise_q8,history_hit,"
          "diagnosis,prior_rejected,dyn_class,dyn_active,dyn_pending,"
          "dyn_winner,dyn_votes,dyn_cooldown,dyn_used,dyn_phase_switch,"
-         "dyn_winner_switch,dyn_confident\n",f);
+         "dyn_winner_switch,dyn_confident,v3_reason,v3_category_key,"
+         "v3_catalog,v3_slot,v3_cached_winner,v3_challenger,v3_votes,"
+         "v3_dwell,v3_frequency,v3_candidate,v3_hit,v3_evicted,"
+         "v3_phase_change,v3_acquired,v3_winner_change,v3_used,"
+         "v3_blocked,v3_confident\n",f);
    if (record) {
       const bool hit = r.signature && r.signature == r.s.signature;
       const unsigned paired = std::min(r.s.samples[0], r.s.samples[1]);
@@ -105,7 +112,7 @@ frane_atu_trace(const frane_atu_trace_row &r,
          r.s.volatility > 3 ? "VOLATILE_HISTORY" : "OK";
       const auto c = frane_s1at1_catalog_for(r.in);
       std::fprintf(f,
-         "2,DECISION,%016llx,%u,%u,-1,%u,%llu,%llu,%u,%u,%u,%u,%u,%s,%u,%u,%s,%d,%u,%u,%u,%u,%u,%u,%u,%u,%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
+         "2,DECISION,%016llx,%u,%u,-1,%u,%llu,%llu,%u,%u,%u,%u,%u,%s,%u,%u,%s,%d,%u,%u,%u,%u,%u,%u,%u,%u,%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
          static_cast<unsigned long long>(r.hash),r.occurrence,
          unsigned(r.signature),unsigned(c.id),
          static_cast<unsigned long long>(r.in.pass_pixels),
@@ -123,7 +130,17 @@ frane_atu_trace(const frane_atu_trace_row &r,
          unsigned(r.dynamic.state.pending),unsigned(r.dynamic.state.winner),
          unsigned(r.dynamic.state.votes),unsigned(r.dynamic.state.cooldown),
          unsigned(r.dynamic.used),unsigned(r.dynamic.phase_switch),
-         unsigned(r.dynamic.winner_switch),unsigned(r.dynamic.confident));
+         unsigned(r.dynamic.winner_switch),unsigned(r.dynamic.confident),
+         frane_atu_v3_reason(r.v3.why),
+         unsigned(r.v3.category_key),unsigned(r.v3.catalog),
+         unsigned(r.v3.slot_id),unsigned(r.v3.slot.winner),
+         unsigned(r.v3.slot.challenger),unsigned(r.v3.slot.votes),
+         unsigned(r.v3.slot.dwell),unsigned(r.v3.slot.frequency),
+         unsigned(r.v3.candidate),unsigned(r.v3.cache_hit),
+         unsigned(r.v3.cache_evicted),unsigned(r.v3.phase_switched),
+         unsigned(r.v3.winner_acquired),unsigned(r.v3.winner_changed),
+         unsigned(r.v3.used),unsigned(r.v3.blocked),
+         unsigned(r.v3.confident));
    }
    if (dump) {
       for (unsigned i=0; i<FRANE_AT3_ENTRIES; i++) {
@@ -132,7 +149,7 @@ frane_atu_trace(const frane_atu_trace_row &r,
          if (!s.signature)
             continue;
          std::fprintf(f,
-            "2,TABLE,%016llx,%u,%u,%u,0,0,0,0,0,0,0,0,NA,0,0,TABLE_SNAPSHOT,%d,%u,%u,%u,%u,%u,%u,%u,1,SLOT_SNAPSHOT,0,0,0,0,0,0,0,0,0,0,0\n",
+            "2,TABLE,%016llx,%u,%u,%u,0,0,0,0,0,0,0,0,NA,0,0,TABLE_SNAPSHOT,%d,%u,%u,%u,%u,%u,%u,%u,1,SLOT_SNAPSHOT,0,0,0,0,0,0,0,0,0,0,0,OFF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0\n",
             static_cast<unsigned long long>(r.hash),
             r.occurrence,unsigned(s.signature),i,int(s.score),
             unsigned(s.volatility),unsigned(s.samples[0]),
