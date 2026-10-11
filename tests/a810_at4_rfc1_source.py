@@ -30,7 +30,8 @@ assert ("A810 AT4-RFC1 Trace / Mesa" in device or
         "A810 AT8 Early GPU Winner / Mesa" in device or
         "A810 ATUltimate Context Learner / Mesa" in device or
         "A810 ATUltimate Dynamic V2 / Mesa" in device or
-        "A810 ATUltimate Dynamic V3 / Mesa" in device)
+        "A810 ATUltimate Dynamic V3 / Mesa" in device or
+        "A810 S Ultimate v1.0 / Mesa" in device)
 assert auto.index("frane_a810_rfc1_timing(") > auto.index("const uint64_t rp_duration = entry.get_rp_duration();")
 assert auto.index("frane_a810_rfc1_decision(") > auto.index('safety_forced ? "GMEM_SAFETY"')
 print("A810 RFC1 runtime integration PASS")
