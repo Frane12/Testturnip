@@ -5,7 +5,7 @@
  */
 #ifndef FRANE_A810_ATULTIMATE_TRACE_H
 #define FRANE_A810_ATULTIMATE_TRACE_H
-#include "frane_a810_atultimate.h"
+#include "frane_a810_atultimate_dynamic.h"
 #include <atomic>
 #include <cerrno>
 #include <cinttypes>
@@ -36,6 +36,8 @@ struct frane_atu_trace_row {
    bool depth_overrode = false;
    bool at4_controlled = false;
    bool prior_rejected = false;
+   frane_atu_dyn_result dynamic {};
+
    const char *source = "PROFILED";
 };
 
@@ -52,7 +54,9 @@ frane_atu_trace(const frane_atu_trace_row &r,
       return;
    const bool record = r.occurrence <= 4u ||
       (r.occurrence & 31u) == 0u ||
-      (r.prior_rejected && (r.occurrence & 7u) == 0u);
+      (r.prior_rejected && (r.occurrence & 7u) == 0u) ||
+      r.dynamic.phase_switch || r.dynamic.winner_switch ||
+      (r.dynamic.used && (r.occurrence & 15u) == 0u);
    const bool dump = slots &&
       (r.occurrence == 1u || (r.occurrence & 255u) == 0u);
    if (!record && !dump)
@@ -80,7 +84,9 @@ frane_atu_trace(const frane_atu_trace_row &r,
          "drawcalls,sys_cpp,gmem_cpp,zs,profiled_sys_percent,final_mode,"
          "measure,eligible,source,score,volatility,sys_samples,gmem_samples,"
          "sys_stale,gmem_stale,lower_saving_us,noise_q8,history_hit,"
-         "diagnosis,prior_rejected\n",f);
+         "diagnosis,prior_rejected,dyn_class,dyn_active,dyn_pending,"
+         "dyn_winner,dyn_votes,dyn_cooldown,dyn_used,dyn_phase_switch,"
+         "dyn_winner_switch,dyn_confident\n",f);
    if (record) {
       const bool hit = r.signature && r.signature == r.s.signature;
       const unsigned paired = std::min(r.s.samples[0], r.s.samples[1]);
@@ -99,7 +105,7 @@ frane_atu_trace(const frane_atu_trace_row &r,
          r.s.volatility > 3 ? "VOLATILE_HISTORY" : "OK";
       const auto c = frane_s1at1_catalog_for(r.in);
       std::fprintf(f,
-         "2,DECISION,%016llx,%u,%u,-1,%u,%llu,%llu,%u,%u,%u,%u,%u,%s,%u,%u,%s,%d,%u,%u,%u,%u,%u,%u,%u,%u,%s,%u\n",
+         "2,DECISION,%016llx,%u,%u,-1,%u,%llu,%llu,%u,%u,%u,%u,%u,%s,%u,%u,%s,%d,%u,%u,%u,%u,%u,%u,%u,%u,%s,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\n",
          static_cast<unsigned long long>(r.hash),r.occurrence,
          unsigned(r.signature),unsigned(c.id),
          static_cast<unsigned long long>(r.in.pass_pixels),
@@ -112,7 +118,12 @@ frane_atu_trace(const frane_atu_trace_row &r,
          unsigned(r.s.samples[0]),unsigned(r.s.samples[1]),
          unsigned(r.s.stale[0]),unsigned(r.s.stale[1]),
          unsigned(r.s.at7_saving_4us)*4u,unsigned(r.s.at7_noise_q8),
-         unsigned(hit),diagnosis,unsigned(r.prior_rejected));
+         unsigned(hit),diagnosis,unsigned(r.prior_rejected),
+         unsigned(r.dynamic.category),unsigned(r.dynamic.state.active),
+         unsigned(r.dynamic.state.pending),unsigned(r.dynamic.state.winner),
+         unsigned(r.dynamic.state.votes),unsigned(r.dynamic.state.cooldown),
+         unsigned(r.dynamic.used),unsigned(r.dynamic.phase_switch),
+         unsigned(r.dynamic.winner_switch),unsigned(r.dynamic.confident));
    }
    if (dump) {
       for (unsigned i=0; i<FRANE_AT3_ENTRIES; i++) {
@@ -121,7 +132,7 @@ frane_atu_trace(const frane_atu_trace_row &r,
          if (!s.signature)
             continue;
          std::fprintf(f,
-            "2,TABLE,%016llx,%u,%u,%u,0,0,0,0,0,0,0,0,NA,0,0,TABLE_SNAPSHOT,%d,%u,%u,%u,%u,%u,%u,%u,1,SLOT_SNAPSHOT,0\n",
+            "2,TABLE,%016llx,%u,%u,%u,0,0,0,0,0,0,0,0,NA,0,0,TABLE_SNAPSHOT,%d,%u,%u,%u,%u,%u,%u,%u,1,SLOT_SNAPSHOT,0,0,0,0,0,0,0,0,0,0,0\n",
             static_cast<unsigned long long>(r.hash),
             r.occurrence,unsigned(s.signature),i,int(s.score),
             unsigned(s.volatility),unsigned(s.samples[0]),
