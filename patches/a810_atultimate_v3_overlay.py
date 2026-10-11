@@ -106,9 +106,13 @@ edit(auto,
          &atu_v3_diag);""",
    "connect V3 to actual selector independent of tracing")
 edit(auto,
-"""            atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
+"""         const char *source = safety_forced ? "GMEM_SAFETY" :
+            depth_overrode ? "DEPTH_FRONTIER" :
+            atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
             atu_prior_rejected ? "ATU_HISTORY_GUARD" :""",
-"""            atu_v3_applied ? "ATU_V3_CATEGORY_WINNER" :
+"""         const char *source = safety_forced ? "GMEM_SAFETY" :
+            depth_overrode ? "DEPTH_FRONTIER" :
+            atu_v3_applied ? "ATU_V3_CATEGORY_WINNER" :
             atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
             atu_prior_rejected ? "ATU_HISTORY_GUARD" :""",
    "legacy RFC1 GPU trace provenance: dynamic V3")
@@ -120,9 +124,13 @@ edit(auto,
          row.source = safety_forced ? "GMEM_SAFETY" :""",
    "V3 diagnostics report from actual final choice")
 edit(auto,
-"""            atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
+"""         row.source = safety_forced ? "GMEM_SAFETY" :
+            depth_overrode ? "DEPTH_FRONTIER" :
+            atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
             atu_prior_rejected ? "ATU_HISTORY_GUARD" :""",
-"""            atu_v3_applied ? "ATU_V3_CATEGORY_WINNER" :
+"""         row.source = safety_forced ? "GMEM_SAFETY" :
+            depth_overrode ? "DEPTH_FRONTIER" :
+            atu_v3_applied ? "ATU_V3_CATEGORY_WINNER" :
             atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
             atu_prior_rejected ? "ATU_HISTORY_GUARD" :""",
    "context logger provenance for V3")
