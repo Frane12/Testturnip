@@ -56,5 +56,6 @@ change(a,
                          frane_a810_atu_fast_enabled(),
                          frane_a810_atu_phase_hits(),frane_a810_atu_dwell(),
                          v3_safe);""","runtime veto")
-change(d,"Drnas-Turnip A810 S Ultimate v1.0","Drnas-Turnip A810 S Ultimate v1.1","branding")
+change(d,'Drnas-Turnip A810 S Ultimate v1.0 / Mesa ','Drnas-Turnip A810 S Ultimate v1.1 / Mesa ',"driverInfo branding")
+change(d,'"Drnas-Turnip A810 S Ultimate v1.0" : pdevice->name','"Drnas-Turnip A810 S Ultimate v1.1" : pdevice->name',"deviceName branding")
 print("S Ultimate v1.1 guard audit PASS")
