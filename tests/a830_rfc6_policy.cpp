@@ -24,7 +24,7 @@ int main() {
     */
    auto uncertain=d(true,-7,80,64,64,11276,11444,vol6,100,98,97);
    assert(!uncertain.accepted);
-   assert(d(true,-7,80,64,64,11276,11444,vol6,100,98,97).margin_pct==7);
+   assert(frane_a830_rfc6_required_margin(vol6,80)==7);
    /* Hot ~8.7% win with low volatility: trust and sample often. */
    auto hot=d(true,-7,80,64,64,10500,11500,vol6,100,98,97);
    assert(hot.accepted && hot.base.workload_class==FRANE_A830_RFC5_HOT_CLOSE);
