@@ -31,5 +31,6 @@ assert ("AT7 Utility Winner / Mesa" in dev or
         "AT8 Early GPU Winner / Mesa" in dev or
         "ATUltimate Context Learner / Mesa" in dev or
         "ATUltimate Dynamic V2 / Mesa" in dev or
-        'ATUltimate Dynamic V3 / Mesa' in dev)
+        'ATUltimate Dynamic V3 / Mesa' in dev or
+        'A810 S Ultimate v1.0 / Mesa' in dev)
 print("AT7 actual call-site, AT63 rollback, no AT5, safety gate and optional ns CSV PASS")
