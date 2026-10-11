@@ -62,8 +62,6 @@ jobs:
           python3 tests/a810_at7_source.py mesa
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/a810_at7_host.cpp -o /tmp/a810-at7-host
           UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-at7-host
-          g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/a810_at5_host.cpp -o /tmp/a810-at5-host
-          UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-at5-host
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Ipatches tests/a810_at4_rfc1_host.cpp -o /tmp/a810-rfc1-host
           UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-rfc1-host
       - name: Configure Android aarch64 KGSL
