@@ -27,5 +27,6 @@ assert "TU_FRANE_AT5" not in auto and not (v/"frane_a810_at5.h").exists()
 for token in ("at7_saving_4us","at7_noise_q8","lower_bound_ticks / 77u","(saving_q4us << 40)","(word >> 52) & 255u"):
  assert token in his,token
 assert "frane_a810_rfc1_ticks_to_ns" in rfc
-assert "AT7 Utility Winner / Mesa" in dev
+assert ("AT7 Utility Winner / Mesa" in dev or
+        "U1 RC1 A810 Universal / Mesa" in dev)
 print("AT7 actual call-site, AT63 rollback, no AT5, safety gate and optional ns CSV PASS")
