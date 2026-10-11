@@ -4,9 +4,11 @@ Dynamic GPU champions are per existing AT3 context. Phase/winner hysteresis
 uses a single RP-local packed atomic. AT4 probes and final safety untouched.
 """
 from pathlib import Path
+import shutil
 V=Path("mesa/src/freedreno/vulkan")
 auto=V/"tu_autotune.cc"
 dev=V/"tu_device.cc"
+shutil.copyfile("patches/frane_a810_atultimate_dynamic.h",V/"frane_a810_atultimate_dynamic.h")
 def edit(p,old,new,label):
     s=p.read_text();n=s.count(old)
     if n!=1: raise SystemExit(f"ATUltimate V2 SOURCE DRIFT {label}: {n}")
@@ -42,14 +44,14 @@ static bool frane_a810_atu_fast_enabled()
 }
 static unsigned frane_a810_atu_phase_hits()
 {
-   static const unsigned hits = std::clamp<unsigned>(
-      debug_get_num_option("TU_FRANE_ATU_PHASE_HITS",3),2u,8u);
+   static const unsigned hits = unsigned(std::clamp<int64_t>(
+      debug_get_num_option("TU_FRANE_ATU_PHASE_HITS",3),2,8));
    return hits;
 }
 static unsigned frane_a810_atu_dwell()
 {
-   static const unsigned count = std::clamp<unsigned>(
-      debug_get_num_option("TU_FRANE_ATU_DWELL",24),8u,48u);
+   static const unsigned count = unsigned(std::clamp<int64_t>(
+      debug_get_num_option("TU_FRANE_ATU_DWELL",24),8,48));
    return count;
 }""",
      "runtime flags default ON with sane hysteresis limits")
