@@ -139,7 +139,7 @@ jobs:
           ! grep -q 'libc++_shared.so' elf-dynamic.txt
           python3 -c 'import json; m=json.load(open("out/meta.json")); assert m["libraryName"]=="libvulkan_freedreno.so" and m["minApi"]==34'
           strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_A810_RFC1_TRACE_PATH'
-          strings out/libvulkan_freedreno.so | grep -q 'A810 AT7 Utility Winner'
+          strings out/libvulkan_freedreno.so | grep -q 'A810 AT8 Early GPU Winner'
           strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT7'
           strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT63'
           ! strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT5'
