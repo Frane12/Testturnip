@@ -23,6 +23,7 @@ for token in ('dyn_active','dyn_winner','dyn_votes','dyn_cooldown',
               'r.dynamic.phase_switch','r.dynamic.winner_switch'):
  assert token in trace,token
 assert ('A810 ATUltimate Dynamic V2 / Mesa' in dev or
-        'A810 ATUltimate Dynamic V3 / Mesa' in dev)
+        'A810 ATUltimate Dynamic V3 / Mesa' in dev or
+        'A810 S Ultimate v1.0 / Mesa' in dev)
 assert not any(t in a for t in ('TU_FRANE_AT9','frane_at9_fc2','AT9_FC2_PRIOR'))
 print('ATUltimate V2 actual selector + context table, no AT9, fast and hysteresis feature flags PASS')
