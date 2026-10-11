@@ -87,7 +87,6 @@ jobs:
           python3 patches/a810_atultimate_dynamic_overlay.py
           python3 patches/a810_atultimate_v3_overlay.py
           python3 patches/a810_sultimate_rc_branding.py
-          python3 patches/a810_sultimate_v11_overlay.py
           git -C mesa diff --check
           git -C mesa diff > A810-S-Ultimate-v1.1-DRAFT-complete.patch
           sha256sum patches/at4-s1guard-full.patch patches/frane_a810_at4_rfc1.h patches/a810_at4_rfc1.py patches/frane_a810_at6_at4base.h patches/frane_a810_at63_earlywinner.h patches/frane_a810_at7_utility.h patches/a810_at7_overlay.py patches/frane_a810_cp1.h patches/a810_cp1_queue.py patches/frane_a810_at8_early.h patches/a810_at8_overlay.py patches/frane_a810_atultimate.h patches/frane_a810_atultimate_trace.h patches/a810_atultimate_overlay.py patches/frane_a810_atultimate_dynamic.h patches/a810_atultimate_dynamic_overlay.py patches/frane_a810_atultimate_v3.h patches/a810_atultimate_v3_overlay.py patches/a810_sultimate_rc_branding.py
@@ -103,7 +102,10 @@ jobs:
           python3 tests/a810_atultimate_dynamic_source.py mesa
           python3 tests/a810_atultimate_v3_source.py mesa
           python3 tests/a810_sultimate_rc_source.py mesa
+          python3 patches/a810_sultimate_v11_overlay.py
           python3 tests/a810_sultimate_v11_source.py mesa
+          git -C mesa diff --check
+          git -C mesa diff > A810-S-Ultimate-v1.1-DRAFT-complete.patch
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/a810_sultimate_v11_host.cpp -o /tmp/a810-v11-host
           /tmp/a810-v11-host
           g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/a810_atultimate_v3_host.cpp -o /tmp/a810-atu-v3-host
