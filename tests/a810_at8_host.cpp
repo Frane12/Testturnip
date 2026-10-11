@@ -45,8 +45,9 @@ int main() {
    st.score=+23; st.mode[0].mad=40000; st.mode[1].mad=40000;
    assert(!frane_at8_early_winner(in,frane_s1at3_unpack(frane_s1at3_pack(st,64)),424242,at4).override_mode);
    st.mode[0].mad=1000; st.mode[1].mad=1000;
-   st.mode[0].age=63;
-   assert(!frane_at8_early_winner(in,frane_s1at3_unpack(frane_s1at3_pack(st,64)),424242,at4).override_mode);
+   auto stale=frane_s1at3_unpack(frane_s1at3_pack(st,64));
+   stale.stale[0]=true; // deterministic stale snapshot test, independent of timestamp wrap
+   assert(!frane_at8_early_winner(in,stale,424242,at4).override_mode);
    st.mode[0].age=0; st.volatility=1;
    assert(!frane_at8_early_winner(in,frane_s1at3_unpack(frane_s1at3_pack(st,64)),424242,at4).override_mode);
    st.volatility=0; in.estimated_tiles=25;
