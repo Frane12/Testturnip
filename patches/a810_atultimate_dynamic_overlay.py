@@ -104,9 +104,13 @@ edit(auto,
          &atu_dynamic_diag);""",
      "pass dynamic gate and state back from actual selector")
 edit(auto,
-"""            atu_prior_rejected ? "ATU_HISTORY_GUARD" :
+"""         const char *source = safety_forced ? "GMEM_SAFETY" :
+            depth_overrode ? "DEPTH_FRONTIER" :
+            atu_prior_rejected ? "ATU_HISTORY_GUARD" :
             at8_applied ? "AT8_EARLY_GPU_WINNER" :""",
-"""            atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
+"""         const char *source = safety_forced ? "GMEM_SAFETY" :
+            depth_overrode ? "DEPTH_FRONTIER" :
+            atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
             atu_prior_rejected ? "ATU_HISTORY_GUARD" :
             at8_applied ? "AT8_EARLY_GPU_WINNER" :""",
      "tag dynamic GPU champion in RFC1 trace")
@@ -118,9 +122,13 @@ edit(auto,
          row.source = safety_forced ? "GMEM_SAFETY" :""",
      "add dynamic learning state to existing render-context logger")
 edit(auto,
-"""            atu_prior_rejected ? "ATU_HISTORY_GUARD" :
+"""         row.source = safety_forced ? "GMEM_SAFETY" :
+            depth_overrode ? "DEPTH_FRONTIER" :
+            atu_prior_rejected ? "ATU_HISTORY_GUARD" :
             at8_applied ? "AT8_EARLY_GPU_WINNER" :""",
-"""            atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
+"""         row.source = safety_forced ? "GMEM_SAFETY" :
+            depth_overrode ? "DEPTH_FRONTIER" :
+            atu_dynamic_applied ? "ATU_DYNAMIC_WINNER" :
             atu_prior_rejected ? "ATU_HISTORY_GUARD" :
             at8_applied ? "AT8_EARLY_GPU_WINNER" :""",
      "actual context logging identifies dynamic winner")
