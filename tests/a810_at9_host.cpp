@@ -35,7 +35,7 @@ int main() {
    at4.override_mode=false;
    s.at7_saving_4us=74;
    assert(!frane_at9_fc2_measured(in,s,90,at4,false).override_mode);
-   s.samples[0]=4;s.samples[1]=5;s.score=7;s.at7_saving_4us=60;s.at7_noise_q8=90;s.volatility=5;
+   s.samples[0]=4;s.samples[1]=5;s.score=-7;s.at7_saving_4us=60;s.at7_noise_q8=90;s.volatility=5;
    win=frane_at9_fc2_measured(in,s,90,at4,false);
    assert(win.override_mode && win.select_sysmem);
    s.at7_noise_q8=97;
