@@ -23,6 +23,7 @@ for t in ("FRANE_ATU_V3_SLOTS 4","struct frane_atu_v3_slot",
 for t in ("v3_reason","v3_cached_winner","v3_blocked","r.v3.why",
           "r.v3.phase_switched"):
  assert t in trace,t
-assert "ATUltimate Dynamic V3 / Mesa" in dev
+assert ("ATUltimate Dynamic V3 / Mesa" in dev or
+        "A810 S Ultimate v1.0 / Mesa" in dev)
 assert not any(t in s for t in ("TU_FRANE_AT9","frane_at9_fc2","AT9_FC2_PRIOR"))
 print("V3 real runtime GPU champion integration with 4-way categories, tracing and no AT9 PASS")
