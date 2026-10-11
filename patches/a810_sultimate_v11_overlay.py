@@ -32,7 +32,7 @@ change(h,
       } else {""","hard veto")
 change(a,
 """                  if (s1atu_v3_context && s1at4_context) {
-                      const auto v3 = frane_atu_v3_step(""",
+                     const auto v3 = frane_atu_v3_step(""",
 """                  if (s1atu_v3_context && s1at4_context) {
                       /* AT4 gates per-pass GMEM correctness. If the user
                        * disables that correctness gate, V3 cannot select. */
@@ -41,19 +41,19 @@ change(a,
                       const bool v3_safe = v3_safe_enabled &&
                          frane_2634_eval_layout(
                             gmem_runtime_input->layout).eligible;
-                      const auto v3 = frane_atu_v3_step(""","GMEM safety/layout check")
+                     const auto v3 = frane_atu_v3_step(""","GMEM safety/layout check")
 change(a,
-"""                         !at1.override_mode && !runtime_decision.override_mode,
-                         at1.force_measure,runtime_decision.override_mode,
-                         frane_a810_atu_fast_enabled(),
-                         frane_a810_atu_phase_hits(),frane_a810_atu_dwell());""",
-"""                         !at1.override_mode && !at1.force_measure &&
+"""                        !at1.override_mode && !runtime_decision.override_mode,
+                        at1.force_measure,runtime_decision.override_mode,
+                        frane_a810_atu_fast_enabled(),
+                        frane_a810_atu_phase_hits(),frane_a810_atu_dwell());""",
+"""                        !at1.override_mode && !at1.force_measure &&
                             !runtime_decision.override_mode &&
                             !runtime_decision.force_measure,
                          at1.force_measure,
                          runtime_decision.override_mode ||
                             runtime_decision.force_measure,
-                         frane_a810_atu_fast_enabled(),
+                        frane_a810_atu_fast_enabled(),
                          frane_a810_atu_phase_hits(),frane_a810_atu_dwell(),
                          v3_safe);""","runtime veto")
 change(d,'Drnas-Turnip A810 S Ultimate v1.0 / Mesa ','Drnas-Turnip A810 S Ultimate v1.1 / Mesa ',"driverInfo branding")
