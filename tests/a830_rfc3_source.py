@@ -38,7 +38,8 @@ assert "bw2.rollback_sysmem" in adaptive
 assert ("Turnip-Drnas A830 S2-RFC3 Measured Guard / Mesa " in device or
         "Turnip-Drnas A830 S2-RFC4 Adaptive Learning / Mesa " in device or
         "Turnip-Drnas A830 S2-RFC5 Hotspot Learning / Mesa " in device or
-        "Turnip-Drnas A830 S2-RFC6 Confidence Learning / Mesa " in device)
+        "Turnip-Drnas A830 S2-RFC6 Confidence Learning / Mesa " in device or
+        "Turnip-Drnas A830 S2-RFC7 Bandwidth Profiler / Mesa " in device)
 for disallow in ("TU_FRANE_A830_BW3","TU_FRANE_A830_CX1"):
     assert disallow not in auto
 f=cmd[cmd.index("static bool\nuse_sysmem_rendering"):
