@@ -20,7 +20,7 @@ for value in (
     'frane_cp1_emit(cp1);',
 ):
     assert value in q,value
-assert q.index("pthread_mutex_unlock(&device->submit_mutex);\\n   pthread_cond_broadcast") < q.index("frane_cp1_emit(cp1);")
+assert q.index("pthread_mutex_unlock(&device->submit_mutex);\n   pthread_cond_broadcast") < q.index("frane_cp1_emit(cp1);")
 assert q.index("cp1.patched = frane_cp1_now_ns();") < q.index("cp1.gathered = frane_cp1_now_ns();")
 assert q.index("cp1.before_kernel = frane_cp1_now_ns();") < q.index("cp1.after_kernel = frane_cp1_now_ns();")
 assert "TU_FRANE_A810_CP1_TRACE_PATH" in h
