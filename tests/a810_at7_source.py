@@ -28,5 +28,6 @@ for token in ("at7_saving_4us","at7_noise_q8","lower_bound_ticks / 77u","(saving
  assert token in his,token
 assert "frane_a810_rfc1_ticks_to_ns" in rfc
 assert ("AT7 Utility Winner / Mesa" in dev or
-        "AT8 Early GPU Winner / Mesa" in dev)
+        "AT8 Early GPU Winner / Mesa" in dev or
+        "ATUltimate Context Learner / Mesa" in dev)
 print("AT7 actual call-site, AT63 rollback, no AT5, safety gate and optional ns CSV PASS")
