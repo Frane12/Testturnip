@@ -74,70 +74,70 @@ edit("""   result = resolve_cb_control_patchpoints(queue, submit, &dump_cmds,
    if (has_trace_points) {""",
      "measure command buffer patchpoint CPU phase")
 
-edit("""       submit_add_entries(device, submit, &dump_cmds, cs->entries,
-                          cs->entry_count);
+edit("""      submit_add_entries(device, submit, &dump_cmds, cs->entries,
+                         cs->entry_count);
 
-       if (u_trace_submission_data &&""",
-"""       submit_add_entries(device, submit, &dump_cmds, cs->entries,
-                          cs->entry_count);
-       if (cp1.enabled)
-          cp1.cmd_entries += cs->entry_count;
+      if (u_trace_submission_data &&""",
+"""      submit_add_entries(device, submit, &dump_cmds, cs->entries,
+                         cs->entry_count);
+      if (cp1.enabled)
+         cp1.cmd_entries += cs->entry_count;
 
-       if (u_trace_submission_data &&""",
+      if (u_trace_submission_data &&""",
      "count emitted command-list IB entries")
 
-edit("""    autotune_cs = device->autotune->on_submit(cmd_buffers, cmdbuf_count);
-    if (autotune_cs) {""",
-"""    if (cp1.enabled)
-       cp1.gathered = frane_cp1_now_ns();
-    autotune_cs = device->autotune->on_submit(cmd_buffers, cmdbuf_count);
-    if (autotune_cs) {""",
+edit("""   autotune_cs = device->autotune->on_submit(cmd_buffers, cmdbuf_count);
+   if (autotune_cs) {""",
+"""   if (cp1.enabled)
+      cp1.gathered = frane_cp1_now_ns();
+   autotune_cs = device->autotune->on_submit(cmd_buffers, cmdbuf_count);
+   if (autotune_cs) {""",
      "measure command gathering CPU time")
 
-edit("""    if (cmdbuf_count && FD_RD_DUMP(ENABLE) &&""",
-"""    if (cp1.enabled)
-       cp1.autotuned = frane_cp1_now_ns();
-    if (cmdbuf_count && FD_RD_DUMP(ENABLE) &&""",
+edit("""   if (cmdbuf_count && FD_RD_DUMP(ENABLE) &&""",
+"""   if (cp1.enabled)
+      cp1.autotuned = frane_cp1_now_ns();
+   if (cmdbuf_count && FD_RD_DUMP(ENABLE) &&""",
      "measure autotune on_submit CPU time, without changing policy")
 
-edit("""    result =
-       tu_queue_submit(queue, submit, vk_submit->waits, vk_submit->wait_count,""",
-"""    if (cp1.enabled)
-       cp1.before_kernel = frane_cp1_now_ns();
-    result =
-       tu_queue_submit(queue, submit, vk_submit->waits, vk_submit->wait_count,""",
+edit("""   result =
+      tu_queue_submit(queue, submit, vk_submit->waits, vk_submit->wait_count,""",
+"""   if (cp1.enabled)
+      cp1.before_kernel = frane_cp1_now_ns();
+   result =
+      tu_queue_submit(queue, submit, vk_submit->waits, vk_submit->wait_count,""",
      "measure pre-kernel command preparation")
 
-edit("""    if (result != VK_SUCCESS) {
-       pthread_mutex_unlock(&device->submit_mutex);
-       goto out;
-    }
+edit("""   if (result != VK_SUCCESS) {
+      pthread_mutex_unlock(&device->submit_mutex);
+      goto out;
+   }
 
-    tu_debug_bos_print_stats(device);""",
-"""    if (cp1.enabled)
-       cp1.after_kernel = frane_cp1_now_ns();
-    if (result != VK_SUCCESS) {
-       pthread_mutex_unlock(&device->submit_mutex);
-       goto out;
-    }
+   tu_debug_bos_print_stats(device);""",
+"""   if (cp1.enabled)
+      cp1.after_kernel = frane_cp1_now_ns();
+   if (result != VK_SUCCESS) {
+      pthread_mutex_unlock(&device->submit_mutex);
+      goto out;
+   }
 
-    tu_debug_bos_print_stats(device);""",
+   tu_debug_bos_print_stats(device);""",
      "measure CPU time in KGSL/DRM submission")
 
-edit("""    u_trace_context_process(&device->trace_context, false);
+edit("""   u_trace_context_process(&device->trace_context, false);
 
- out:
-    tu_submit_finish(device, submit);""",
-"""    u_trace_context_process(&device->trace_context, false);
-    if (cp1.enabled) {
-       cp1.end = frane_cp1_now_ns();
-       /* Outside the queue's submit mutex: optional file I/O does not
-        * extend the critical section or affect CPU tracing timestamps. */
-       frane_cp1_emit(cp1);
-    }
+out:
+   tu_submit_finish(device, submit);""",
+"""   u_trace_context_process(&device->trace_context, false);
+   if (cp1.enabled) {
+      cp1.end = frane_cp1_now_ns();
+      /* Outside the queue's submit mutex: optional file I/O does not
+       * extend the critical section or affect CPU tracing timestamps. */
+      frane_cp1_emit(cp1);
+   }
 
- out:
-    tu_submit_finish(device, submit);""",
+out:
+   tu_submit_finish(device, submit);""",
      "sample bounded CSV after mutex released")
 
 text=queue.read_text()
