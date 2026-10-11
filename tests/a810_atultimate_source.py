@@ -18,7 +18,8 @@ for token in (
  'ATU_HISTORY_GUARD'
 ):
  assert token in a,token
-assert 'ATUltimate Context Learner / Mesa' in dev
+assert ('ATUltimate Context Learner / Mesa' in dev or
+        'ATUltimate Dynamic V2 / Mesa' in dev)
 assert 'TU_FRANE_ATU_CONTEXT_TRACE_PATH' in log
 for token in ('TABLE','DECISION','SLOT_SNAPSHOT','MEASURED_DISAGREEMENT',
  'CONTEXT_MISS','STALE_HISTORY','PRIOR_CONFLICT_BLOCKED','static std::mutex',
