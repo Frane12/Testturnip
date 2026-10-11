@@ -127,7 +127,6 @@ jobs:
           strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT7'
           strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT63'
           ! strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT5'
-          strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT5'
           cd out
           zip -9 ../Drnas-Turnip-A810-AT7-Utility-Winner.zip libvulkan_freedreno.so meta.json
           cd ..
