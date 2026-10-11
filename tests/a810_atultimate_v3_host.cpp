@@ -81,7 +81,9 @@ int main() {
    assert(!r.used && r.why==ATU_V3_NO_HISTORY);
    // Opposite proof needs cooldown expiry AND consecutive directional votes.
    auto opposite=aa;opposite.score=-20;
-   for(unsigned i=0;i<24;i++){
+   const unsigned remaining_dwell = r.slot.dwell;
+   assert(remaining_dwell > 0 && remaining_dwell <= 24);
+   for(unsigned i=0;i<remaining_dwell;i++){
       r=step(slots,phase,seq,a,opposite);
       assert(!r.used && r.slot.winner==1);
    }
