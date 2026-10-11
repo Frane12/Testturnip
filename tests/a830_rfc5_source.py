@@ -25,7 +25,8 @@ assert 'out.d.audit_log2 = 4u' in h and 'out.d.audit_log2 = 7u' in h
 assert 'out.d.measure_log2 = 3u' in h and 'out.d.measure_log2 = 6u' in h
 assert 'frane_a830_s2bw2_ratio_le' in h
 assert ('Turnip-Drnas A830 S2-RFC5 Hotspot Learning / Mesa ' in d or
-        'Turnip-Drnas A830 S2-RFC6 Confidence Learning / Mesa ' in d)
+        'Turnip-Drnas A830 S2-RFC6 Confidence Learning / Mesa ' in d or
+        'Turnip-Drnas A830 S2-RFC7 Bandwidth Profiler / Mesa ' in d)
 assert 'return enabled && frane_26320_a830_gpu(device);' in a
 assert 'bw2.rollback_sysmem' in (V/"frane_a830_v2_adaptive_gmem.h").read_text()
 f=cmd[cmd.index("static bool\nuse_sysmem_rendering"):cmd.index("/* Optimization: there is no reason to load gmem")]
