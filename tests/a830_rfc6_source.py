@@ -25,7 +25,8 @@ assert "last_sys_sample > occurrence" in h
 assert "occurrence - last_gm_sample > 384u" in h
 assert "frane_a830_s2bw2_ratio_le" in h
 assert "100u - uint32_t(margin)" in h
-assert "Turnip-Drnas A830 S2-RFC6 Confidence Learning / Mesa " in d
+assert ("Turnip-Drnas A830 S2-RFC6 Confidence Learning / Mesa " in d or
+        "Turnip-Drnas A830 S2-RFC7 Bandwidth Profiler / Mesa " in d)
 assert "bw2.rollback_sysmem" in (V/"frane_a830_v2_adaptive_gmem.h").read_text()
 assert "TU_FRANE_A830_BW3" not in a
 f=cmd[cmd.index("static bool\nuse_sysmem_rendering"):
