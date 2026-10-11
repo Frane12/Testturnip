@@ -187,7 +187,7 @@ jobs:
             "name": "Drnas-Turnip A810 S Ultimate v1.3 (PRIVATE DRAFT)",
             "description": "A810 S Ultimate v1.3 S1/AT4 GPU-evidence coordination, conservative tie-break, v1.2 logging and safety preserved",
             "author": "Frane12",
-            "packageVersion": "1.2-s1bp-draft",
+            "packageVersion": "1.3-s1at4-draft",
             "vendor": "Mesa",
             "driverVersion": "26.3.0-devel",
             "minApi": 34,
