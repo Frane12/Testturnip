@@ -62,6 +62,7 @@ struct frane_atu_v3_slot {
    uint8_t dwell = 0;
    uint8_t frequency = 0;
    uint8_t last_epoch = 0;    /* approximate LRU, rolls over at 256 */
+   bool mature = false;        /* has this class EVER completed activation? */
 };
 static inline uint64_t frane_atu_v3_pack(frane_atu_v3_slot s)
 {
@@ -70,7 +71,8 @@ static inline uint64_t frane_atu_v3_pack(frane_atu_v3_slot s)
       (uint64_t(s.votes & 15u) << 20) |
       (uint64_t(s.dwell & 63u) << 24) |
       (uint64_t(s.frequency) << 30) |
-      (uint64_t(s.last_epoch) << 38);
+      (uint64_t(s.last_epoch) << 38) |
+      (uint64_t(s.mature) << 46);
 }
 static inline frane_atu_v3_slot frane_atu_v3_unpack(uint64_t v)
 {
@@ -82,6 +84,7 @@ static inline frane_atu_v3_slot frane_atu_v3_unpack(uint64_t v)
    s.dwell = uint8_t((v >> 24) & 63u);
    s.frequency = uint8_t((v >> 30) & 255u);
    s.last_epoch = uint8_t((v >> 38) & 255u);
+   s.mature = ((v >> 46) & 1u) != 0;
    return s;
 }
 struct frane_atu_v3_result {
@@ -225,8 +228,10 @@ frane_atu_v3_step(std::atomic<uint64_t> slots[FRANE_ATU_V3_SLOTS],
    /* Phase and cache are independent: a previously known class resumes its
     * old champion ONLY if new AT3 GPU evidence still confirms it.
     */
+   const bool mature_cached = hit && frane_atu_v3_unpack(
+      slots[index].load(std::memory_order_relaxed)).mature;
    const bool phase_ready = frane_atu_v3_phase(
-      phase, cat.signature, hit, stable_hits, &out.phase_switched);
+      phase, cat.signature, mature_cached, stable_hits, &out.phase_switched);
 
    for(unsigned attempt = 0; attempt < 4; ++attempt) {
       uint64_t old = slots[index].load(std::memory_order_relaxed);
@@ -245,6 +250,8 @@ frane_atu_v3_step(std::atomic<uint64_t> slots[FRANE_ATU_V3_SLOTS],
                s.frequency - age / 16u : 0u) + 1u));
          n.last_epoch = epoch;
       }
+      if (phase_ready)
+         n.mature = true;
       if (!candidate) {
          /* Do not enforce stale winners; preserve category popularity. */
          n.challenger = 0;
