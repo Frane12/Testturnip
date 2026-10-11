@@ -208,7 +208,7 @@ jobs:
             "name": "Drnas-Turnip A810 S Ultimate v1.5 (PRIVATE DRAFT)",
             "description": "A810 S Ultimate v1.5 optional pipeline CPU timings + reversible V3 cold history fastpath, v1.4 probes, safety retained",
             "author": "Frane12",
-            "packageVersion": "1.4-cpu-pipe-draft",
+            "packageVersion": "1.5-pipe-v3-draft",
             "vendor": "Mesa",
             "driverVersion": "26.3.0-devel",
             "minApi": 34,
