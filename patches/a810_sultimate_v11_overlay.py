@@ -13,7 +13,7 @@ def change(path,old,new,tag):
  print("v1.1 PASS",tag,flush=True)
 change(h,"   ATU_V3_RUNTIME_PRIORITY,\n   ATU_V3_READY,","   ATU_V3_RUNTIME_PRIORITY,\n   ATU_V3_SAFETY_VETO,\n   ATU_V3_READY,","enum")
 change(h,'   case ATU_V3_RUNTIME_PRIORITY: return "RUNTIME_PRIORITY";','   case ATU_V3_RUNTIME_PRIORITY: return "RUNTIME_PRIORITY";\n   case ATU_V3_SAFETY_VETO: return "SAFETY_VETO";',"reason")
-change(h,"                   unsigned stable_hits, unsigned dwell)\n","                   unsigned stable_hits, unsigned dwell,\n                   bool safety_ok = true)\n","API hard safety")
+change(h,"                  unsigned stable_hits, unsigned dwell)\n","                  unsigned stable_hits, unsigned dwell,\n                   bool safety_ok = true)\n","API hard safety")
 change(h,
 """       else if (!may_override) {
           out.blocked = true;
