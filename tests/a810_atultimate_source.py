@@ -20,7 +20,8 @@ for token in (
  assert token in a,token
 assert ('ATUltimate Context Learner / Mesa' in dev or
         'ATUltimate Dynamic V2 / Mesa' in dev or
-        'ATUltimate Dynamic V3 / Mesa' in dev)
+        'ATUltimate Dynamic V3 / Mesa' in dev or
+        'A810 S Ultimate v1.0 / Mesa' in dev)
 assert 'TU_FRANE_ATU_CONTEXT_TRACE_PATH' in log
 for token in ('TABLE','DECISION','SLOT_SNAPSHOT','MEASURED_DISAGREEMENT',
  'CONTEXT_MISS','STALE_HISTORY','PRIOR_CONFLICT_BLOCKED','static std::mutex',
