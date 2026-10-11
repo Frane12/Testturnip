@@ -21,6 +21,7 @@ for token in ("paired != 2","s.at7_saving_4us < 150","s.at7_noise_q8 > 24",
 assert ("AT8 Early GPU Winner / Mesa" in dev or
         "ATUltimate Context Learner / Mesa" in dev or
         "ATUltimate Dynamic V2 / Mesa" in dev or
-        'ATUltimate Dynamic V3 / Mesa' in dev)
+        'ATUltimate Dynamic V3 / Mesa' in dev or
+        'A810 S Ultimate v1.0 / Mesa' in dev)
 assert "TU_FRANE_AT5" not in auto
 print("AT8 active runtime path, strict opt-out gate, post-safety telemetry, and AT5 exclusion PASS")
