@@ -20,7 +20,7 @@ on:
       - 'AT4-DRAFT.md'
       - 'A810_AT4_RFC1_TRACE.md'
       - 'A810_AT5_CONTEXT_LEARNER.md'
-      - 'A810_AT6_MEASURED_CONTEXT.md'
+      - 'A810_AT7_UTILITY.md'
   workflow_dispatch:
 permissions:
   contents: write
