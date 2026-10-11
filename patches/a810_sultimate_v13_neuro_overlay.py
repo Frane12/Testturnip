@@ -98,12 +98,12 @@ change(bph,
 };''',
 "append shadow fields to trace struct")
 change(bph,
-'''at3_score,at3_pairs,at3_noise_q8\n",file);''',
-'''at3_score,at3_pairs,at3_noise_q8,neuro_trusted,neuro_sysmem,neuro_score,neuro_votes,neuro_agrees\n",file);''',
+'''at3_score,at3_pairs,at3_noise_q8\\n",file);''',
+'''at3_score,at3_pairs,at3_noise_q8,neuro_trusted,neuro_sysmem,neuro_score,neuro_votes,neuro_agrees\\n",file);''',
 "append 5 CSV headers")
 change(bph,
-'''"2,%llu,%016llx,%llu,%llu,%u,%u,%u,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%s,%s,%u,%u,%u,%d,%u,%u\n",''',
-'''"2,%llu,%016llx,%llu,%llu,%u,%u,%u,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%s,%s,%u,%u,%u,%d,%u,%u,%u,%u,%d,%u,%u\n",''',
+'''"2,%llu,%016llx,%llu,%llu,%u,%u,%u,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%s,%s,%u,%u,%u,%d,%u,%u\\n",''',
+'''"2,%llu,%016llx,%llu,%llu,%u,%u,%u,%llu,%llu,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%s,%s,%u,%u,%u,%d,%u,%u,%u,%u,%d,%u,%u\\n",''',
 "append CSV formats")
 change(bph,
 '''         r.at3_score,r.at3_pairs,r.at3_noise_q8);''',
