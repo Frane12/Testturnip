@@ -30,8 +30,7 @@ change(auto,
 change(auto,
 '''                  at1 = s1at4_context ?
                      frane_at4_decide(at1_in, snapshot, decision_word) :
-                     frane_s1at3_decide(at1_in, snapshot, decision_word);
-                  at3_sampling = at1.override_mode;''',
+                     frane_s1at3_decide(at1_in, snapshot, decision_word);''',
 '''                  at1 = s1at4_context ?
                      frane_at4_decide(at1_in, snapshot, decision_word) :
                      frane_s1at3_decide(at1_in, snapshot, decision_word);
@@ -57,8 +56,7 @@ change(auto,
                   if (s1at4_coord.prefer_s1) {
                      at1.select_sysmem = runtime_decision.select_sysmem;
                      if (s1at4_coord_out) *s1at4_coord_out = true;
-                  }
-                  at3_sampling = at1.override_mode;''',
+                  }''',
   'runtime coordinated winner preserving AT4 control and exploration')
 change(auto,
 '''      bool s1_runtime_override = false;
