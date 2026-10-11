@@ -197,7 +197,7 @@ jobs:
             "name": "Drnas-Turnip A810 S Ultimate v1.4 (PRIVATE DRAFT)",
             "description": "A810 S Ultimate v1.4 opt-in CPU command recording and queue timing, process RSS; S1BP estimates, v1.3 render logic retained",
             "author": "Frane12",
-            "packageVersion": "1.3-s1at4-draft",
+            "packageVersion": "1.4-cpu-pipe-draft",
             "vendor": "Mesa",
             "driverVersion": "26.3.0-devel",
             "minApi": 34,
