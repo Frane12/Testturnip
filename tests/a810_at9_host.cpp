@@ -8,7 +8,7 @@ int main() {
    frane_s1at1_context_input in{};
    in.pass_pixels=522240;in.estimated_tiles=10;in.drawcalls=209;
    in.sysmem_bandwidth_per_pixel=0;in.gmem_bandwidth_per_pixel=16;
-   in.occurrences=64;in.sysmem_probability=50;
+   in.occurrences=1024;in.sysmem_probability=50;
    const auto cat=frane_s1at1_catalog_for(in);
    frane_s1at3_snapshot s{};
    s.signature=cat.signature;
