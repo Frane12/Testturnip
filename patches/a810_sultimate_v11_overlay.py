@@ -15,21 +15,21 @@ change(h,"   ATU_V3_RUNTIME_PRIORITY,\n   ATU_V3_READY,","   ATU_V3_RUNTIME_PRIO
 change(h,'   case ATU_V3_RUNTIME_PRIORITY: return "RUNTIME_PRIORITY";','   case ATU_V3_RUNTIME_PRIORITY: return "RUNTIME_PRIORITY";\n   case ATU_V3_SAFETY_VETO: return "SAFETY_VETO";',"reason")
 change(h,"                  unsigned stable_hits, unsigned dwell)\n","                  unsigned stable_hits, unsigned dwell,\n                   bool safety_ok = true)\n","API hard safety")
 change(h,
-"""       else if (!may_override) {
-          out.blocked = true;
-          out.why = at4_probe ? ATU_V3_AT4_PROBE :
-             runtime_override ? ATU_V3_RUNTIME_PRIORITY : ATU_V3_AT4_PRIORITY;
-       } else {""",
+"""      else if (!may_override) {
+         out.blocked = true;
+         out.why = at4_probe ? ATU_V3_AT4_PROBE :
+            runtime_override ? ATU_V3_RUNTIME_PRIORITY : ATU_V3_AT4_PRIORITY;
+      } else {""",
 """       else if (!safety_ok) {
-          out.blocked = true;
-          out.why = ATU_V3_SAFETY_VETO;
+         out.blocked = true;
+         out.why = ATU_V3_SAFETY_VETO;
        } else if (!may_override || at4_probe || runtime_override) {
           /* Probe and runtime vetoes must work even if the caller accidentally
            * claims an override is allowed. Keep learning while vetoed. */
-          out.blocked = true;
-          out.why = at4_probe ? ATU_V3_AT4_PROBE :
-             runtime_override ? ATU_V3_RUNTIME_PRIORITY : ATU_V3_AT4_PRIORITY;
-       } else {""","hard veto")
+         out.blocked = true;
+         out.why = at4_probe ? ATU_V3_AT4_PROBE :
+            runtime_override ? ATU_V3_RUNTIME_PRIORITY : ATU_V3_AT4_PRIORITY;
+      } else {""","hard veto")
 change(a,
 """                  if (s1atu_v3_context && s1at4_context) {
                       const auto v3 = frane_atu_v3_step(""",
