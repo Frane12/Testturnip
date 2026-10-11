@@ -1,0 +1,58 @@
+name: Publish Drnas-Turnip A810 S Ultimate v1.0
+on:
+  push:
+    branches:
+      - experiment/a810-s-ultimate-v1-rc-final-audit
+    paths:
+      - '.github/workflows/a810-s-ultimate-v1-public-release.yml'
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: public-release-drnas-turnip-a810-s-ultimate-v1.0
+  cancel-in-progress: false
+jobs:
+  publish-audited-binary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch release notes and pinned packaging verifier
+        uses: actions/checkout@v4
+      - name: Retrieve exact successful RC1 build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: A810-S-Ultimate-v1.0-RC1-TEST-ONLY
+          run-id: 38127891483
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist/rc
+      - name: Verify RC1 hashes, package unchanged audited ELF and rename metadata only
+        run: |
+          python3 scripts/package_a810_sultimate_v1_release.py dist/rc dist/release
+          cd dist/release
+          sha256sum -c SHA256SUMS.txt
+      - name: Verify release notes and source provenance
+        run: |
+          test -s RELEASE_NOTES_A810_S_ULTIMATE_V1.0.md
+          test -f dist/release/Drnas-Turnip-A810-S-Ultimate-v1.0.zip
+          test -f dist/release/Drnas-Turnip-A810-S-Ultimate-v1.0-Source.zip
+          grep -q "not a benchmark measured on this final audited binary" RELEASE_NOTES_A810_S_ULTIMATE_V1.0.md
+      - name: Publish public v1.0 release after RC approval
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="drnas-turnip-a810-s-ultimate-v1.0"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Tag already published; refusing to overwrite official release"
+            exit 1
+          fi
+          gh release create "$TAG" \
+            dist/release/Drnas-Turnip-A810-S-Ultimate-v1.0.zip \
+            dist/release/Drnas-Turnip-A810-S-Ultimate-v1.0-Source.zip \
+            dist/release/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "1ca66f968886a070f3801da68a245b267b9e5a90" \
+            --title "Drnas-Turnip A810 S Ultimate v1.0" \
+            --notes-file RELEASE_NOTES_A810_S_ULTIMATE_V1.0.md
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json name,isDraft,isPrerelease,url,assets \
+            --jq '{title:.name,draft:.isDraft,prerelease:.isPrerelease,url,assets:(.assets | map(.name))}'
