@@ -132,8 +132,20 @@ frane_atu_v3_phase(std::atomic<uint64_t> &phase,
    for (unsigned i = 0; i < 4; ++i) {
       uint64_t old = phase.load(std::memory_order_relaxed);
       auto s = frane_atu_dyn_unpack(old);
-      if (s.active == signature)
-         return true;
+      if (s.active == signature) {
+         /* Truly consecutive phase detection: returning to the active
+          * category must CANCEL any pending alternative phase. Otherwise
+          * A-B-A-B would falsely accumulate two B observations. */
+         if (!s.pending && !s.hits)
+            return true;
+         auto n = s;
+         n.pending = 0;
+         n.hits = 0;
+         if (phase.compare_exchange_weak(old, frane_atu_dyn_pack(n),
+               std::memory_order_relaxed, std::memory_order_relaxed))
+            return true;
+         continue;
+      }
       auto n = s;
       if (n.pending == signature)
          n.hits = uint8_t(std::min<unsigned>(15u, n.hits + 1u));
@@ -286,7 +298,13 @@ frane_atu_v3_step(std::atomic<uint64_t> slots[FRANE_ATU_V3_SLOTS],
          std::memory_order_relaxed, std::memory_order_relaxed))
          continue;
       out.slot = n;
-      if (!phase_ready)
+      /* A second recording thread may have activated another phase
+       * between our phase check and cache CAS. Do not apply a winner
+       * that belongs to a phase which is no longer active. */
+      const bool still_active = phase_ready &&
+         frane_atu_dyn_unpack(
+            phase.load(std::memory_order_relaxed)).active == cat.signature;
+      if (!still_active)
          out.why = ATU_V3_PHASE_WAIT;
       else if (!candidate)
          out.why = frane_atu_v3_no_candidate_why(in, snapshot);
