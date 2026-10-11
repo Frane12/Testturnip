@@ -101,6 +101,29 @@ int main() {
    // No cross-context activation even when old samples incorrectly supplied.
    r=step(slots,phase,seq,b,aa);
    assert(!r.used);
+   // RC phase audit: A-B-A-B must NEVER be counted as consecutive B.
+   // V3 previously forgot to clear its pending phase on return to A.
+   {
+      std::atomic<uint64_t> phase2{0};
+      std::atomic<uint64_t> cache2[FRANE_ATU_V3_SLOTS]{};
+      std::atomic<uint32_t> n2{0};
+      for (int i = 0; i < 3; ++i)
+         step(cache2,phase2,n2,a,aa);
+      assert(frane_atu_dyn_unpack(phase2.load()).active == aa.signature);
+      for (int i = 0; i < 10; ++i) {
+         auto first = step(cache2,phase2,n2,b,bb);
+         assert(!first.phase_switched && !first.used);
+         auto restore = step(cache2,phase2,n2,a,aa);
+         assert(restore.used && !restore.phase_switched);
+         assert(frane_atu_dyn_unpack(phase2.load()).pending == 0);
+         assert(frane_atu_dyn_unpack(phase2.load()).hits == 0);
+      }
+      step(cache2,phase2,n2,b,bb);
+      step(cache2,phase2,n2,b,bb);
+      auto final = step(cache2,phase2,n2,b,bb);
+      assert(final.phase_switched && final.used &&
+             final.decision.select_sysmem);
+   }
    // CSV header and DECISION and TABLE columns must match exactly.
    const char *path="/tmp/atu-v3-trace-test.csv";unlink(path);
    assert(setenv("TU_FRANE_ATU_CONTEXT_TRACE_PATH",path,1)==0);
