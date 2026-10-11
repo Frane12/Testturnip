@@ -7,8 +7,7 @@
 #include <vector>
 #include <cstdarg>
 #include "frane_a810_at4.h"
-#include "frane_a810_at5.h"
-#include "frane_a810_at6.h"
+#include "frane_a810_at7_utility.h"
 #include "frane_mesa_26320_a810_gmem_turbo.h"
 #include "frane_mesa_2633_a810_profile_turbo.h"
 #include "frane_profiled_sampling.h"
