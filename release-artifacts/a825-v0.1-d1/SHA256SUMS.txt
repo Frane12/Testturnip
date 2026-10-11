@@ -1,0 +1,3 @@
+aa8215607a4f336704bb18982c82a06aab29244cf217c31ba0daec7685103ffc  Drnas-Turnip-A825-S-Ultimate-v0.1-D1-TEST.zip
+ae2aa7b6ee84e3a134cd8933707e1e29dd0554595005883b97c782959baa0a51  libvulkan_freedreno.so
+

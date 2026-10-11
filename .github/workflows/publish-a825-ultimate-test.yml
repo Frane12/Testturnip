@@ -1,0 +1,51 @@
+name: Publish A825 Ultimate test
+on:
+  push:
+    branches:
+      - a825-ultimate-v0.1-d1-test
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish-a825-ultimate-v0.1-d1-test
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact tested package
+        working-directory: release-artifacts/a825-v0.1-d1
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, zipfile
+          from pathlib import Path
+          p = Path("Drnas-Turnip-A825-S-Ultimate-v0.1-D1-TEST.zip")
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == "aa8215607a4f336704bb18982c82a06aab29244cf217c31ba0daec7685103ffc"
+          with zipfile.ZipFile(p) as z:
+              assert sorted(z.namelist()) == ["libvulkan_freedreno.so", "meta.json"]
+              assert z.testzip() is None
+              assert hashlib.sha256(z.read("libvulkan_freedreno.so")).hexdigest() == "ae2aa7b6ee84e3a134cd8933707e1e29dd0554595005883b97c782959baa0a51"
+              meta = json.loads(z.read("meta.json"))
+              assert meta["libraryName"] == "libvulkan_freedreno.so" and meta["minApi"] == 34
+          print("PASS exact tested ZIP, library, metadata and archive integrity")
+          PY
+      - name: Publish test prerelease
+        working-directory: release-artifacts/a825-v0.1-d1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="a825-s-ultimate-v0.1-d1-test"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to replace assets"
+            exit 1
+          fi
+          gh release create "$tag" \
+            "Drnas-Turnip-A825-S-Ultimate-v0.1-D1-TEST.zip" "SHA256SUMS.txt" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Drnas-Turnip A825 S Ultimate v0.1 D1 TEST" \
+            --notes-file RELEASE.md --prerelease --latest=false
+
