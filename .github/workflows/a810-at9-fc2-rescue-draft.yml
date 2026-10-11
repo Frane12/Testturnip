@@ -1,0 +1,198 @@
+name: A810 AT9 FC2 Measured Rescue - PRIVATE DRAFT
+on:
+  push:
+    branches:
+      - 'experiment/a810-at9-fc2-measured-rescue-draft'
+    paths:
+      - 'patches/at4-s1guard-full.patch'
+      - '.github/workflows/a810-at9-fc2-rescue-draft.yml'
+      - 'patches/a810_cp1_queue.py'
+      - 'patches/frane_a810_cp1.h'
+      - 'patches/a810_at7_overlay.py'
+      - 'patches/frane_a810_at7_utility.h'
+      - 'patches/frane_a810_at63_earlywinner.h'
+      - 'patches/frane_a810_at6_at4base.h'
+      - 'patches/a810_at6.py'
+      - 'patches/frane_a810_at6.h'
+      - 'patches/a810_at5.py'
+      - 'patches/frane_a810_at5.h'
+      - 'patches/a810_at4_rfc1.py'
+      - 'patches/frane_a810_at4_rfc1.h'
+      - 'tests/**'
+      - 'AT4-DRAFT.md'
+      - 'A810_AT4_RFC1_TRACE.md'
+      - 'A810_AT5_CONTEXT_LEARNER.md'
+      - 'A810_AT7_UTILITY.md'
+      - 'A810_CP1_QUEUE.md'
+      - 'patches/a810_at8_overlay.py'
+      - 'patches/frane_a810_at8_early.h'
+      - 'tests/a810_at8_source.py'
+      - 'tests/a810_at8_host.cpp'
+      - 'A810_AT8_EARLY_GPU.md'
+      - 'patches/a810_at9_overlay.py'
+      - 'patches/frane_a810_at9_fc2.h'
+      - 'tests/a810_at9_source.py'
+      - 'tests/a810_at9_host.cpp'
+      - 'A810_AT9_FC2.md'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Fetch pinned Mesa and apply A810 AT7, CP1, AT8, AT9
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/chaotic-cx/mesa-mirror.git mesa
+          git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
+          git -C mesa checkout --detach eda9aceb39d5ff169b096444abe366bdf2269e24
+          test "$(cat mesa/VERSION)" = "26.3.0-devel"
+          git -C mesa apply --check ../patches/at4-s1guard-full.patch
+          git -C mesa apply ../patches/at4-s1guard-full.patch
+          python3 patches/a810_at4_rfc1.py
+          python3 patches/a810_at7_overlay.py
+          python3 patches/a810_cp1_queue.py
+          python3 patches/a810_at8_overlay.py
+          python3 patches/a810_at9_overlay.py
+          git -C mesa diff --check
+          git -C mesa diff > A810-AT9-complete.patch
+          sha256sum patches/at4-s1guard-full.patch patches/frane_a810_at4_rfc1.h patches/a810_at4_rfc1.py patches/frane_a810_at6_at4base.h patches/frane_a810_at63_earlywinner.h patches/frane_a810_at7_utility.h patches/a810_at7_overlay.py patches/frane_a810_cp1.h patches/a810_cp1_queue.py patches/frane_a810_at8_early.h patches/a810_at8_overlay.py patches/frane_a810_at9_fc2.h patches/a810_at9_overlay.py
+      - name: Verify actual selector and history with ASan UBSan
+        run: |
+          python3 tests/test_at4_runtime.py mesa
+          python3 tests/test_at4_history.py mesa
+          python3 tests/a810_at4_rfc1_source.py mesa
+          python3 tests/a810_at7_source.py mesa
+          python3 tests/a810_cp1_source.py mesa
+          python3 tests/a810_at8_source.py mesa
+          python3 tests/a810_at9_source.py mesa
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/a810_at9_host.cpp -o /tmp/a810-at9-host
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-at9-host
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/a810_at8_host.cpp -o /tmp/a810-at8-host
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-at8-host
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Ipatches tests/a810_cp1_host.cpp -o /tmp/a810-cp1-host
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-cp1-host
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=undefined -Imesa/src/freedreno/vulkan tests/a810_at7_host.cpp -o /tmp/a810-at7-host
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-at7-host
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Ipatches tests/a810_at4_rfc1_host.cpp -o /tmp/a810-rfc1-host
+          UBSAN_OPTIONS=halt_on_error=1 /tmp/a810-rfc1-host
+      - name: Configure Android aarch64 KGSL
+        run: |
+          set -euo pipefail
+          NDK="${{ steps.ndk.outputs.ndk-path }}"
+          grep -E "Pkg.Revision" "$NDK/source.properties"
+          grep -qE "Pkg.Revision = 29\\." "$NDK/source.properties"
+          echo "ANDROID_NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          test -d "$NDK"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$BIN/aarch64-linux-android34-clang"
+          mkdir -p /tmp/empty-android-pkgconfig
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/empty-android-pkgconfig', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+          meson setup mesa/build-android mesa --cross-file android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+      - name: Compile Turnip
+        run: ninja -C mesa/build-android -j 8
+      - name: Package installable draft ZIP
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so out/
+          test -s out/libvulkan_freedreno.so
+          file out/libvulkan_freedreno.so
+          test "$(file out/libvulkan_freedreno.so | grep -c 'ARM aarch64')" -gt 0
+          "$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin" -maxdepth 1 -name llvm-strip | head -1)" --strip-unneeded out/libvulkan_freedreno.so
+          cat > out/meta.json <<'EOF'
+          {
+            "schemaVersion": 1,
+            "name": "Drnas-Turnip A810 AT9 FC2 Measured Rescue (Draft)",
+            "description": "AT8+CP1 + FC2-shape measured GPU winner and conservative 64% SYSMEM prior",
+            "author": "Frane12",
+            "packageVersion": "9.0-fc2-draft",
+            "vendor": "Mesa",
+            "driverVersion": "26.3.0-devel",
+            "minApi": 34,
+            "libraryName": "libvulkan_freedreno.so"
+          }
+          EOF
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" --dyn-syms out/libvulkan_freedreno.so > elf-symbols.txt
+          grep -Eq 'GLOBAL +DEFAULT +[0-9]+ +HMI$' elf-symbols.txt
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -d out/libvulkan_freedreno.so > elf-dynamic.txt
+          ! grep -q 'libc++_shared.so' elf-dynamic.txt
+          python3 -c 'import json; m=json.load(open("out/meta.json")); assert m["libraryName"]=="libvulkan_freedreno.so" and m["minApi"]==34'
+          strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_A810_RFC1_TRACE_PATH'
+          strings out/libvulkan_freedreno.so | grep -q 'A810 AT9 FC2 Measured Rescue'
+          strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT7'
+          strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT63'
+          ! strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT5'
+          strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT9'
+          strings out/libvulkan_freedreno.so | grep -q 'AT9_FC2_GPU_RESCUE'
+          strings out/libvulkan_freedreno.so | grep -q 'AT9_FC2_PRIOR'
+          strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_AT8'
+          strings out/libvulkan_freedreno.so | grep -q 'AT8_EARLY_GPU_WINNER'
+          strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_CP1_ZERO_SKIP'
+          strings out/libvulkan_freedreno.so | grep -q 'TU_FRANE_A810_CP1_TRACE_PATH'
+          cd out
+          zip -9 ../Drnas-Turnip-A810-AT9-FC2-Rescue.zip libvulkan_freedreno.so meta.json
+          cd ..
+          sha256sum out/libvulkan_freedreno.so Drnas-Turnip-A810-AT9-FC2-Rescue.zip > SHA256SUMS.txt
+      - name: Package reviewable source
+        run: |
+          zip -9 -r A810-AT9-Source.zip patches/at4-s1guard-full.patch patches/a810_at4_rfc1.py patches/frane_a810_at4_rfc1.h patches/a810_at7_overlay.py patches/frane_a810_at6_at4base.h patches/frane_a810_at63_earlywinner.h patches/frane_a810_at7_utility.h patches/frane_a810_cp1.h patches/a810_cp1_queue.py patches/frane_a810_at8_early.h patches/a810_at8_overlay.py patches/frane_a810_at9_fc2.h patches/a810_at9_overlay.py tests/test_at4_runtime.py tests/test_at4_history.py tests/at3_selector_baseline.cpp.in tests/at4_selector_wrapper.cpp.in tests/a810_at4_rfc1_source.py tests/a810_at7_source.py tests/a810_at7_host.cpp tests/a810_cp1_host.cpp tests/a810_cp1_source.py tests/a810_at8_host.cpp tests/a810_at8_source.py tests/a810_at9_host.cpp tests/a810_at9_source.py AT4-DRAFT.md A810_AT4_RFC1_TRACE.md A810_AT7_UTILITY.md A810_CP1_QUEUE.md A810_AT8_EARLY_GPU.md A810_AT9_FC2.md A810-AT9-complete.patch .github/workflows/a810-at9-fc2-rescue-draft.yml
+          sha256sum A810-AT9-Source.zip >> SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Drnas-Turnip-A810-AT9-FC2-DRAFT
+          path: |
+            Drnas-Turnip-A810-AT9-FC2-Rescue.zip
+            SHA256SUMS.txt
+            A810-AT9-Source.zip
+            elf-symbols.txt
+            elf-dynamic.txt
+            A810_AT4_RFC1_TRACE.md
+            A810_AT5_CONTEXT_LEARNER.md
+            A810_AT7_UTILITY.md
+            A810_CP1_QUEUE.md
+            A810_AT8_EARLY_GPU.md
+            A810_AT9_FC2.md
+          if-no-files-found: error
+      - name: Attach only to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="a810-at9-${GITHUB_SHA:0:12}"
+          if gh release view "$TAG" --json isDraft --jq '.isDraft' > release-state.txt 2>/dev/null; then
+            test "$(cat release-state.txt)" = true
+            gh release upload "$TAG" Drnas-Turnip-A810-AT9-FC2-Rescue.zip A810-AT9-Source.zip SHA256SUMS.txt --clobber
+          else
+            gh release create "$TAG" Drnas-Turnip-A810-AT9-FC2-Rescue.zip A810-AT9-Source.zip SHA256SUMS.txt --target "$GITHUB_SHA" --draft --title "Turnip-Drnas A810 AT9 FC2 Measured Rescue — PRIVATE DRAFT" --notes-file A810_AT9_FC2.md
+          fi
+          test "$(gh release view "$TAG" --json isDraft --jq '.isDraft')" = true
