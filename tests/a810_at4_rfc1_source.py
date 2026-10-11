@@ -27,7 +27,8 @@ assert 'path[0] == \'/\'' in hdr
 assert ">= 65536u" in hdr
 assert ("A810 AT4-RFC1 Trace / Mesa" in device or
         "A810 AT7 Utility Winner / Mesa" in device or
-        "A810 AT8 Early GPU Winner / Mesa" in device)
+        "A810 AT8 Early GPU Winner / Mesa" in device or
+        "A810 ATUltimate Context Learner / Mesa" in device)
 assert auto.index("frane_a810_rfc1_timing(") > auto.index("const uint64_t rp_duration = entry.get_rp_duration();")
 assert auto.index("frane_a810_rfc1_decision(") > auto.index('safety_forced ? "GMEM_SAFETY"')
 print("A810 RFC1 runtime integration PASS")
