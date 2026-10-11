@@ -59,15 +59,19 @@ edit("""   pthread_mutex_lock(&device->submit_mutex);
 edit("""   result = resolve_cb_control_patchpoints(queue, submit, &dump_cmds,
                                            cmd_buffers, cmdbuf_count);
 
-   if (result != VK_SUCCESS)
+   if (result != VK_SUCCESS) {
+      pthread_mutex_unlock(&device->submit_mutex);
       goto out;
+   }
 
    if (has_trace_points) {""",
 """   result = resolve_cb_control_patchpoints(queue, submit, &dump_cmds,
                                            cmd_buffers, cmdbuf_count);
 
-   if (result != VK_SUCCESS)
+   if (result != VK_SUCCESS) {
+      pthread_mutex_unlock(&device->submit_mutex);
       goto out;
+   }
 
    if (cp1.enabled)
       cp1.patched = frane_cp1_now_ns();
