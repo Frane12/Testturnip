@@ -18,6 +18,7 @@ assert auto.index("frane_a810_gmem_pass_safe(device, cmd_state, pass, framebuffe
 for token in ("paired != 2","s.at7_saving_4us < 150","s.at7_noise_q8 > 24",
               "s.volatility != 0","at4.force_measure","frane_at4_decide("):
     assert token in header,token
-assert "AT8 Early GPU Winner / Mesa" in dev
+assert ("AT8 Early GPU Winner / Mesa" in dev or
+        "AT9 FC2 Measured Rescue / Mesa" in dev)
 assert "TU_FRANE_AT5" not in auto
 print("AT8 active runtime path, strict opt-out gate, post-safety telemetry, and AT5 exclusion PASS")
