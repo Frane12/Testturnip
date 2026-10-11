@@ -49,7 +49,7 @@ static inline uint64_t frane_cpu_rss_kib()
    std::fclose(f);
    if (n!=2) return 0;
    long page_size=sysconf(_SC_PAGESIZE);
-   return page_size>0 ? uint64_t(resident)*(unsigned long(page_size)/1024u) : 0;
+   return page_size>0 ? uint64_t(resident)*(uint64_t(page_size)/1024u) : 0;
 }
 
 static inline uint64_t frane_cpu_sample(bool queue)
