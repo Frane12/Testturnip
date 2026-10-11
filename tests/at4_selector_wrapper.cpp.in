@@ -10,12 +10,16 @@
 #include "frane_a810_at7_utility.h"
 #include "frane_a810_at8_early.h"
 #include "frane_a810_atultimate.h"
+#include "frane_a810_atultimate_dynamic.h"
 #include "frane_mesa_26320_a810_gmem_turbo.h"
 #include "frane_mesa_2633_a810_profile_turbo.h"
 #include "frane_profiled_sampling.h"
 #include "frane_v24_fastpath.h"
 static int64_t debug_get_num_option(const char *, int64_t d) { return d; }
 static bool debug_get_bool_option(const char *, bool d) { return d; }
+static bool frane_a810_atu_fast_enabled() { return true; }
+static unsigned frane_a810_atu_phase_hits() { return 3; }
+static unsigned frane_a810_atu_dwell() { return 24; }
 static void mesa_logi(const char *, ...) {}
 #define at_log_profiled_h(...)
 static uint64_t fixed_word;
@@ -25,6 +29,7 @@ struct rp_history {
  uint64_t hash = 1234567;
  std::atomic<uint32_t> frane_gmem_runtime_word{0}, frane_s1at1_word{16}, frane_interval{2};
  std::atomic<uint64_t> frane_s1at3_words[FRANE_AT3_ENTRIES]{};
+ std::atomic<uint64_t> frane_atu_dynamic_word{0};
  std::atomic<uint64_t> frane_s1at3_decisions{0}, frane_s1at3_probes{0}, frane_s1at3_samples{0}, frane_s1at3_evictions{0};
 };
 struct Engine {
