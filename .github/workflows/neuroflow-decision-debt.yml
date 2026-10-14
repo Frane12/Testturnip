@@ -1,0 +1,23 @@
+name: NeuroFlow decision-debt unit tests
+on:
+  push:
+    paths:
+      - 'include/nf_decision_debt.h'
+      - 'tests/test_nf_decision_debt.c'
+      - '.github/workflows/neuroflow-decision-debt.yml'
+  pull_request:
+    paths:
+      - 'include/nf_decision_debt.h'
+      - 'tests/test_nf_decision_debt.c'
+      - '.github/workflows/neuroflow-decision-debt.yml'
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run policy tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+             -Iinclude tests/test_nf_decision_debt.c -o /tmp/nf-debt-tests
+          /tmp/nf-debt-tests
