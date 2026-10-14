@@ -15,6 +15,10 @@
 #define NF_EXPORT
 #endif
 
+/* Explicit prototypes required by Mesa's -Werror=missing-prototypes. */
+NF_EXPORT uint32_t tu_neuroflow_reference_abi_version(void);
+NF_EXPORT int tu_neuroflow_reference_selftest(void);
+
 NF_EXPORT uint32_t
 tu_neuroflow_reference_abi_version(void)
 {
