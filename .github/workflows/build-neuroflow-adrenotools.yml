@@ -91,8 +91,9 @@ jobs:
           test -s "$SO"
           file "$SO" | tee /tmp/elfinfo.txt
           grep -q 'ARM aarch64' /tmp/elfinfo.txt
-          readelf -Ws "$SO" | grep -q 'tu_neuroflow_reference_abi_version'
-          readelf -Ws "$SO" | grep -q 'tu_neuroflow_reference_selftest'
+          readelf -Ws "$SO" > /tmp/neuroflow-symbols.txt
+          grep -q 'tu_neuroflow_reference_abi_version' /tmp/neuroflow-symbols.txt
+          grep -q 'tu_neuroflow_reference_selftest' /tmp/neuroflow-symbols.txt
           mkdir -p dist/staging
           cp "$SO" dist/staging/libvulkan_freedreno.so
           cat > dist/staging/meta.json <<'EOF'
