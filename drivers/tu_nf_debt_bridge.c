@@ -10,7 +10,7 @@
 #include "nf_decision_debt.h"
 
 #if defined(__GNUC__) || defined(__clang__)
-#define NF_EXPORT __attribute__((visibility("default")))
+#define NF_EXPORT __attribute__((used, retain, noinline, visibility("default")))
 #else
 #define NF_EXPORT
 #endif
