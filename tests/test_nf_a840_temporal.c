@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: MIT */
+#include "nf_a840_spsc_mailbox.h"
 #include "nf_a840_npu_port.h"
 #include <assert.h>
 #include <limits.h>
@@ -268,6 +269,72 @@ test_npu_port_is_explicitly_optional(void)
    assert(c.current_N == 64); /* submitting an inference cannot steer GPU */
 }
 
+static void
+test_nonblocking_mailbox(void)
+{
+   struct nf_a840_controller c;
+   nf_a840_init(&c, nf_a840_default_config(), 840, 64);
+   struct nf_a840_request_slot in;
+   struct nf_a840_result_slot out;
+   nf_a840_request_slot_init(&in);
+   nf_a840_result_slot_init(&out);
+   three_events(&c);
+   assert(nf_a840_try_dispatch(&c, &in));
+   assert(c.request_inflight);
+   struct nf_a840_request request;
+   assert(!nf_a840_try_dispatch(&c, &in)); /* never spin or wait */
+   assert(nf_a840_request_try_pop(&in, &request));
+   assert(request.event_count == 3);
+   assert(!nf_a840_request_try_pop(&in, &request));
+   struct nf_a840_prediction p = prediction(&request, 32);
+   assert(nf_a840_result_try_push(&out, &p));
+   assert(!nf_a840_result_try_push(&out, &p)); /* full -> drop */
+   struct nf_a840_prediction reply;
+   assert(nf_a840_result_try_pop(&out, &reply));
+   assert(!nf_a840_result_try_pop(&out, &reply));
+   assert(nf_a840_offer_prediction(&c, &reply, 600) ==
+          NF_A840_SHADOW_ONLY);
+   assert(c.current_N == 64);
+
+   /* Never leave controller blocked if transport had a full slot. */
+   nf_a840_init(&c, nf_a840_default_config(), 840, 64);
+   three_events(&c);
+   assert(nf_a840_take_request(&c, &request));
+   assert(nf_a840_cancel_request(&c, request.request_id));
+   assert(!c.request_inflight);
+   assert(!nf_a840_cancel_request(&c, request.request_id));
+}
+
+static void
+test_stuck_npu_never_stalls_gpu(void)
+{
+   struct nf_a840_controller c;
+   nf_a840_init(&c, nf_a840_default_config(), 840, 64);
+   three_events(&c);
+   struct nf_a840_request_slot in;
+   nf_a840_request_slot_init(&in);
+   assert(nf_a840_try_dispatch(&c, &in));
+   /* The worker never pops, NPU response never arrives. */
+   const uint64_t latest = UINT64_C(2000000000);
+   struct nf_a840_observation o = obs(latest, 840, 5, 1700);
+   assert(nf_a840_observe(&c, &o));
+   o = obs(latest + 1, 840, 6, 1800);
+   assert(nf_a840_observe(&c, &o));
+   o = obs(latest + 2, 840, 7, 1900);
+   assert(nf_a840_observe(&c, &o));
+   /* Old request expires; full slot causes immediate DROP, never a wait. */
+   assert(!nf_a840_try_dispatch(&c, &in));
+   assert(!c.request_inflight);
+   assert(c.current_N == 64 && c.safe_N == 64);
+   assert(c.stale_rejections == 1);
+   struct nf_a840_request old;
+   assert(nf_a840_request_try_pop(&in, &old));
+   const struct nf_a840_prediction too_late = prediction(&old, 2);
+   assert(nf_a840_offer_prediction(&c, &too_late, latest + 3)
+          == NF_A840_REJECT);
+   assert(c.current_N == 64);
+}
+
 int main(void)
 {
    test_event_driven_and_shadow();
@@ -278,6 +345,8 @@ int main(void)
    test_slow_drift_and_invalid_baseline();
    test_inference_backpressure();
    test_npu_port_is_explicitly_optional();
+   test_nonblocking_mailbox();
+   test_stuck_npu_never_stalls_gpu();
    puts("NeuroFlow A840 temporal observer: all tests passed");
    return 0;
 }
