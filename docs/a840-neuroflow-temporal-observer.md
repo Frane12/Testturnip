@@ -51,7 +51,7 @@ cheap event filter (CPU) -> bounded temporal events
    (later explicit trial)  -> A/B compare -> accept or safe fallback
 ```
 
-Do not call the NPU runtime, take a mutex, malloc, wait, or do fresh GPU timestamp queries in the render hot path. If inference stalls, the host must continue using the verified Mesa policy. If the input stream has no new meaningful events, NPU runs zero additional inference jobs.
+Do not call the NPU runtime, take a mutex, malloc, wait, or do fresh GPU timestamp queries in the render hot path. If inference stalls, the host must continue using the verified Mesa policy. If the input stream has no new meaningful events, NPU runs zero additional inference jobs. A provisional **250 ms minimum gap between event-triggered jobs** also prevents bursts; it is a throttle, NOT periodic sampling. Both the gap and event thresholds require measurement-based tuning on A840.
 
 ### Next session: accessing Qualcomm NPU
 
