@@ -218,6 +218,29 @@ test_slow_drift_and_invalid_baseline(void)
    assert(!nf_a840_observe(&c, &o));
 }
 
+static void
+test_inference_backpressure(void)
+{
+   struct nf_a840_controller c;
+   nf_a840_init(&c, nf_a840_default_config(), 840, 64);
+   three_events(&c);
+   struct nf_a840_request r;
+   assert(nf_a840_take_request(&c, &r));
+   struct nf_a840_prediction p = prediction(&r, 32);
+   assert(nf_a840_offer_prediction(&c, &p, 600) == NF_A840_SHADOW_ONLY);
+   for (uint32_t i = 3; i < 7; ++i) {
+      struct nf_a840_observation o = obs(600 + i * 100, 840, i, 1500);
+      assert(nf_a840_observe(&c, &o));
+   }
+   /* Enough events, but insufficient elapsed time: avoid NPU overload. */
+   assert(!nf_a840_take_request(&c, &r));
+   struct nf_a840_observation o =
+      obs(UINT64_C(250001000), 840, 10, 1600);
+   assert(nf_a840_observe(&c, &o));
+   assert(nf_a840_take_request(&c, &r));
+   assert(r.event_seq == c.event_seq);
+}
+
 int main(void)
 {
    test_event_driven_and_shadow();
@@ -226,6 +249,7 @@ int main(void)
    test_safety_and_overflow();
    test_ring_order_and_bounds();
    test_slow_drift_and_invalid_baseline();
+   test_inference_backpressure();
    puts("NeuroFlow A840 temporal observer: all tests passed");
    return 0;
 }
