@@ -16,6 +16,11 @@
 #include "nf_a840_temporal.h"
 #include <stdatomic.h>
 
+/* No library-emulated atomics allowed: no hidden lock in the handoff. */
+#if ATOMIC_BOOL_LOCK_FREE != 2
+#error "NeuroFlow mailbox requires always lock-free atomic_bool"
+#endif
+
 struct nf_a840_request_slot {
    atomic_bool full;
    struct nf_a840_request payload;
