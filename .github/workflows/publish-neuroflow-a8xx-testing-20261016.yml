@@ -1,0 +1,98 @@
+name: Publish NeuroFlow A8XX TESTING ONLY prerelease
+on:
+  push:
+    branches:
+      - release/neuroflow-a8xx-testing-20261016
+    paths:
+      - '.github/workflows/publish-neuroflow-a8xx-testing-20261016.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: neuroflow-a8xx-testing-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download three prebuilt, passing Android ARM64 artifacts
+        env:
+          A810_URL: 'https://sdmntprnortheu.oaiusercontent.com/files/00000000-6920-81f4-a4c1-c6202539aa6d/raw?se=2026-10-16T07%3A21%3A32Z&sp=r&sv=2026-02-06&sr=b&scid=e7a45a9b-7d61-5673-b83f-c5533810e729&skoid=9b41a688-1b44-4731-856e-b0efcf3660ed&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-16T03%3A52%3A52Z&ske=2026-10-17T03%3A52%3A52Z&sks=b&skv=2026-02-06&sig=Fr6xL3PeTdjFSaI/2znouDG%2BSK2bN6BstePVwd8MnnU%3D'
+          A830_URL: 'https://sdmntprdenmarkeast.oaiusercontent.com/files/00000000-1814-8210-8d85-48085dab2af9/raw?se=2026-10-16T07%3A21%3A32Z&sp=r&sv=2026-02-06&sr=b&scid=253d2ac7-f831-57e5-ae93-efb6f660a77b&skoid=9b41a688-1b44-4731-856e-b0efcf3660ed&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-16T05%3A26%3A34Z&ske=2026-10-17T05%3A26%3A34Z&sks=b&skv=2026-02-06&sig=EkAiqpl%2BAC59zQsYU/eNncKNSVNnQE1kMFPJbzdQIqw%3D'
+          A840_URL: 'https://sdmntprpolandcentral.oaiusercontent.com/files/00000000-8cac-820a-a842-18b661740b3a/raw?se=2026-10-16T07%3A21%3A32Z&sp=r&sv=2026-02-06&sr=b&scid=63bb2ebd-5287-5593-9739-cdb2e1c2f9cb&skoid=9b41a688-1b44-4731-856e-b0efcf3660ed&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-16T03%3A07%3A55Z&ske=2026-10-17T03%3A07%3A55Z&sks=b&skv=2026-02-06&sig=V2NHnGmPng5//atjQdCdlA8%2BG2t6wLpLusSurBHybbA%3D'
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          curl -fLsS --retry 3 --connect-timeout 20 --max-time 120 "$A810_URL" -o source/A810.zip
+          curl -fLsS --retry 3 --connect-timeout 20 --max-time 120 "$A830_URL" -o source/A830.zip
+          curl -fLsS --retry 3 --connect-timeout 20 --max-time 120 "$A840_URL" -o source/A840.zip
+          for gpu in A810 A830 A840; do
+            unzip -tq "source/${gpu}.zip"
+          done
+      - name: Verify original ELF and repackage installable testing ZIPs
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          python3 - <<'PY'
+          from zipfile import ZipFile, ZIP_DEFLATED
+          from pathlib import Path
+          import hashlib, json
+          specs = [
+            ("A810", "H2.7", "TEX Feedback", "742d24c43e062b321c147d5ac9f46b3152a3734671a242166b7f1d088db316c4"),
+            ("A830", "H2.4", "Confidence Warm Start", "9660ca58acb8acf41e651299f1c43ad19b652292db124be27dbbe4e03f2adac5"),
+            ("A840", "H2.8", "Adaptive Memory", "2600cfd752dc9a33ad17836e92c16d48eaf864044c72abbf16b472e339b9a3a6"),
+          ]
+          sums=[]
+          for gpu, rev, name, expected_elf in specs:
+            with ZipFile(f"source/{gpu}.zip") as outer:
+              nested=[p for p in outer.namelist() if p.endswith("-PRIVATE-DRIVER.zip")]
+              assert len(nested)==1, f"{gpu}: missing nested driver"
+              import io
+              with ZipFile(io.BytesIO(outer.read(nested[0]))) as inner:
+                assert inner.testzip() is None
+                assert set(inner.namelist())=={"libvulkan_freedreno.so","meta.json"}
+                lib=inner.read("libvulkan_freedreno.so")
+                old=json.loads(inner.read("meta.json"))
+            assert lib[:4]==b"\x7fELF" and len(lib)>1000000
+            digest=hashlib.sha256(lib).hexdigest()
+            assert digest==expected_elf, f"{gpu} ELF SHA mismatch"
+            assert old["minApi"]==34 and old["libraryName"]=="libvulkan_freedreno.so"
+            old["name"]=f"Drnas-Turnip NeuroFlow {gpu} {rev} - TESTING ONLY"
+            old["description"]=f"EXPERIMENTAL / TESTING ONLY. {gpu} NeuroFlow {rev} {name}. Real-device performance and stability unverified."
+            old["packageVersion"]=f"neuroflow-{gpu.lower()}-{rev.lower().replace('.', '-')}-testing-only"
+            dest=Path("release-assets")/f"Drnas-Turnip-NeuroFlow-{gpu}-{rev}-TESTING-ONLY.zip"
+            with ZipFile(dest,"w",compression=ZIP_DEFLATED,compresslevel=9) as out:
+              out.writestr("libvulkan_freedreno.so",lib)
+              out.writestr("meta.json",json.dumps(old,indent=2)+"\n")
+            with ZipFile(dest) as verify:
+              assert verify.testzip() is None
+              assert hashlib.sha256(verify.read("libvulkan_freedreno.so")).hexdigest()==expected_elf
+              assert "TESTING ONLY" in json.loads(verify.read("meta.json"))["name"]
+            sums.append(f"{hashlib.sha256(dest.read_bytes()).hexdigest()}  {dest.name}\n")
+            sums.append(f"{digest}  libvulkan_freedreno.so (inside {dest.name})\n")
+            print(f"PASS {gpu}: original binary unchanged ({digest})")
+          (Path("release-assets")/"SHA256SUMS.txt").write_text("".join(sums))
+          PY
+      - name: Create GitHub pre-release with three installable packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          TAG=drnas-turnip-neuroflow-a8xx-testing-20261016
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to modify it."
+            exit 0
+          fi
+          gh release create "$TAG" release-assets/*.zip release-assets/SHA256SUMS.txt \
+            --repo "$GH_REPO" --target main \
+            --title "Drnas-Turnip NeuroFlow — A810/A830/A840 (TESTING ONLY)" \
+            --notes-file releases/neuroflow-a8xx-testing-20261016.md \
+            --prerelease --latest=false
+          gh release view "$TAG" --repo "$GH_REPO" --json name,url,isPrerelease,assets \
+            --jq '{name:.name,url:.url,isPrerelease:.isPrerelease,assets:[.assets[].name]}'
