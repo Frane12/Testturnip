@@ -198,6 +198,26 @@ test_ring_order_and_bounds(void)
    assert(c.current_N == 64);
 }
 
+static void
+test_slow_drift_and_invalid_baseline(void)
+{
+   struct nf_a840_controller c;
+   nf_a840_init(&c, nf_a840_default_config(), 840, 64);
+   struct nf_a840_observation o = obs(100, 840, 1, 1000);
+   assert(nf_a840_observe(&c, &o));
+   o = obs(200, 840, 1, 1100);
+   assert(!nf_a840_observe(&c, &o));
+   o = obs(300, 840, 1, 1200);
+   assert(nf_a840_observe(&c, &o)); /* accumulates from 1000 anchor */
+   assert(c.event_count == 2);
+   assert(c.events[1].dt_ns == 200);
+
+   nf_a840_init(&c, nf_a840_default_config(), 840, 5000);
+   assert(c.safety_blocked); /* unverified N must not be auto-installed */
+   o = obs(400, 840, 1, 1000);
+   assert(!nf_a840_observe(&c, &o));
+}
+
 int main(void)
 {
    test_event_driven_and_shadow();
@@ -205,6 +225,7 @@ int main(void)
    test_supervised_trial_and_fallback();
    test_safety_and_overflow();
    test_ring_order_and_bounds();
+   test_slow_drift_and_invalid_baseline();
    puts("NeuroFlow A840 temporal observer: all tests passed");
    return 0;
 }
