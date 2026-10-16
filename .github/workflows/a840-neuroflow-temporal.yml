@@ -7,6 +7,8 @@ on:
       - 'include/nf_a840_temporal.h'
       - 'include/nf_a840_npu_port.h'
       - 'include/nf_a840_spsc_mailbox.h'
+      - 'include/nf_a840_optional_work.h'
+      - 'tests/test_nf_a840_optional_work.c'
       - 'tests/test_nf_a840_temporal.c'
       - '.github/workflows/a840-neuroflow-temporal.yml'
   workflow_dispatch:
@@ -24,6 +26,9 @@ jobs:
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
              -Iinclude tests/test_nf_a840_temporal.c -o /tmp/nf-a840-temporal
           /tmp/nf-a840-temporal
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+             -Iinclude tests/test_nf_a840_optional_work.c -o /tmp/nf-a840-optional
+          /tmp/nf-a840-optional
       - name: Address/undefined-behavior sanitizer tests
         shell: bash
         run: |
@@ -32,3 +37,7 @@ jobs:
              -fsanitize=address,undefined -fno-omit-frame-pointer \
              -Iinclude tests/test_nf_a840_temporal.c -o /tmp/nf-a840-sanitized
           /tmp/nf-a840-sanitized
+          cc -std=c11 -O1 -g -Wall -Wextra -Werror -pedantic \
+             -fsanitize=address,undefined -fno-omit-frame-pointer \
+             -Iinclude tests/test_nf_a840_optional_work.c -o /tmp/nf-a840-optional-sanitized
+          /tmp/nf-a840-optional-sanitized
