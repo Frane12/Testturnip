@@ -1,0 +1,33 @@
+name: A840 NeuroFlow temporal observer (reference CPU tests)
+on:
+  push:
+    branches:
+      - experiment/a840-neuroflow-temporal-observer-v01
+    paths:
+      - 'include/nf_a840_temporal.h'
+      - 'include/nf_a840_npu_port.h'
+      - 'tests/test_nf_a840_temporal.c'
+      - '.github/workflows/a840-neuroflow-temporal.yml'
+  workflow_dispatch:
+
+jobs:
+  native-reference-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run C11 tests (warnings as errors)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
+             -Iinclude tests/test_nf_a840_temporal.c -o /tmp/nf-a840-temporal
+          /tmp/nf-a840-temporal
+      - name: Address/undefined-behavior sanitizer tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -O1 -g -Wall -Wextra -Werror -pedantic \
+             -fsanitize=address,undefined -fno-omit-frame-pointer \
+             -Iinclude tests/test_nf_a840_temporal.c -o /tmp/nf-a840-sanitized
+          /tmp/nf-a840-sanitized
