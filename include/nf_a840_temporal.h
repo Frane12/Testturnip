@@ -133,8 +133,13 @@ nf_a840_init(struct nf_a840_controller *c, struct nf_a840_config cfg,
    c->cfg = cfg;
    c->mode = NF_A840_OBSERVER; /* even if opt-in capability is configured */
    c->compatibility_key = compatibility_key;
-   c->safe_N = verified_safe_N >= cfg.min_N && verified_safe_N <= cfg.max_N
-                   ? verified_safe_N : cfg.max_N;
+   /* An invalid "known safe" baseline must never silently become
+    * an unverified optimised profile. Latch off custom control instead. */
+   c->safe_N = verified_safe_N;
+   if (verified_safe_N < cfg.min_N || verified_safe_N > cfg.max_N) {
+      c->safe_N = cfg.max_N;
+      c->safety_blocked = true;
+   }
    c->current_N = c->safe_N;
    c->epoch = 1;
 }
@@ -198,10 +203,17 @@ nf_a840_observe(struct nf_a840_controller *c,
    if (c->have_last && o->timestamp_ns <= c->last_timestamp_ns)
       return false;
    bool important = !c->have_last || o->pattern_key != c->last_pattern_key;
-   if (!important && o->cost_valid && c->last_cost_valid)
-      important = nf_a840_significant_cost_change(
-         c->last_cost_ns, o->observed_cost_ns,
-         c->cfg.change_threshold_per_mille);
+   if (!important && o->cost_valid && c->event_count) {
+      /* Compare to the last significant event, not the last tiny step.
+       * Otherwise a slow 10% + 10% drift could remain invisible forever. */
+      const struct nf_a840_event *anchor =
+         &c->events[(c->event_next + NF_A840_EVENT_CAP - 1) %
+                    NF_A840_EVENT_CAP];
+      if (anchor->pattern_key == o->pattern_key && anchor->cost_valid)
+         important = nf_a840_significant_cost_change(
+            anchor->observed_cost_ns, o->observed_cost_ns,
+            c->cfg.change_threshold_per_mille);
+   }
    if (important) {
       struct nf_a840_event *e = &c->events[c->event_next];
       *e = (struct nf_a840_event) {
@@ -299,6 +311,7 @@ static inline bool
 nf_a840_profitable(const struct nf_a840_trial_evidence *e)
 {
    if (!e->comparable || e->paired_samples < 3 ||
+       !e->baseline_p95_ns || !e->candidate_p95_ns ||
        e->baseline_ns <= e->candidate_ns ||
        e->candidate_p95_ns > e->baseline_p95_ns)
       return false;
