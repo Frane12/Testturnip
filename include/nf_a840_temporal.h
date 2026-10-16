@@ -239,6 +239,18 @@ nf_a840_observe(struct nf_a840_controller *c,
    return important;
 }
 
+/* Enqueue failure, disconnected NPU or worker backpressure:
+ * cancel without waiting. Retry only after fresh significant events.
+ */
+static inline bool
+nf_a840_cancel_request(struct nf_a840_controller *c, uint64_t request_id)
+{
+   if (!c->request_inflight || c->inflight_request_id != request_id)
+      return false;
+   c->request_inflight = false;
+   return true;
+}
+
 /* CPU owner builds a snapshot; NPU worker receives only this immutable copy.
  * This function does NOT call NPU and does NOT block GPU.
  */
@@ -246,6 +258,17 @@ static inline bool
 nf_a840_take_request(struct nf_a840_controller *c,
                      struct nf_a840_request *r)
 {
+   /* Worker may hang/crash forever: NEVER wait for it. Expire its request
+    * when later telemetry reaches the controller, without reading clocks.
+    * A late completion will be rejected by request_id/epoch checks.
+    */
+   if (c->request_inflight &&
+       c->last_timestamp_ns >= c->inflight_snapshot_ns &&
+       c->last_timestamp_ns - c->inflight_snapshot_ns >
+          c->cfg.max_prediction_age_ns) {
+      c->request_inflight = false;
+      ++c->stale_rejections;
+   }
    if (c->safety_blocked || c->request_inflight || c->trial_active ||
        c->event_count < c->cfg.min_events_for_inference ||
        c->events_since_request < c->cfg.min_events_for_inference)
