@@ -26,6 +26,7 @@ struct nf_a840_config {
    uint16_t min_confidence_per_mille;
    uint8_t wins_to_accept, unknowns_to_fallback;
    uint64_t max_prediction_age_ns;
+   uint64_t min_request_gap_ns; /* debounce ONLY after an event, no timer */
    bool allow_supervised; /* DEFAULT FALSE; explicit integrator opt-in only */
 };
 
@@ -94,8 +95,9 @@ struct nf_a840_controller {
    uint16_t events_since_request;
    bool request_inflight, trial_active;
    uint64_t inflight_request_id, inflight_event_seq, inflight_epoch;
-   uint64_t inflight_snapshot_ns;
+   uint64_t inflight_snapshot_ns, last_request_ns;
    uint8_t trial_wins, trial_unknowns;
+   bool ever_requested;
    uint64_t shadows, stale_rejections, fallbacks;
 };
 
@@ -109,6 +111,7 @@ nf_a840_default_config(void)
       .min_confidence_per_mille = 900, /* not a calibrated probability */
       .wins_to_accept = 3, .unknowns_to_fallback = 2,
       .max_prediction_age_ns = NF_A840_DEFAULT_MAX_AGE_NS,
+      .min_request_gap_ns = UINT64_C(250000000), /* 250 ms cap; provisional */
       .allow_supervised = false
    };
 }
@@ -247,6 +250,12 @@ nf_a840_take_request(struct nf_a840_controller *c,
        c->event_count < c->cfg.min_events_for_inference ||
        c->events_since_request < c->cfg.min_events_for_inference)
       return false;
+   /* Event-initiated debounce, NOT periodic polling: NPU must not be
+    * flooded when the workload alternates signatures each draw. */
+   if (c->ever_requested &&
+       (c->last_event_ns < c->last_request_ns ||
+        c->last_event_ns - c->last_request_ns < c->cfg.min_request_gap_ns))
+      return false;
    memset(r, 0, sizeof(*r));
    r->request_id = ++c->next_request_id;
    r->epoch = c->epoch;
@@ -267,6 +276,8 @@ nf_a840_take_request(struct nf_a840_controller *c,
    c->inflight_epoch = r->epoch;
    c->inflight_snapshot_ns = r->snapshot_ns;
    c->events_since_request = 0;
+   c->last_request_ns = r->snapshot_ns;
+   c->ever_requested = true;
    return true;
 }
 
