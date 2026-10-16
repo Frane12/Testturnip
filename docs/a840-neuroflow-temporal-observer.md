@@ -2,6 +2,16 @@
 
 **Status:** isolated experimental source, **NOT ACTIVE in released A840 H2.8 binary**. No NPU access, QNN/HTP runtime, Mesa render-path integration, GPU benchmarks, or A840 on-device validation is claimed. This branch was based on `feature/neuroflow-decision-debt-v01` rather than silently altering `main`, other chip variants, or the TESTING ONLY prerelease.
 
+## Optional GPU work: never hold rendering hostage
+
+The no-wait rule also applies to **nonessential GPU-side diagnostics and probes**, not only the NPU. `include/nf_a840_optional_work.h` supplies an independently tested, constant-time admission gate for **optional** GPU profiling/telemetry/learning tasks. The CPU can skip a probe immediately when another is outstanding or when its estimated cost exceeds the spare budget. No driver/hardware calls occur in this policy helper.
+
+If an optional task exceeds its allotted age, the gate **permanently disables additional custom work** until an explicit reset. Importantly, a timeout **does not mean GPU work has finished**. Its buffers/fences/command pools must remain owned until actual completion is observed or device-loss teardown is correctly performed; do not recycle them on timeout. Required rendering uses Mesa's normal correctness-preserving synchronization and continues independently of the optional probe.
+
+For a future Mesa hook, use nonblocking *status checks* where legal (e.g. `vkGetFenceStatus` from an application, or ready-only query results), not a host-side `vkDeviceWaitIdle` to fetch auxiliary telemetry. Never bypass required image layout transitions, memory barriers, fences for buffer reuse, render-pass attachment constraints, or command dependencies. A blocked GPU kernel or hardware fault cannot be unblocked simply by a CPU timeout. Device loss needs explicit lifecycle handling outside this policy. No hard guarantee against all driver hangs is claimed.
+
+Tests: `tests/test_nf_a840_optional_work.c` (budget skip, busy skip, timeout latch without premature resource release, bad timestamp, completion/error). Native GCC C11 and sanitizer tests were run separately during development; GitHub Actions checks should still be verified on the branch. The helper remains disconnected from A840 Turnip until safe integration points are identified.
+
 ## Hard real-time rule: render code NEVER waits for NPU
 
 **Fail-open toward existing verified Mesa behavior, fail-closed toward new experimental NPU decisions.** An NPU timeout, a stalled worker, full inbox/outbox, a backend crash, or an unavailable QNN library must never create a GPU synchronization dependency.
@@ -45,6 +55,7 @@ This is a screening heuristic. CPU and GPU execution overlap, inference has ener
 - `include/nf_a840_temporal.h`: portable allocation-free C11 state machine; no hardware assumptions and no locks. Owned by one thread.
 - `include/nf_a840_npu_port.h`: deferred asynchronous NPU transport contract; **not** a QNN implementation.
 - `include/nf_a840_spsc_mailbox.h`: nonblocking one-slot request and prediction queues with immediate drops on full. Single producer/single consumer per slot, C11 atomics.
+- `include/nf_a840_optional_work.h`: CPU-only admission gate for truly optional GPU telemetry/probes; does NOT change required Vulkan synchronization.
 - `tests/test_nf_a840_temporal.c`: event filtering, ring ordering, shadow defaults, missing NPU protection, stale-epoch rejection, explicit supervised trials, acceptance, tail regression, safety latch, overflow.
 - `.github/workflows/a840-neuroflow-temporal.yml`: native C11 unit test + sanitizers. Passing does not certify Android/Turnip support.
 
