@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-#include "nf_a840_temporal.h"
+#include "nf_a840_npu_port.h"
 #include <assert.h>
 #include <limits.h>
 #include <stdio.h>
@@ -241,6 +241,33 @@ test_inference_backpressure(void)
    assert(r.event_seq == c.event_seq);
 }
 
+static bool
+mock_enqueue(void *userdata, const struct nf_a840_request *r)
+{
+   unsigned *calls = userdata;
+   assert(r->event_count >= 3);
+   ++*calls;
+   return true;
+}
+
+static void
+test_npu_port_is_explicitly_optional(void)
+{
+   struct nf_a840_controller c;
+   nf_a840_init(&c, nf_a840_default_config(), 840, 64);
+   three_events(&c);
+   struct nf_a840_request r;
+   assert(nf_a840_take_request(&c, &r));
+   assert(!nf_a840_enqueue_async(NULL, &r));
+   unsigned calls = 0;
+   const struct nf_a840_npu_port port = {
+      .userdata = &calls, .enqueue_copy = mock_enqueue
+   };
+   assert(nf_a840_enqueue_async(&port, &r));
+   assert(calls == 1);
+   assert(c.current_N == 64); /* submitting an inference cannot steer GPU */
+}
+
 int main(void)
 {
    test_event_driven_and_shadow();
@@ -250,6 +277,7 @@ int main(void)
    test_ring_order_and_bounds();
    test_slow_drift_and_invalid_baseline();
    test_inference_backpressure();
+   test_npu_port_is_explicitly_optional();
    puts("NeuroFlow A840 temporal observer: all tests passed");
    return 0;
 }
