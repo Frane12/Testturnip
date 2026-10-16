@@ -2,6 +2,18 @@
 
 **Status:** isolated experimental source, **NOT ACTIVE in released A840 H2.8 binary**. No NPU access, QNN/HTP runtime, Mesa render-path integration, GPU benchmarks, or A840 on-device validation is claimed. This branch was based on `feature/neuroflow-decision-debt-v01` rather than silently altering `main`, other chip variants, or the TESTING ONLY prerelease.
 
+## Hard real-time rule: render code NEVER waits for NPU
+
+**Fail-open toward existing verified Mesa behavior, fail-closed toward new experimental NPU decisions.** An NPU timeout, a stalled worker, full inbox/outbox, a backend crash, or an unavailable QNN library must never create a GPU synchronization dependency.
+
+- `include/nf_a840_spsc_mailbox.h` provides two **fixed, single-slot, nonblocking C11 atomic SPSC handoffs**: CPU controller -> NPU worker request, worker -> CPU controller prediction. Full slots cause immediate drops; no spinning, retry loops, mutex, dynamic allocation, syscall, or sleep occurs in these operations.
+- `nf_a840_try_dispatch` cancels the bookkeeping when request enqueue fails. An in-flight NPU job whose response never returns is expired **only when subsequent existing telemetry arrives** (no timer, no polling). Any stale response must be discarded.
+- All QNN/FastRPC calls, potentially blocking async-queue submission, model init, and cleanup live exclusively on a separate worker, **never** the render/CPU controller thread. Workers must be supervised by the Android process/application architecture; a blocked worker is tolerated and never joined synchronously by rendering.
+- No GPU fence, Vulkan submission, command buffer, GMEM/SYSMEM choice or present call waits for an NPU result. The current A840 reference remains OBSERVER; it does not hook Mesa at all.
+- A valid NPU proposal is advisory, not an authorization to bypass Mesa safety checks. When a future N trial is enabled, the actual application must choose a legal render-pass boundary; independent CPU safety logic remains authoritative.
+- For the future actual A840 live integration, make the controller epoch **unique across restarts/reinitializations**; the reference initializer currently resets epoch to 1, so reusing old prediction queues after reinit without a session-scoped generation is forbidden. Also enforce bounded worker lifetime and memory usage outside the hot path.
+- These properties remove waiting **introduced by the NPU integration**. They cannot categorically guarantee a GPU driver itself will never hang due to independent hardware/driver bugs.
+
 ## Decision agreed for the first experiment
 
 **CPU retains the wheel. NPU is an OBSERVER only.** Use available render-pass telemetry on arrival, detect meaningful *changes over elapsed time (dT)*, and copy bounded event history to a later asynchronous NPU backend. No fixed-rate NPU sampling, no profile/game ID, and never block the GPU on inference. Even a supposedly 99.9%-confident NPU response is recorded as shadow-only in default mode.
@@ -32,6 +44,7 @@ This is a screening heuristic. CPU and GPU execution overlap, inference has ener
 
 - `include/nf_a840_temporal.h`: portable allocation-free C11 state machine; no hardware assumptions and no locks. Owned by one thread.
 - `include/nf_a840_npu_port.h`: deferred asynchronous NPU transport contract; **not** a QNN implementation.
+- `include/nf_a840_spsc_mailbox.h`: nonblocking one-slot request and prediction queues with immediate drops on full. Single producer/single consumer per slot, C11 atomics.
 - `tests/test_nf_a840_temporal.c`: event filtering, ring ordering, shadow defaults, missing NPU protection, stale-epoch rejection, explicit supervised trials, acceptance, tail regression, safety latch, overflow.
 - `.github/workflows/a840-neuroflow-temporal.yml`: native C11 unit test + sanitizers. Passing does not certify Android/Turnip support.
 
