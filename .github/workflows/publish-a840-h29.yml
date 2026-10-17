@@ -1,0 +1,77 @@
+name: Publish verified A840 H2.9 Aggressive prerelease
+on:
+  push:
+    branches: [main]
+    paths: ['release-staging/a840-h29-original.zip']
+permissions:
+  contents: write
+concurrency:
+  group: publish-a840-h29-aggressive
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify original H2.9 build and repackage metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets/a840-h29
+          python3 - <<'PY'
+          import hashlib, json, pathlib, zipfile
+          original=pathlib.Path('release-staging/a840-h29-original.zip')
+          expected='db7de5fb855f35b341939006ebf64d986b0616f50b4c3bc650a9de387bb1d961'
+          assert original.exists(), 'Original private H2.9 driver package is missing'
+          assert hashlib.sha256(original.read_bytes()).hexdigest()==expected, 'Original H2.9 ZIP hash mismatch'
+          with zipfile.ZipFile(original) as z:
+              assert z.testzip() is None, 'Corrupt H2.9 ZIP'
+              assert set(z.namelist())=={'libvulkan_freedreno.so','meta.json'}, 'Unexpected H2.9 archive contents'
+              driver=z.read('libvulkan_freedreno.so')
+              meta=json.loads(z.read('meta.json'))
+          assert len(driver)>1000000 and driver.startswith(b'\x7fELF'), 'Not a compiled Vulkan ELF'
+          assert 'A840' in meta['name'] and 'H2.9' in meta['name'], 'Incorrect driver in staging'
+          assert meta.get('libraryName')=='libvulkan_freedreno.so'
+          assert meta.get('minApi')==34
+          meta['name']='Drnas-Turnip A840 NeuroFlow H2.9 Aggressive (TESTING ONLY)'
+          meta['description']='A840 NeuroFlow H2.9 aggressive guarded A/B/A; native Mesa fallback, adaptive memory/TEX and heap-pressure safety. Experimental Android ARM64 KGSL driver.'
+          meta['packageVersion']='a840-neuro-h29-aggressive-testing-20261017'
+          dest=pathlib.Path('release-assets/a840-h29')
+          filename='Drnas-Turnip-NeuroFlow-A840-H2.9-TESTING-ONLY.zip'
+          target=dest/filename
+          with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+              z.writestr('libvulkan_freedreno.so', driver)
+              z.writestr('meta.json', json.dumps(meta, indent=2)+'\n')
+          with zipfile.ZipFile(target) as z:
+              assert z.testzip() is None
+              assert z.read('libvulkan_freedreno.so')==driver, 'Vulkan ELF changed!'
+          sums=dest/'SHA256SUMS.txt'
+          sums.write_text(
+              hashlib.sha256(target.read_bytes()).hexdigest()+'  '+filename+'\n'
+              +hashlib.sha256(driver).hexdigest()+'  libvulkan_freedreno.so (inside ZIP)\n'
+              +expected+'  ORIGINAL-H2.9-private-driver.zip (verified build input)\n'
+          )
+          print('VERIFIED original', expected)
+          print('PUBLIC', filename, hashlib.sha256(target.read_bytes()).hexdigest())
+          print('ELF', hashlib.sha256(driver).hexdigest())
+          PY
+      - name: Publish H2.9 (TESTING ONLY) as public prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=drnas-turnip-neuroflow-a840-h2.9-testing-20261017
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release already exists. Refusing to overwrite published assets." >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            release-assets/a840-h29/Drnas-Turnip-NeuroFlow-A840-H2.9-TESTING-ONLY.zip \
+            release-assets/a840-h29/SHA256SUMS.txt \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Drnas-Turnip NeuroFlow A840 H2.9 Aggressive — TESTING ONLY" \
+            --notes-file releases/a840-h29-aggressive.md --prerelease
+          gh release view "$TAG" --repo "${{ github.repository }}" --json name,url,isPrerelease,assets \
+            --jq '{name:.name,url:.url,isPrerelease:.isPrerelease,assets:[.assets[].name]}'
