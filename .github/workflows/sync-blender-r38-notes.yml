@@ -1,0 +1,35 @@
+name: Sync Blender v1.0 r38 public release description
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'releases/blender-v1.0-r38.md'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: sync-blender-v1.0-r38-notes
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update existing public release description only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="blender-v1.0-r38"
+          test -s releases/blender-v1.0-r38.md
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '.' > release-status.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("release-status.json"))
+          assert data["isDraft"] is False, "Release must already be public"
+          assert data["isPrerelease"] is True, "Target must be a prerelease"
+          PY
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file releases/blender-v1.0-r38.md
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json name,url,isPrerelease,assets --jq '{name:.name,url:.url,isPrerelease:.isPrerelease,assets:[.assets[].name]}'
