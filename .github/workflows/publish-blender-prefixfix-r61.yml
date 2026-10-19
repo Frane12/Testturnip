@@ -1,6 +1,11 @@
 name: Publish approved Blender PrefixFix LAB r61 test APK
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-blender-prefixfix-r61.yml'
+      - 'releases/blender-prefixfix-lab-r61.md'
   workflow_dispatch:
 
 permissions:
