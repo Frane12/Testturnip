@@ -113,7 +113,7 @@ jobs:
           set -euo pipefail
           TAG='blender-v1.1'
           if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            echo "::error::${TAG} exists; refusing to overwrite a release or asset."; exit 1
+            echo "${TAG} already exists; original publisher deliberately preserves it. Hotfix updater handles the existing release."; exit 0
           fi
           gh release create "${TAG}" "release-assets/${APK_NAME}" release-assets/SHA256SUMS.txt \
             --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" \

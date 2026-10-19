@@ -2,6 +2,14 @@
 
 **Unofficial experimental release.** Blender 4.5.14 LTS (Windows ARM64) running on Android through the DRNAS Wine/X11/Vulkan compatibility environment. Not an official Blender Foundation app.
 
+### Hotfix R62 — installation
+
+- Improved first-run Blender/Wine environment installation checks.
+- Added SHA-256 verification and safe retry/recovery after an incomplete setup.
+- Preserves a backup of an incomplete Wine prefix instead of deleting user data.
+
+*R62 is an experimental installation hotfix; behavior still requires verification on individual devices. Back up important `.blend` projects before updating.*
+
 ## Highlights
 
 - **Smooth 3D viewport zoom:** floating ZOOM slider with smooth distance interpolation; +/− buttons and long-press ZOOM for the wheel fallback.
@@ -25,7 +33,7 @@
 
 ## Setup
 
-1. Download **Blender-v1.1-ARM64-Android-Preview-VULKAN-STABLE-SIGNED.apk**. Install on ARM64 Android and allow access to an Android folder when prompted.
+1. Download **Blender-v1.1-r62-PrefixFix-STABLE-SIGNED.apk** for the latest installation hotfix (the original v1.1 APK is retained below). Install on ARM64 Android and allow access to an Android folder when prompted. Updating in place requires the same package signature.
 2. Choose your project directory. Blender's Open/Save dialog exposes it as **D:\\**.
 3. Wait for Blender's Windows ARM64 environment to start. Start with the default cube.
 4. Use ZOOM, mouse buttons and keyboard toolbar to work. For fullscreen, use the **DRNAS** option, not native Wine fullscreen commands.

@@ -1,0 +1,123 @@
+name: Append verified R62 hotfix to Blender v1.1
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/append-blender-r62.yml'
+      - 'releases/blender-v1.1.md'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: single-blender-v1.1-r62-hotfix
+  cancel-in-progress: false
+jobs:
+  append:
+    if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      TARGET_TAG: blender-v1.1
+      SOURCE_TAG: blender-v1.1-r62-source-39290747218-1
+      SOURCE_COMMIT: cd0c9dd64710dca265b1b672104fc22216c6f086
+      SOURCE_RELEASE_ID: '417537806'
+      SOURCE_ASSET_ID: '656881118'
+      SOURCE_SIZE: '455194545'
+      SOURCE_SHA: 1cfb46edbda63f2ea6dd0742fa65788c9a57b7b858cd943ea81ff23a5b0c4eac
+      ORIGINAL: Blender-v1.1-ARM64-Android-Preview-VULKAN-STABLE-SIGNED.apk
+      ORIGINAL_SHA: e7c2ea996b86ef467a7090d6742e61298cf5d70f863e14ec14ae7843c09618e5
+      R62: Blender-v1.1-r62-PrefixFix-STABLE-SIGNED.apk
+      SIGNING_CERT: 393fd0522cbbf36dd17412031a62b1cc29933e5e8e9851637193c73b4eb7d67f
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin private source metadata and verify the one existing public prerelease
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$PRIVATE_TOKEN" || { echo "::error::Private release read token is missing."; exit 1; }
+          mkdir -p release-assets
+          curl --fail --silent --show-error --location --retry 2 \
+            -H "Authorization: Bearer $PRIVATE_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Frane12/EmuExperimental/releases/tags/$SOURCE_TAG" > release-assets/source.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TARGET_TAG" > release-assets/target.json
+          python3 - <<'PY'
+          import json,os
+          src=json.load(open('release-assets/source.json'))
+          dst=json.load(open('release-assets/target.json'))
+          assert src['tag_name']==os.environ['SOURCE_TAG'] and src['draft'] is False and src['id']==int(os.environ['SOURCE_RELEASE_ID'])
+          assert src['target_commitish']==os.environ['SOURCE_COMMIT']
+          new=[a for a in src['assets'] if a['name']==os.environ['R62']]
+          assert len(new)==1 and new[0]['id']==int(os.environ['SOURCE_ASSET_ID']), 'Pinned R62 signed asset missing or changed'
+          a=new[0]
+          assert a['size']==int(os.environ['SOURCE_SIZE']), 'Unexpected R62 byte size'
+          assert a.get('digest')=='sha256:'+os.environ['SOURCE_SHA'], 'Unexpected R62 SHA256'
+          assert dst['tag_name']==os.environ['TARGET_TAG'] and dst['draft'] is False and dst['prerelease'] is True
+          original=[a for a in dst['assets'] if a['name']==os.environ['ORIGINAL']]
+          assert len(original)==1 and original[0]['digest']=='sha256:'+os.environ['ORIGINAL_SHA']
+          existing=[a for a in dst['assets'] if a['name']==os.environ['R62']]
+          assert not existing or (len(existing)==1 and existing[0]['digest']==a['digest']), 'Conflicting R62 asset'
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              f.write(f"R62_ASSET_ID={a['id']}\nR62_SIZE={a['size']}\nR62_SHA={a['digest'][7:]}\n")
+          print('Existing v1.1 and exact private R62 build revision verified.')
+          PY
+      - name: Download and checksum-verify original APK and new R62
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 30 --max-time 2400 \
+            -H "Authorization: Bearer $PRIVATE_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Frane12/EmuExperimental/releases/assets/$R62_ASSET_ID" \
+            -o "release-assets/$R62"
+          gh release download "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$ORIGINAL" --dir release-assets --clobber
+          printf '%s  %s\n' "$ORIGINAL_SHA" "release-assets/$ORIGINAL" | sha256sum -c -
+          printf '%s  %s\n' "$R62_SHA" "release-assets/$R62" | sha256sum -c -
+          test "$(stat -c %s "release-assets/$R62")" = "$R62_SIZE"
+          unzip -t "release-assets/$R62" | tail -1
+          unzip -l "release-assets/$R62" | grep -F 'lib/arm64-v8a/libdrnas_host.so'
+          unzip -l "release-assets/$R62" | grep -F 'blender/blender-4.5.14-windows-arm64.zip'
+      - name: Verify matching signature and in-place-upgrade package version
+        run: |
+          set -euo pipefail
+          AAPT="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -1)"
+          test -x "$AAPT" && test -x "$APKSIGNER"
+          for apk in "$ORIGINAL" "$R62"; do
+            cert="$("$APKSIGNER" verify --print-certs "release-assets/$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
+            test "$cert" = "$SIGNING_CERT" || { echo "::error::Mismatched APK signature for $apk"; exit 1; }
+          done
+          "$AAPT" dump badging "release-assets/$ORIGINAL" | grep -E "package: name='com.drnas.console' versionCode='129'"
+          "$AAPT" dump badging "release-assets/$R62" | grep -E "package: name='com.drnas.console' versionCode='130'"
+          printf '%s  %s\n' "$ORIGINAL_SHA" "$ORIGINAL" > release-assets/SHA256SUMS.txt
+          printf '%s  %s\n' "$R62_SHA" "$R62" >> release-assets/SHA256SUMS.txt
+          test -s releases/blender-v1.1.md
+      - name: Add only R62 to existing release; preserve original APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -Fxq "$R62"; then
+            gh release upload "$TARGET_TAG" "release-assets/$R62" --repo "$GITHUB_REPOSITORY"
+          fi
+          gh release upload "$TARGET_TAG" release-assets/SHA256SUMS.txt --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --notes-file releases/blender-v1.1.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TARGET_TAG" > release-assets/verified.json
+          python3 - <<'PY'
+          import json,os
+          j=json.load(open('release-assets/verified.json'))
+          assert not j['draft'] and j['prerelease']
+          assets={a['name']:a for a in j['assets']}
+          assert assets[os.environ['ORIGINAL']]['digest']=='sha256:'+os.environ['ORIGINAL_SHA']
+          assert assets[os.environ['R62']]['digest']=='sha256:'+os.environ['R62_SHA']
+          assert 'SHA256SUMS.txt' in assets
+          assert 'Hotfix R62' in j['body']
+          print('Success: original v1.1 + R62 in a SINGLE prerelease; checksum and notes updated.')
+          PY
