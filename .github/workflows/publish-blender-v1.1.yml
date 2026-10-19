@@ -1,0 +1,90 @@
+name: Publish Blender v1.1 ARM64 Android Preview
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-blender-v1.1.yml'
+      - 'releases/blender-v1.1.md'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: publish-blender-v1.1-android
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source release and download exact signed APK
+        shell: bash
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          RELEASE_ID: '417178551'
+          APK_ASSET_ID: '655993266'
+          APK_SHA256: 'e7c2ea996b86ef467a7090d6742e61298cf5d70f863e14ec14ae7843c09618e5'
+          APK_NAME: 'Blender-v1.1-ARM64-Android-Preview-VULKAN-STABLE-SIGNED.apk'
+        run: |
+          set -euo pipefail
+          test -n "${PRIVATE_TOKEN}" || { echo "::error::EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret missing on Testturnip."; exit 1; }
+          mkdir -p release-assets
+          curl --fail --silent --show-error --location --retry 3 \
+            -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/Frane12/EmuExperimental/releases/${RELEASE_ID}" -o release-assets/private-meta.json
+          python3 - <<'PY'
+          import json, os
+          meta=json.load(open('release-assets/private-meta.json'))
+          assert meta['id']==int(os.environ['RELEASE_ID'])
+          assert meta['draft'] is True
+          assert 'Blender v1.1' in meta.get('name','')
+          assets=[a for a in meta['assets'] if a['id']==int(os.environ['APK_ASSET_ID'])]
+          assert len(assets)==1, 'APK not found'
+          a=assets[0]
+          assert a['name']==os.environ['APK_NAME']
+          assert a['size'] > 350_000_000 and a['size'] < 750_000_000
+          assert a.get('digest')=='sha256:'+os.environ['APK_SHA256']
+          with open(os.environ['GITHUB_ENV'],'a') as out:out.write('APK_EXPECTED_SIZE='+str(a['size'])+'\n')
+          PY
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 30 --max-time 2100 \
+            -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
+            -H 'Accept: application/octet-stream' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "https://api.github.com/repos/Frane12/EmuExperimental/releases/assets/${APK_ASSET_ID}" \
+            -o "release-assets/${APK_NAME}"
+          python3 - <<'PY'
+          import os, pathlib, hashlib, zipfile
+          p=pathlib.Path('release-assets')/os.environ['APK_NAME']
+          assert p.stat().st_size==int(os.environ['APK_EXPECTED_SIZE']), 'Wrong APK size'
+          digest=hashlib.file_digest(p.open('rb'),'sha256').hexdigest()
+          assert digest==os.environ['APK_SHA256'], 'Wrong APK SHA256'
+          with zipfile.ZipFile(p) as archive:
+              files=set(archive.namelist())
+              assert 'AndroidManifest.xml' in files
+              assert any(x.startswith('classes') and x.endswith('.dex') for x in files)
+              assert 'lib/arm64-v8a/libdrnas_host.so' in files
+              assert any(x.endswith('blender-4.5.14-windows-arm64.zip') for x in files)
+          pathlib.Path('release-assets/SHA256SUMS.txt').write_text(digest+'  '+p.name+'\n')
+          print('APK verified:',p.name,'size=',p.stat().st_size,'sha256=',digest)
+          PY
+      - name: Publish public prerelease only after checksum verification
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK_NAME: 'Blender-v1.1-ARM64-Android-Preview-VULKAN-STABLE-SIGNED.apk'
+        run: |
+          set -euo pipefail
+          TAG='blender-v1.1'
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::${TAG} exists; refusing to overwrite a release or asset."; exit 1
+          fi
+          gh release create "${TAG}" "release-assets/${APK_NAME}" release-assets/SHA256SUMS.txt \
+            --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" \
+            --title "Blender v1.1 — ARM64 Android Preview" \
+            --notes-file releases/blender-v1.1.md --prerelease
+          gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --json name,url,isDraft,isPrerelease,assets \
+            --jq '{name:.name,url:.url,isDraft:.isDraft,isPrerelease:.isPrerelease,assets:[.assets[].name]}'
