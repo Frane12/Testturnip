@@ -1,0 +1,153 @@
+name: Publish approved Blender Hotfix 1.1 r46
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/publish-blender-hotfix-1.1.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-approved-blender-hotfix-1.1-r46
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout release notes (no EmuExperimental source checkout)
+        uses: actions/checkout@v4
+
+      - name: Verify inputs and retrieve private asset metadata
+        shell: bash
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          REVISION: "r46"
+          PRIVATE_RELEASE_ID: "416840213"
+          PRIVATE_ASSET_ID: "655006236"
+          EXPECTED_SHA256: "27312747b4fa3d588907422e60c6b89def62fa2a41b218c0e10f66352eb20b36"
+        run: |
+          set -euo pipefail
+          if [[ -z "${PRIVATE_TOKEN}" ]]; then
+            echo "::error::Set the EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret on Testturnip (read access to private EmuExperimental releases)." >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          import os, re
+          assert re.fullmatch(r'r[0-9]+', os.environ["REVISION"]), "Revision must be rNN"
+          assert re.fullmatch(r'[0-9]+', os.environ["PRIVATE_RELEASE_ID"]), "Invalid private release ID"
+          assert re.fullmatch(r'[0-9]+', os.environ["PRIVATE_ASSET_ID"]), "Invalid private asset ID"
+          assert re.fullmatch(r'[0-9a-f]{64}', os.environ["EXPECTED_SHA256"]), "SHA-256 must be 64 lowercase hexadecimal characters"
+          PY
+          mkdir -p release-assets
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Frane12/EmuExperimental/releases/${PRIVATE_RELEASE_ID}" \
+            -o release-assets/private-release.json
+          python3 - <<'PY'
+          import json, os, re
+          doc = json.load(open("release-assets/private-release.json", encoding="utf-8"))
+          revision = os.environ["REVISION"]
+          assert "Blender" in (doc.get("name") or ""), "Source release is not identified as Blender"
+          assert revision.lower() in (doc.get("name") or "").lower(), "Revision differs from source release title"
+          asset_id = int(os.environ["PRIVATE_ASSET_ID"])
+          matched = [a for a in doc.get("assets", []) if a.get("id") == asset_id]
+          assert len(matched) == 1, "APK asset ID not found on chosen private release"
+          a = matched[0]
+          name = a.get("name", "")
+          assert re.fullmatch(r"Blender-DRNAS-" + re.escape(revision) + r"-[A-Za-z0-9._-]*STABLE-SIGNED\.apk", name), "Not the expected stable-signed Blender APK"
+          assert 50000000 < a.get("size", 0) < 1500000000, "Unexpected APK size"
+          expected = os.environ["EXPECTED_SHA256"]
+          if a.get("digest"):
+              assert a["digest"] == "sha256:" + expected, "Private release digest mismatch"
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as out:
+              out.write("APK_FILENAME=" + name + "\n")
+              out.write("EXPECTED_APK_SIZE=" + str(a["size"]) + "\n")
+          print(f"Approved source: release {doc['id']}, asset {asset_id}, file {name} ({a['size']} bytes)")
+          PY
+
+      - name: Download exact APK from private release, never source ZIP
+        shell: bash
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          PRIVATE_ASSET_ID: "655006236"
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 30 --max-time 1800 \
+            -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Frane12/EmuExperimental/releases/assets/${PRIVATE_ASSET_ID}" \
+            -o "release-assets/${APK_FILENAME}"
+
+      - name: Verify exact SHA-256, bytes and Android APK structure
+        shell: bash
+        env:
+          EXPECTED_SHA256: "27312747b4fa3d588907422e60c6b89def62fa2a41b218c0e10f66352eb20b36"
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, os, pathlib, zipfile
+          p = pathlib.Path("release-assets") / os.environ["APK_FILENAME"]
+          assert p.stat().st_size == int(os.environ["EXPECTED_APK_SIZE"]), "Downloaded asset size mismatch"
+          sha = hashlib.sha256()
+          with p.open("rb") as fh:
+              for chunk in iter(lambda: fh.read(4 * 1024 * 1024), b""):
+                  sha.update(chunk)
+          digest = sha.hexdigest()
+          assert digest == os.environ["EXPECTED_SHA256"], "APK hash mismatch — do not publish"
+          with zipfile.ZipFile(p) as z:
+              names = set(z.namelist())
+              assert "AndroidManifest.xml" in names, "Missing AndroidManifest"
+              assert any(n.startswith("classes") and n.endswith(".dex") for n in names), "Missing DEX"
+              assert "lib/arm64-v8a/libdrnas_host.so" in names, "Missing ARM64 runtime"
+          sums = pathlib.Path("release-assets/SHA256SUMS.txt")
+          sums.write_text(digest + "  " + p.name + "\n", encoding="utf-8")
+          print("Verified APK SHA-256:", digest)
+          PY
+
+      - name: Prepare revisioned release notes
+        shell: bash
+        env:
+          REVISION: "r46"
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, pathlib
+          base = pathlib.Path("releases/blender-v1.1-r46.md").read_text(encoding="utf-8")
+          revision = os.environ["REVISION"]
+          pathlib.Path("release-assets/RELEASE-NOTES.md").write_text(
+              base.replace("r38", revision), encoding="utf-8"
+          )
+          PY
+
+      - name: Publish ONLY the approved APK and SHA256SUMS (public prerelease)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: "r46"
+        run: |
+          set -euo pipefail
+          TAG="blender-v1.1-${REVISION}"
+          TITLE="Blender Hotfix 1.1 ${REVISION}"
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::Release ${TAG} already exists. Refusing to modify or republish an existing public build." >&2
+            exit 1
+          fi
+          gh release create "${TAG}" \
+            "release-assets/${APK_FILENAME}" \
+            "release-assets/SHA256SUMS.txt" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "${TITLE}" \
+            --notes-file "release-assets/RELEASE-NOTES.md" \
+            --prerelease
+          gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --json name,url,isPrerelease,assets \
+            --jq '{name:.name,url:.url,isPrerelease:.isPrerelease,assets:[.assets[].name]}'
