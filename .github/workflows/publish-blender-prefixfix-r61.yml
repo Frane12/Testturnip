@@ -1,0 +1,107 @@
+name: Publish approved Blender PrefixFix LAB r61 test APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-blender-prefixfix-r61
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout ONLY public release notes
+        uses: actions/checkout@v4
+
+      - name: Validate source release and exact signed private APK
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$PRIVATE_TOKEN" || { echo "::error::Missing EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret"; exit 1; }
+          mkdir -p release-assets
+          curl --fail --silent --show-error --location --retry 3 \
+            -H "Authorization: Bearer $PRIVATE_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Frane12/EmuExperimental/releases/417463294" \
+            -o release-assets/private-release.json
+          python3 - <<'PY'
+          import json
+          release=json.load(open("release-assets/private-release.json",encoding="utf-8"))
+          assert release.get("id")==417463294, "Unexpected source release"
+          assert release.get("draft") is True, "Expected only the approved private draft"
+          assert release.get("name")=="Blender PrefixFix LAB r61 (ISOLATED PRIVATE DRAFT)"
+          apk=[a for a in release.get("assets",[]) if a.get("id")==656670731]
+          assert len(apk)==1, "Approved APK not present"
+          a=apk[0]
+          assert a.get("name")=="Blender-PrefixFix-LAB-r61-ARM64-STABLE-SIGNED.apk"
+          assert a.get("size")==455189865, "APK size differs from reviewed build"
+          assert a.get("digest")=="sha256:d945f07162c9cbcd595b7084559abb5d598d98399decc97257ab61078d112988", "APK source digest changed"
+          print("Pinned private release asset validated:",a["name"],a["size"],"bytes")
+          PY
+
+      - name: Download only that APK from private repo
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 30 --max-time 1800 \
+            -H "Authorization: Bearer $PRIVATE_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/Frane12/EmuExperimental/releases/assets/656670731" \
+            -o release-assets/Blender-PrefixFix-LAB-r61-ARM64-STABLE-SIGNED.apk
+
+      - name: Verify full checksum, contents and signature before publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,zipfile
+          p=Path("release-assets/Blender-PrefixFix-LAB-r61-ARM64-STABLE-SIGNED.apk")
+          assert p.stat().st_size==455189865, "Downloaded size mismatch"
+          h=hashlib.sha256()
+          with p.open("rb") as f:
+              for chunk in iter(lambda:f.read(4*1024*1024),b""):h.update(chunk)
+          expected="d945f07162c9cbcd595b7084559abb5d598d98399decc97257ab61078d112988"
+          assert h.hexdigest()==expected, "APK checksum mismatch: REFUSE PUBLIC RELEASE"
+          with zipfile.ZipFile(p) as z:
+              names=set(z.namelist())
+              assert "AndroidManifest.xml" in names and "classes.dex" in names
+              assert "lib/arm64-v8a/libdrnas_host.so" in names
+              assert "assets/blender/blender-4.5.14-windows-arm64.zip" in names
+          Path("release-assets/SHA256SUMS.txt").write_text(f"{expected}  {p.name}\n",encoding="utf-8")
+          print("Approved APK cryptographically identical to reviewed private draft.")
+          PY
+
+      - name: Publish separate PUBLIC prerelease, without any private source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="blender-prefixfix-lab-r61"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; refusing overwrite or duplicate."
+            exit 1
+          fi
+          gh release create "$tag" \
+            release-assets/Blender-PrefixFix-LAB-r61-ARM64-STABLE-SIGNED.apk \
+            release-assets/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Blender PrefixFix LAB r61 — ISOLATED TEST ONLY" \
+            --notes-file releases/blender-prefixfix-lab-r61.md --prerelease
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
+            --json url,isDraft,isPrerelease,assets \
+            --jq '{url:.url,draft:.isDraft,prerelease:.isPrerelease,assets:[.assets[].name]}'
