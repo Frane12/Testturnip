@@ -20,6 +20,10 @@ jobs:
       TARGET_TAG: blender-v1.1
       SOURCE_TAG: blender-v1.1-r62-source-39290747218-1
       SOURCE_COMMIT: cd0c9dd64710dca265b1b672104fc22216c6f086
+      SOURCE_RELEASE_ID: '417537806'
+      SOURCE_ASSET_ID: '656881118'
+      SOURCE_SIZE: '455194545'
+      SOURCE_SHA: 1cfb46edbda63f2ea6dd0742fa65788c9a57b7b858cd943ea81ff23a5b0c4eac
       ORIGINAL: Blender-v1.1-ARM64-Android-Preview-VULKAN-STABLE-SIGNED.apk
       ORIGINAL_SHA: e7c2ea996b86ef467a7090d6742e61298cf5d70f863e14ec14ae7843c09618e5
       R62: Blender-v1.1-r62-PrefixFix-STABLE-SIGNED.apk
@@ -44,13 +48,13 @@ jobs:
           import json,os
           src=json.load(open('release-assets/source.json'))
           dst=json.load(open('release-assets/target.json'))
-          assert src['tag_name']==os.environ['SOURCE_TAG'] and src['draft'] is False
+          assert src['tag_name']==os.environ['SOURCE_TAG'] and src['draft'] is False and src['id']==int(os.environ['SOURCE_RELEASE_ID'])
           assert src['target_commitish']==os.environ['SOURCE_COMMIT']
           new=[a for a in src['assets'] if a['name']==os.environ['R62']]
-          assert len(new)==1, 'R62 signed asset missing or duplicated'
+          assert len(new)==1 and new[0]['id']==int(os.environ['SOURCE_ASSET_ID']), 'Pinned R62 signed asset missing or changed'
           a=new[0]
-          assert 450_000_000 < a['size'] < 460_000_000
-          assert a.get('digest','').startswith('sha256:')
+          assert a['size']==int(os.environ['SOURCE_SIZE']), 'Unexpected R62 byte size'
+          assert a.get('digest')=='sha256:'+os.environ['SOURCE_SHA'], 'Unexpected R62 SHA256'
           assert dst['tag_name']==os.environ['TARGET_TAG'] and dst['draft'] is False and dst['prerelease'] is True
           original=[a for a in dst['assets'] if a['name']==os.environ['ORIGINAL']]
           assert len(original)==1 and original[0]['digest']=='sha256:'+os.environ['ORIGINAL_SHA']
