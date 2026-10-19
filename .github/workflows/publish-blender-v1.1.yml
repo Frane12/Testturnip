@@ -33,16 +33,20 @@ jobs:
           }
           token_status="$(api_status user)"
           repo_status="$(api_status repos/Frane12/EmuExperimental)"
+          contents_status="$(api_status repos/Frane12/EmuExperimental/contents/README.md)"
           release_status="$(api_status repos/Frane12/EmuExperimental/releases/417178551)"
-          echo "Private token API status (no secret contents): identity=$token_status repository=$repo_status release=$release_status"
+          echo "Private token API status (no secret contents): identity=$token_status repository=$repo_status contents=$contents_status release=$release_status"
           if [[ "$token_status" != 200 ]]; then
             echo "::error::Token is not recognized by GitHub. Update the secret with a valid token."; exit 1
           fi
           if [[ "$repo_status" != 200 ]]; then
             echo "::error::Valid token but private EmuExperimental repo is inaccessible. Confirm token owner=Frane12, selected repo=EmuExperimental and Contents read."; exit 1
           fi
+          if [[ "$contents_status" != 200 ]]; then
+            echo "::error::Private repo metadata is accessible but CONTENTS are not (HTTP $contents_status). On the Blender Release fine-grained token, set Repository permissions > Contents > Read-only, then Update permissions and replace the Testturnip Secret if the token was regenerated."; exit 1
+          fi
           if [[ "$release_status" != 200 ]]; then
-            echo "::error::Repo accessible but approved Blender source release inaccessible; check private release visibility."; exit 1
+            echo "::error::Repo contents readable but approved Blender source release inaccessible (HTTP $release_status). Check release permissions and token authorization."; exit 1
           fi
       - name: Validate source release and download exact signed APK
         shell: bash
@@ -65,7 +69,7 @@ jobs:
           import json, os
           meta=json.load(open('release-assets/private-meta.json'))
           assert meta['id']==int(os.environ['RELEASE_ID'])
-          assert meta['draft'] is True
+          assert meta['draft'] is False, 'Source release must already be published within the private repository'
           assert 'Blender v1.1' in meta.get('name','')
           assets=[a for a in meta['assets'] if a['id']==int(os.environ['APK_ASSET_ID'])]
           assert len(assets)==1, 'APK not found'
