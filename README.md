@@ -10,7 +10,7 @@ Android ARM64 · KGSL · Winlator / compatible userspace driver managers
 [![Latest A810 release](https://img.shields.io/badge/A810-S%20Ultimate%20v1.0-2ea44f)](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-a810-s-ultimate-v1.0)
 [![Experimental](https://img.shields.io/badge/status-experimental-orange)](https://github.com/Frane12/Testturnip/releases)
 
-[**A810 S Ultimate v1.0**](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-a810-s-ultimate-v1.0) · [**NeuroFlow — TESTING ONLY**](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-neuroflow-a8xx-testing-20261016) · [**All public releases**](https://github.com/Frane12/Testturnip/releases)
+[**A810 S Ultimate v1.0**](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-a810-s-ultimate-v1.0) · [**NeuroFlow — TESTING ONLY**](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-neuroflow-a8xx-testing-20261016) · [**DRNAS Blender for Android — Preview**](https://github.com/Frane12/Testturnip/releases/tag/blender-v1.1) · [**All public releases**](https://github.com/Frane12/Testturnip/releases)
 
 </div>
 
@@ -23,6 +23,20 @@ Drnas Turnip is an **independent experimental driver project** based on Mesa's T
 The aim is reproducible improvement, not an impressive result from one benchmark pass. Different GPU generations are treated as separate targets; optimizations and safety assumptions are **not** assumed to transfer between chips.
 
 > **Status:** These are community experimental builds, not official Mesa or Qualcomm releases. A public release is **not** a certification of universal stability, compatibility or performance gains.
+
+## DRNAS EMU · Blender on Android (experimental preview)
+
+Alongside the Turnip driver research, **DRNAS EMU** is an experimental Android ARM64 compatibility environment for Windows desktop applications, with a focus on creative and productivity tools. Its first public application preview runs **Blender 4.5.14 LTS (Windows ARM64)** on Android through a Wine/X11/Vulkan-based integration layer.
+
+**[Download DRNAS Blender v1.1 — ARM64 Android Preview (APK)](https://github.com/Frane12/Testturnip/releases/tag/blender-v1.1)** · **Public prerelease / testing only**
+
+- **Touch-oriented Blender workflow:** 3D viewport interaction, on-screen mouse buttons and keyboard, smooth zoom control, and a DRNAS-managed fullscreen option.
+- **Project files:** select an Android folder at startup; it appears as **`D:\`** in Blender for opening and saving projects.
+- **Experimental GPU paths:** automatic selection/fallback for supported Adreno, eligible Mali, and Samsung Xclipse devices. The **Adreno 840** has been exercised on-device; broad GPU compatibility is **not** guaranteed.
+
+This is **not a native or official Blender Android release** and is **not affiliated with the Blender Foundation**. Startup, installation, rendering and secondary windows may still fail on some devices. Save backups of important `.blend` files and check the [v1.1 release notes](https://github.com/Frane12/Testturnip/releases/tag/blender-v1.1) for setup, limitations and troubleshooting.
+
+---
 
 ## Published driver options
 
