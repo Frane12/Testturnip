@@ -91,7 +91,7 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -1)"
           test -x "$AAPT" && test -x "$APKSIGNER"
           for apk in "$ORIGINAL" "$R62"; do
-            cert="$("$APKSIGNER" verify --verbose --print-certs "release-assets/$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
+            cert="$("$APKSIGNER" verify --verbose --print-certs "release-assets/$apk" | tee /dev/stderr | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')"
             test "$cert" = "$SIGNING_CERT" || { echo "::error::Mismatched APK signature for $apk; observed certificate SHA-256: ${cert:-empty}; expected $SIGNING_CERT"; exit 1; }
           done
           "$AAPT" dump badging "release-assets/$ORIGINAL" | grep -E "package: name='com.drnas.console' versionCode='129'"
