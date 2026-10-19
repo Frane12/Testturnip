@@ -87,9 +87,12 @@ jobs:
             "https://api.github.com/repos/Frane12/EmuExperimental/releases/assets/${APK_ASSET_ID}" \
             -o "release-assets/${APK_NAME}"
           python3 - <<'PY'
-          import os, pathlib, hashlib, zipfile
+          import os, pathlib, hashlib, zipfile, json
           p=pathlib.Path('release-assets')/os.environ['APK_NAME']
-          assert p.stat().st_size==int(os.environ['APK_EXPECTED_SIZE']), 'Wrong APK size'
+          release=json.loads(pathlib.Path('release-assets/private-meta.json').read_text())
+          approved=[a for a in release['assets'] if a['id']==int(os.environ['APK_ASSET_ID'])]
+          assert len(approved)==1, 'Expected signed APK asset not found'
+          assert p.stat().st_size==approved[0]['size'], 'Wrong APK size'
           digest=hashlib.file_digest(p.open('rb'),'sha256').hexdigest()
           assert digest==os.environ['APK_SHA256'], 'Wrong APK SHA256'
           with zipfile.ZipFile(p) as archive:
