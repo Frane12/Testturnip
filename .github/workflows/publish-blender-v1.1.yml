@@ -17,6 +17,33 @@ jobs:
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
+      - name: Diagnose private source token access (safe status codes only)
+        shell: bash
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ -n "${PRIVATE_TOKEN}" ]] || { echo "::error::Missing repository secret EMUEXPERIMENTAL_RELEASE_READ_TOKEN."; exit 1; }
+          api_status() {
+            curl --silent --show-error --max-time 25 --output /dev/null --write-out '%{http_code}' \
+              -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/$1"
+          }
+          token_status="$(api_status user)"
+          repo_status="$(api_status repos/Frane12/EmuExperimental)"
+          release_status="$(api_status repos/Frane12/EmuExperimental/releases/417178551)"
+          echo "Private token API status (no secret contents): identity=$token_status repository=$repo_status release=$release_status"
+          if [[ "$token_status" != 200 ]]; then
+            echo "::error::Token is not recognized by GitHub. Update the secret with a valid token."; exit 1
+          fi
+          if [[ "$repo_status" != 200 ]]; then
+            echo "::error::Valid token but private EmuExperimental repo is inaccessible. Confirm token owner=Frane12, selected repo=EmuExperimental and Contents read."; exit 1
+          fi
+          if [[ "$release_status" != 200 ]]; then
+            echo "::error::Repo accessible but approved Blender source release inaccessible; check private release visibility."; exit 1
+          fi
       - name: Validate source release and download exact signed APK
         shell: bash
         env:
