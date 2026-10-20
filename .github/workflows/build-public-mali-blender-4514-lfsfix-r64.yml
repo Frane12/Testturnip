@@ -1,5 +1,6 @@
 name: DRNAS r64 Mali Vulkan Blender 4.5.14 Windows ARM64 - one-shot LFSFIX public runner
 # r64 retry: native ARM64 Windows host can execute ARM64 datatoc/makesdna/shader tools.
+# Downstream Android R64 APK LAB consumes only successful native run, matching release and SHA256-verified ARM64 archive.
 # Approval stamp: build only on this one authorized workflow-file commit; no stable branch or public release is modified.
 # Isolated public runner; ONLY pinned private source is checked out ephemerally.
 # No source push, no public publication, no stable Blender v1.1 modifications.
