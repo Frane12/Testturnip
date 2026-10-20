@@ -1,0 +1,399 @@
+name: DRNAS R64 Modern Emu GUI Quiet APK - isolated LAB
+# Uses already compiled / verified Windows ARM64 Blender #7, no rebuild.
+# Keeps successful 2026-10-20 R64 test APK intact with a distinct Android package.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build-r64-modern-gui-no-diagnostics-apk.yml']
+  workflow_dispatch:
+    inputs:
+      windows_run_id:
+        description: "Successful Windows ARM64 Blender Actions run ID"
+        type: string
+        required: true
+      windows_run_attempt:
+        description: "Native Windows ARM64 run attempt"
+        type: string
+        required: true
+        default: "1"
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: drnas-r64-modern-gui-quiet-android-lab
+  cancel-in-progress: false
+jobs:
+  lab:
+    if: >-
+      github.repository == 'Frane12/Testturnip' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.event.head_commit.message == 'AUTHORIZE_ONCE_R64_MODERN_GUI_QUIET_20261020' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: private-src
+    steps:
+      - name: Checkout pinned private source without publishing it
+        uses: actions/checkout@v4
+        with:
+          repository: Frane12/EmuExperimental
+          ref: 7326e91650d4f3d241ccebf431caee67dd41fc32
+          token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-src
+      - name: Verify public runner and pinned private source SHA
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = Frane12/Testturnip
+          test -n "$PRIVATE_TOKEN" || { echo '::error::Missing EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret'; exit 1; }
+          test "$(git rev-parse HEAD)" = 7326e91650d4f3d241ccebf431caee67dd41fc32
+          echo 'DRNAS_R64_PRIVATE_SOURCE_PIN_VERIFIED; checkout remains ephemeral'
+      - name: Offline GLX and R64 dialog regression tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_r64_opengl_depclosure.py -v
+          python3 -m unittest discover -s tests -p test_r64_lab_dialog_visibility.py -v
+      - name: Reuse successful Windows ARM64 Blender build number 7 without recompilation
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Locate the exact green Windows ARM64 build #7 from the user's screenshot.
+          # Never guess a run ID or use a failed native build as APK source.
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build-public-mali-blender-4514-lfsfix-r64.yml/runs?branch=fix/r64-mali-lfsfix-public-20261020&status=completed&per_page=50" > "$RUNNER_TEMP/windows-arm64-runs.json"
+          python3 - <<'PY'
+          import json,os,pathlib
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          payload=json.loads((tmp/"windows-arm64-runs.json").read_text())
+          source_sha="cd17ada3bda3bbbda7feda79581896c7c81c8ad4"
+          matching=[r for r in payload["workflow_runs"] if
+                    r["head_sha"]==source_sha and
+                    r["head_repository"]["full_name"]=="Frane12/Testturnip" and
+                    r["status"]=="completed" and r["conclusion"]=="success" and
+                    r["head_branch"]=="fix/r64-mali-lfsfix-public-20261020"]
+          assert len(matching)==1, "Expected exactly one successful native Windows R64 build #7 at pinned commit"
+          r=matching[0]
+          with open(os.environ["GITHUB_ENV"],"a") as env:
+              env.write("DRNAS_REUSE_NATIVE_RUN_ID="+str(r["id"])+"\n")
+              env.write("DRNAS_REUSE_NATIVE_ATTEMPT="+str(r["run_attempt"])+"\n")
+          print("DRNAS_R64_REUSE_SUCCESSFUL_WINDOWS_COMPILE",r["id"],r["run_attempt"])
+          PY
+      - name: Verify native Windows ARM64 workflow success and matching public draft provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRNAS_NATIVE_RUN_ID: ${{ github.event.workflow_run.id || inputs.windows_run_id || '' }}
+          DRNAS_NATIVE_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.windows_run_attempt || '1' }}
+        run: |
+          set -euo pipefail
+          if test "${GITHUB_EVENT_NAME}" = push; then
+            DRNAS_NATIVE_RUN_ID="${DRNAS_REUSE_NATIVE_RUN_ID:-}"
+            DRNAS_NATIVE_ATTEMPT="${DRNAS_REUSE_NATIVE_ATTEMPT:-}"
+          fi
+          [[ "$DRNAS_NATIVE_RUN_ID" =~ ^[0-9]+$ ]] || { echo '::error::Native Windows run ID is missing'; exit 1; }
+          [[ "$DRNAS_NATIVE_ATTEMPT" =~ ^[0-9]+$ ]] || { echo '::error::Native Windows run attempt is invalid'; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRNAS_NATIVE_RUN_ID" > "$RUNNER_TEMP/r64-native-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/r64-native-releases.json"
+          python3 - <<'PY'
+          import json,os,pathlib,re
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          run=json.loads((tmp/"r64-native-run.json").read_text())
+          assert run["id"]==int(os.environ["DRNAS_NATIVE_RUN_ID"])
+          assert run["status"]=="completed" and run["conclusion"]=="success", "Native Blender Windows ARM64 build failed or is incomplete"
+          assert run["event"]=="push" and run["head_branch"]=="fix/r64-mali-lfsfix-public-20261020"
+          assert run["head_repository"]["full_name"]=="Frane12/Testturnip"
+          assert run["path"].split("@")[0]==".github/workflows/build-public-mali-blender-4514-lfsfix-r64.yml", "Wrong upstream workflow"
+          assert run["run_attempt"]==int(os.environ["DRNAS_NATIVE_ATTEMPT"])
+          tag=f"drnas-mali-blender-r64-lfsfix-lab-{run['id']}-{run['run_attempt']}"
+          releases=json.loads((tmp/"r64-native-releases.json").read_text())
+          found=[r for r in releases if r["tag_name"]==tag]
+          assert len(found)==1, f"No matching native LFSFIX release draft {tag} in 100 latest releases"
+          rel=found[0]
+          assert rel["draft"] is True, "Runtime source release must remain unpublished"
+          assert rel["target_commitish"]==run["head_sha"], "Release target does not match native source workflow"
+          expected=("Blender-4.5.14-DRNAS-MaliVulkan-r64-LFSFIX-WindowsARM64-PRIVATE.zip","DISTRIBUTION-MANIFEST.json")
+          assets=[]
+          for filename in expected:
+              found=[a for a in rel["assets"] if a["name"]==filename]
+              assert len(found)==1, "Missing Windows ARM64 asset: "+filename
+              a=found[0]
+              assert re.fullmatch(r"sha256:[a-f0-9]{64}",a.get("digest") or ""), "Missing GitHub SHA256 digest"
+              assert 100<a["size"]<400*1024**2, "Abnormal release asset size"
+              assets.append({"name":filename,"id":a["id"],"size":a["size"],"sha256":a["digest"][7:]})
+          (tmp/"r64-native-assets.json").write_text(json.dumps({"tag":tag,"commit":run["head_sha"],"assets":assets}))
+          print("DRNAS_R64_WINDOWS_ARM64_VERIFIED_NATIVE_WORKFLOW",tag)
+          PY
+      - name: Create an unpublished public-repository draft for this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "drnas-r64-modern-gui-quiet-apk-${GITHUB_RUN_ID}" \
+            --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+            --title 'DRNAS R64 Modern Emu GUI Quiet Android LAB - PUBLIC repo DRAFT (build pending)' \
+            --notes 'Isolated DRNAS Android R64 test with rebuilt Windows ARM64 Mali Vulkan Blender. Private Android source remains private. Draft only; APK not yet built or device-tested. Do not publish without reviewing GPL/source requirements and signatures.'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android SDK dependencies
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+      - name: Download and verify LFSFIX native Windows ARM64 Blender runtime and manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/blender-r64"
+          python3 - <<'PY' > "$RUNNER_TEMP/r64-native-assets-list.txt"
+          import json,os,pathlib
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          obj=json.loads((tmp/"r64-native-assets.json").read_text())
+          for asset in obj["assets"]:
+              print(f"{asset['id']}|{asset['name']}|{asset['sha256']}")
+          with open(os.environ["GITHUB_ENV"],"a") as env:
+              for a in obj["assets"]:
+                  if a["name"].endswith(".zip"):
+                      env.write("DRNAS_R64_ZIP="+str(tmp/"blender-r64"/a["name"])+"\n")
+                      env.write("DRNAS_BLENDER_SHA256="+a["sha256"]+"\n")
+          PY
+          while IFS='|' read -r asset_id filename sha; do
+            test -n "$asset_id" && test -n "$sha"
+            curl --fail --location --retry 3 --retry-delay 3 --connect-timeout 30 --max-time 1800 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/octet-stream' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              --output "$RUNNER_TEMP/blender-r64/$filename" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+            echo "$sha  $RUNNER_TEMP/blender-r64/$filename" | sha256sum -c -
+          done < "$RUNNER_TEMP/r64-native-assets-list.txt"
+          python3 - <<'PY'
+          import json,os,pathlib,zipfile
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          src=json.loads((tmp/"r64-native-assets.json").read_text())
+          manifest=json.loads((tmp/"blender-r64"/"DISTRIBUTION-MANIFEST.json").read_text())
+          asset=next(x for x in src["assets"] if x["name"].endswith(".zip"))
+          bundle=tmp/"blender-r64"/asset["name"]
+          assert manifest["machine"]=="0xAA64" and manifest["source_blender_version"]=="4.5.14", "Windows ARM64 build identity mismatch"
+          assert manifest["unresolved_git_lfs_pointers"]==0, "Source contains unresolved Git LFS pointers"
+          assert manifest["pdb_in_runtime"]==0 and manifest["symbols_kept_separate"] is True, "Debug symbols leaked"
+          assert manifest["runtime"]["file"]==asset["name"]
+          assert manifest["runtime"]["sha256"]==asset["sha256"] and manifest["runtime"]["bytes"]==asset["size"]
+          assert 0<manifest["runtime"]["expanded_bytes"]<=1024**3
+          with zipfile.ZipFile(bundle) as z:
+              names=set(z.namelist())
+              assert "blender.exe" in names, "Expected verified LFSFIX flat ZIP root"
+              assert not any(n.lower().endswith(".pdb") for n in names), "PDB files in runtime ZIP"
+              exe=z.read("blender.exe")[:4096]
+              off=int.from_bytes(exe[60:64],"little")
+              assert exe[:2]==b"MZ" and exe[off:off+6]==b"PE\x00\x00\x64\xaa", "Wrong Blender executable architecture"
+              assert z.testzip() is None, "Corrupt native Windows ARM64 Blender"
+          print("DRNAS_R64_VERIFIED_WINDOWS_ARM64_ZIP",asset["sha256"])
+          PY
+      - name: Bundle DRNAS Wine, FEX, DXVK and patched Blender
+        run: |
+          set -euo pipefail
+          python3 tools/package_bundled_runtime.py android-app/app/src/main/assets
+          python3 tools/package_blender.py android-app/app/src/main/assets "$DRNAS_R64_ZIP"
+      - name: Verify exact installer SHA and compiled ZIP root before building
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, os, pathlib, re, zipfile
+          expected = os.environ["DRNAS_BLENDER_SHA256"]
+          source = pathlib.Path("android-app/app/src/main/java/com/drnas/console/BundledBlenderArchive.java").read_text()
+          old_hash = "8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f"
+          old_literal = f'static final String SHA256="{old_hash}";'
+          assert source.count(old_literal) == 1, "R64 installer original SHA mismatch"
+          source = source.replace(old_literal, f'static final String SHA256="{expected}";')
+          assert f'static final String SHA256="{expected}";' in source, "Installer SHA mismatch"
+          assert "Mixed Blender archive roots" in source, "Mali r64 root guard missing"
+          archive = pathlib.Path("android-app/app/src/main/assets/blender/blender-4.5.14-windows-arm64.zip")
+          assert hashlib.sha256(archive.read_bytes()).hexdigest() == expected, "Bundled native ZIP SHA mismatch"
+          with zipfile.ZipFile(archive) as z:
+              names = set(z.namelist())
+              root = "blender-4.5.14-windows-arm64/"
+              flat = "blender.exe" in names
+              wrapped = root+"blender.exe" in names
+              assert flat != wrapped, "Invalid or ambiguous Blender archive layout"
+              assert all(n.startswith(root) for n in names) if wrapped else all(not n.startswith(root) for n in names), "Mixed ZIP roots"
+              exe = z.read("blender.exe" if flat else root+"blender.exe")[:4096]
+              assert exe[:2] == b"MZ", "Invalid embedded Blender PE"
+              pe = int.from_bytes(exe[60:64], "little")
+              assert exe[pe:pe+6] == b"PE\0\0\x64\xaa", "Not Windows ARM64 Blender"
+              print("DRNAS_MALI_R64_ARCHIVE_VERIFIED", "flat" if flat else "wrapped")
+              expanded = sum(info.file_size for info in z.infolist() if not info.is_dir())
+              assert 0 < expanded <= 3 * 1024**3, "r64 payload exceeds safe 3 GiB budget"
+              assert len(z.infolist()) <= 20_000, "Too many ZIP entries for Android extractor"
+          # Pin installer limits to the verified release ZIP, never to the old
+          # 707 MiB official package. Reserve room before creating staging files.
+          margin = 256 * 1024**2
+          cap = min(3 * 1024**3, expanded + margin)
+          free_required = expanded + margin
+          java_file = pathlib.Path("android-app/app/src/main/java/com/drnas/console/BundledBlenderArchive.java")
+          updates = {
+              "static final long MAX_EXPANDED=3L*1024*1024*1024;":
+                  f"static final long MAX_EXPANDED={cap}L;",
+              "static final long EXPECTED_EXPANDED=707171882L;":
+                  f"static final long EXPECTED_EXPANDED={expanded}L;",
+              "static final long REQUIRED_FREE_BYTES=900L*1024*1024;":
+                  f"static final long REQUIRED_FREE_BYTES={free_required}L;",
+          }
+          for old, new in updates.items():
+              assert source.count(old) == 1, f"Missing installer bound: {old}"
+              source = source.replace(old, new)
+          java_file.write_text(source)
+          print("DRNAS_MALI_R64_INSTALLER_PREFLIGHT", "expanded", expanded,
+                "limit", cap, "min_free", free_required)
+          PY
+      - name: Bundle Android X11 and OpenGL runtime
+        run: |
+          set -euo pipefail
+          # Assemble pinned Mesa first; it records exact DT_NEEDED dependencies.
+          python3 tools/package_opengl_runtime.py android-app/app/src/main/assets/opengl-runtime-v1.zip
+          # Resolve everything needed by Mesa from the immutable Bionic GUI rootfs.
+          # Do not treat libX11.so as missing: Java installs libX11.so.6 alias.
+          python3 tools/package_gui_runtime.py "$RUNNER_TEMP/imagefs_bionic.txz" android-app/app/src/main/assets/gui-runtime-v1.zip android-app/app/src/main/assets/opengl-runtime-v1.zip
+          # Inspect the exact packages, accounting for verified on-device aliases.
+          python3 tools/package_opengl_runtime.py --verify android-app/app/src/main/assets/gui-runtime-v1.zip android-app/app/src/main/assets/opengl-runtime-v1.zip
+          mkdir -p android-app/app/src/main/jniLibs/arm64-v8a
+          cc="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          "$cc" -Wall -Wextra -Werror -fPIE -pie -Wl,-z,max-page-size=16384 android-app/app/src/main/cpp/gui_dependency_probe.c -ldl -o android-app/app/src/main/jniLibs/arm64-v8a/libdrnas_gui_probe.so
+          unzip -t android-app/app/src/main/assets/gui-runtime-v1.zip
+          unzip -t android-app/app/src/main/assets/opengl-runtime-v1.zip
+      - name: Bundle SHA-pinned Mali driver archives
+        run: |
+          set -euo pipefail
+          d=android-app/app/src/main/assets/mali
+          mkdir -p "$d"
+          curl -fL --retry 3 'https://github.com/JimVulkan/mali-panvk/releases/download/v1.3.0/mali-panvk-26.3.0-devel-r4.zip' -o "$d/mali-panvk-26.3.0-devel-r4.zip"
+          echo "1bf5fdbc6fa7134100f747692436eeee5e112e640a8b5064345facbfac918787  $d/mali-panvk-26.3.0-devel-r4.zip" | sha256sum -c -
+          curl -fL --retry 3 'https://github.com/JimVulkan/mali-panvk/releases/download/v1.2.0/mali-panvk-26.3.0-devel-r3.zip' -o "$d/mali-panvk-26.3.0-devel-r3.zip"
+          echo "a53aa1747e19e8471bb839de21b570c70a34d868206ffac852e3e684cd284167  $d/mali-panvk-26.3.0-devel-r3.zip" | sha256sum -c -
+          curl -fL --retry 3 'https://github.com/LukeValen/panvk-mali-g52/releases/download/v0.0.2-alpha/PanVk-V7-0.0.2-alpha.zip' -o "$d/PanVk-V7-0.0.2-alpha.zip"
+          echo "a5da75ae597b23337825c5a35d480c7a7cc0c8655d35850ca5fd25b37ac78289  $d/PanVk-V7-0.0.2-alpha.zip" | sha256sum -c -
+          unzip -t "$d/mali-panvk-26.3.0-devel-r4.zip"
+          unzip -t "$d/mali-panvk-26.3.0-devel-r3.zip"
+          unzip -t "$d/PanVk-V7-0.0.2-alpha.zip"
+      - name: Bundle audio and native diagnostic
+        run: |
+          set -euo pipefail
+          python3 tools/package_audio_runtime.py android-app/app/src/main
+          cc="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
+          "$cc" -Wall -Wextra -Werror -fPIE -pie -Wl,-z,max-page-size=16384 android-app/app/src/main/cpp/vulkan_device_probe.c -ldl -pthread -o android-app/app/src/main/jniLibs/arm64-v8a/libdrnas_vulkan_probe.so
+      - name: Build DRNAS Windows diagnostics and desktop tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
+          d=android-app/app/src/main/assets
+          mkdir -p "$d/graphics-tests" "$d/xinput/x86" "$d/xinput/x64" "$d/windows-tools"
+          i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -mwindows -static-libgcc tools/graphics-tests/TestD3D.c -ld3d9 -lgdi32 -luser32 -lm -o "$d/graphics-tests/TestD3D.exe"
+          python3 -c "import hashlib,pathlib; p=pathlib.Path('android-app/app/src/main/assets/graphics-tests/TestD3D.exe'); p.with_suffix('.sha256').write_text(hashlib.sha256(p.read_bytes()).hexdigest())"
+          for dll in xinput1_3 xinput1_4 xinput9_1_0; do
+            sed "s/xinput1_3/${dll}/g" tools/graphics-tests/xinput1_3.def > "$RUNNER_TEMP/${dll}.def"
+            i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -Wl,--kill-at -o "$d/xinput/x86/${dll}.dll" tools/graphics-tests/DrnasXInput.c "$RUNNER_TEMP/${dll}.def"
+            x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -Wl,--kill-at -o "$d/xinput/x64/${dll}.dll" tools/graphics-tests/DrnasXInput.c "$RUNNER_TEMP/${dll}.def"
+            for arch in x86 x64; do sha256sum "$d/xinput/$arch/${dll}.dll" | cut -d' ' -f1 > "$d/xinput/$arch/${dll}.dll.sha256"; done
+          done
+          i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -mwindows tools/graphics-tests/XInputProbe.c -luser32 -o "$d/xinput/XInputProbe.exe"
+          for app in DrnasRetroPaint DrnasRetroPad; do
+            i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -municode -mwindows -static-libgcc "tools/windows-tools/$app.c" -luser32 -lgdi32 -lcomdlg32 -o "$d/windows-tools/${app/DrnasRetro/DRNAS}.exe"
+          done
+          i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -municode -mwindows -static-libgcc tools/windows-tools/DrnasDesktop.c -luser32 -lgdi32 -lm -o "$d/windows-tools/DRNASDesktop.exe"
+          i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -municode -mwindows -static-libgcc tools/windows-tools/DrnasLinkLaunch.c -lole32 -luuid -lshell32 -o "$d/windows-tools/DRNASLinkLaunch.exe"
+      - name: Run project regression tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_blender_window_layout.py
+          python3 tests/test_xcb_present_guard.py
+          python3 -m unittest discover -s tests -p test_turnip_bundle.py
+          python3 tests/test_dxvk_bundle.py
+          python3 tests/test_xinput_build_sources.py
+      - name: Run JVM regression tests
+        working-directory: private-src/android-app
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest
+      # Public GitHub runner: do not fetch or expose the stable private keystore.
+      # Use distinct debug-signed LAB APK, not an upgrade to any stable-signed APK.
+      - name: Compile separately installable signed Mali LAB APK
+        working-directory: private-src/android-app
+        env:
+          DRNAS_REQUIRE_STABLE_SIGNING: '0'
+          DRNAS_MALI_R64_LAB: '1'
+          DRNAS_MALI_R64_GUI_LAB: '1'
+          DRNAS_PREFIX_RECOVERY_LAB: '0'
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Validate APK signature, package ID and embedded Blender ZIP
+        run: |
+          set -euo pipefail
+          apk=android-app/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" | grep "package: name='com.drnas.console.mali.r64.gui.lab'"
+          cert=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]')
+          test -n "$cert" || { echo "::error::No APK signing certificate"; exit 1; }
+          echo "DRNAS_PUBLIC_RUNNER_DEBUG_SIGNED_CERT_SHA256=$cert"
+          echo "$cert" > "$RUNNER_TEMP/lab-public-cert-sha256.txt"
+          unzip -p "$apk" assets/blender/blender-4.5.14-windows-arm64.zip | sha256sum | grep "^${DRNAS_BLENDER_SHA256} "
+          unzip -l "$apk" | grep 'lib/arm64-v8a/libdrnas_host.so'
+          mkdir -p "$RUNNER_TEMP/lab-release"
+          cp "$apk" "$RUNNER_TEMP/lab-release/DRNAS-R64-MODERN-EMU-GUI-QUIET-LAB-DEBUG-SIGNED.apk"
+          (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-R64-MODERN-EMU-GUI-QUIET-LAB-DEBUG-SIGNED.apk > SHA256SUMS.txt)
+          cp "$RUNNER_TEMP/lab-public-cert-sha256.txt" "$RUNNER_TEMP/lab-release/SIGNING-CERT-SHA256.txt"
+          cp "$RUNNER_TEMP/blender-r64/DISTRIBUTION-MANIFEST.json" "$RUNNER_TEMP/lab-release/WINDOWS-ARM64-BLENDER-MANIFEST.json"
+          printf 'DRNAS R64 Modern Emu GUI Quiet LAB. Windows ARM64 Blender 4.5.14 with EmuDRNAS orbiting-dots loading on first and later starts, draggable LMB/RMB with smooth zoom, and performance/diagnostic UI disabled. Existing device-working R64 LAB remains separately installed. Seven diagnostic modes including CMD bootstrap A/B, Blender headless and Blender --version without guest X11. Verified release runtime SHA256 is checked in the final APK. Private source pinned to 7326e91650d4f3d241ccebf431caee67dd41fc32. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
+          printf 'Verified native Windows ARM64 Blender SHA256: %s\n' "$DRNAS_BLENDER_SHA256" >> "$RUNNER_TEMP/lab-release/README.txt"
+          python3 - <<'PY'
+          import json,os,pathlib
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          info=json.loads((tmp/"r64-native-assets.json").read_text())
+          with (tmp/"lab-release"/"README.txt").open("a") as f:
+              f.write("Native Windows release tag: "+info["tag"]+"\n")
+              f.write("Native Windows Actions source commit: "+info["commit"]+"\n")
+          PY
+      - name: Attach verified APK to this existing public-repository draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = Frane12/Testturnip
+          test "$(gh api repos/$GITHUB_REPOSITORY --jq .private)" = false
+          gh release upload "drnas-r64-modern-gui-quiet-apk-${GITHUB_RUN_ID}" "$RUNNER_TEMP/lab-release/"* \
+            --repo "$GITHUB_REPOSITORY"
+          gh release edit "drnas-r64-modern-gui-quiet-apk-${GITHUB_RUN_ID}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'DRNAS R64 Modern Emu GUI Quiet - DRAFT with debug-signed APK' \
+            --notes-file "$RUNNER_TEMP/lab-release/README.txt"
+          gh release view "drnas-r64-modern-gui-quiet-apk-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,name,assets,url \
+            --jq '{name:.name,isDraft:.isDraft,url:.url,assets:[.assets[].name]}'
+      - name: Preserve failure reason in the unpublished draft
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          info="$RUNNER_TEMP/r64-fetch-status.txt"
+          if test -f "$info"; then
+            status="$(cat "$info")"
+          else
+            status='failed_before_private_release_download'
+          fi
+          printf 'DRNAS R64 Mali Windows ARM64 Blender APK LAB - build FAILED, no APK attached.\\nPinned private source commit: 7326e91650d4f3d241ccebf431caee67dd41fc32.\\nNative Windows ARM64 Blender asset status: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
+          if gh release view "drnas-r64-modern-gui-quiet-apk-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "drnas-r64-modern-gui-quiet-apk-${GITHUB_RUN_ID}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title 'DRNAS R64 Modern Emu GUI Quiet APK - DRAFT (build failed)' \
+              --notes-file "$RUNNER_TEMP/lab-draft-status.txt"
+          else
+            echo 'No public draft was created: private release promotion/preflight failed first.'
+          fi
