@@ -1,0 +1,219 @@
+name: DRNAS Blender v1.1 Performance Test - private source / public runner
+'on':
+  push:
+    branches:
+    - main
+    paths:
+    - .github/workflows/build-blender-v11-performance-test.yml
+  workflow_dispatch: null
+permissions:
+  contents: write
+concurrency:
+  group: blender-v11-performance-test
+  cancel-in-progress: false
+jobs:
+  performance:
+    if: github.repository == 'Frane12/Testturnip'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: private-src
+    steps:
+    - name: Checkout pinned private performance source
+      uses: actions/checkout@v4
+      with:
+        repository: Frane12/EmuExperimental
+        ref: c0551aae48c05ddd2a2dcb1aa5c475f68aa12f81
+        token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+        persist-credentials: false
+        path: private-src
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+    - name: Install Android platform SDK
+      run: 'export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/cmdline-tools/16.0/bin:$PATH"
+
+        command -v sdkmanager
+
+        yes | sdkmanager --licenses >/dev/null || true
+
+        sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+
+        '
+    - name: Use installed Android NDK and CMake
+      run: 'test -f "$ANDROID_HOME/ndk/27.2.12479018/build/cmake/android.toolchain.cmake"
+
+        test -f "$ANDROID_HOME/cmake/3.22.1/bin/cmake"
+
+        '
+    - uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.9'
+    - name: Embed pinned Proton 11.0-2 ARM64EC, FEX 2609 and DXVK 1.10.3
+      run: 'python3 -m py_compile tools/package_bundled_runtime.py
+
+        python3 tools/package_bundled_runtime.py android-app/app/src/main/assets
+
+        '
+    - name: Bundle verified Blender 4.5.14 Windows ARM64
+      run: 'python3 tools/package_blender.py android-app/app/src/main/assets
+
+        '
+    - name: Bundle pinned Bionic X11 and font dependencies plus loader probe
+      run: 'python3 tools/package_gui_runtime.py "$RUNNER_TEMP/imagefs_bionic.txz" android-app/app/src/main/assets/gui-runtime-v1.zip
+
+        mkdir -p android-app/app/src/main/jniLibs/arm64-v8a
+
+        "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang" -Wall -Wextra
+        -Werror -fPIE -pie -Wl,-z,max-page-size=16384 android-app/app/src/main/cpp/gui_dependency_probe.c -ldl -o android-app/app/src/main/jniLibs/arm64-v8a/libdrnas_gui_probe.so
+
+        '
+    - name: Bundle separately pinned Mesa EGL / Zink native libraries for OpenGL apps
+      run: 'python3 -m py_compile tools/package_opengl_runtime.py
+
+        python3 tools/package_opengl_runtime.py android-app/app/src/main/assets/opengl-runtime-v1.zip
+
+        unzip -t android-app/app/src/main/assets/opengl-runtime-v1.zip
+
+        '
+    - name: Bundle independently SHA-pinned Mali-G52 PanVK Kbase r4 driver
+      run: "set -euo pipefail\nmkdir -p android-app/app/src/main/assets/mali\ncurl -fL --retry 3 --retry-delay 3 --max-time\
+        \ 180 \\\n  \"https://github.com/JimVulkan/mali-panvk/releases/download/v1.3.0/mali-panvk-26.3.0-devel-r4.zip\" \\\
+        \n  -o android-app/app/src/main/assets/mali/mali-panvk-26.3.0-devel-r4.zip\necho \"1bf5fdbc6fa7134100f747692436eeee5e112e640a8b5064345facbfac918787\
+        \  android-app/app/src/main/assets/mali/mali-panvk-26.3.0-devel-r4.zip\" | sha256sum -c -\nunzip -t android-app/app/src/main/assets/mali/mali-panvk-26.3.0-devel-r4.zip\n\
+        unzip -l android-app/app/src/main/assets/mali/mali-panvk-26.3.0-devel-r4.zip | grep -F libvulkan_panfrost.so\nunzip\
+        \ -l android-app/app/src/main/assets/mali/mali-panvk-26.3.0-devel-r4.zip | grep -F NOTICE.txt\n"
+    - name: Bundle additional pinned Mali drivers and dependencies
+      run: 'set -euo pipefail
+
+        curl -fL --retry 3 --max-time 180 "https://github.com/JimVulkan/mali-panvk/releases/download/v1.2.0/mali-panvk-26.3.0-devel-r3.zip"
+        -o android-app/app/src/main/assets/mali/mali-panvk-26.3.0-devel-r3.zip
+
+        echo "a53aa1747e19e8471bb839de21b570c70a34d868206ffac852e3e684cd284167  android-app/app/src/main/assets/mali/mali-panvk-26.3.0-devel-r3.zip"
+        | sha256sum -c -
+
+        curl -fL --retry 3 --max-time 180 "https://github.com/LukeValen/panvk-mali-g52/releases/download/v0.0.2-alpha/PanVk-V7-0.0.2-alpha.zip"
+        -o android-app/app/src/main/assets/mali/PanVk-V7-0.0.2-alpha.zip
+
+        echo "a5da75ae597b23337825c5a35d480c7a7cc0c8655d35850ca5fd25b37ac78289  android-app/app/src/main/assets/mali/PanVk-V7-0.0.2-alpha.zip"
+        | sha256sum -c -
+
+        unzip -t android-app/app/src/main/assets/mali/mali-panvk-26.3.0-devel-r3.zip
+
+        unzip -t android-app/app/src/main/assets/mali/PanVk-V7-0.0.2-alpha.zip
+
+        unzip -l android-app/app/src/main/assets/mali/PanVk-V7-0.0.2-alpha.zip | grep -E ''libvulkan_panfrost.so|libc\+\+_shared.so|libdrm.so''
+
+        '
+    - name: Test primary and auxiliary Blender window layout
+      run: python3 -m unittest discover -s tests -p 'test_blender_window_layout.py'
+    - name: Bundle pinned Android PulseAudio and AAudio output
+      run: 'python3 tools/package_audio_runtime.py android-app/app/src/main
+
+        "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang" -Wall -Wextra
+        -Werror -fPIE -pie -Wl,-z,max-page-size=16384 android-app/app/src/main/cpp/vulkan_device_probe.c -ldl -pthread -o
+        android-app/app/src/main/jniLibs/arm64-v8a/libdrnas_vulkan_probe.so
+
+        readelf -d android-app/app/src/main/jniLibs/arm64-v8a/libpulse*.so | grep NEEDED
+
+        '
+    - name: Build source-owned D3D9 cube diagnostic for Wine WOW64
+      run: 'sudo apt-get update -qq
+
+        sudo apt-get install -y --no-install-recommends gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
+
+        mkdir -p android-app/app/src/main/assets/graphics-tests
+
+        i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -mwindows -static-libgcc tools/graphics-tests/TestD3D.c -ld3d9
+        -lgdi32 -luser32 -lm -o android-app/app/src/main/assets/graphics-tests/TestD3D.exe
+
+        python3 -c "import hashlib,pathlib; p=pathlib.Path(''android-app/app/src/main/assets/graphics-tests/TestD3D.exe'');
+        p.with_suffix(''.sha256'').write_text(hashlib.sha256(p.read_bytes()).hexdigest())"
+
+        file android-app/app/src/main/assets/graphics-tests/TestD3D.exe
+
+        '
+    - name: Build source-owned Windows XInput 32/64-bit bridge and guest probe
+      run: "set -euxo pipefail\nmkdir -p android-app/app/src/main/assets/xinput/x86 android-app/app/src/main/assets/xinput/x64\n\
+        for dll in xinput1_3 xinput1_4 xinput9_1_0; do\n  sed \"s/xinput1_3/${dll}/g\" tools/graphics-tests/xinput1_3.def\
+        \ > \"$RUNNER_TEMP/${dll}.def\"\n  i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \\\n    -shared -Wl,--kill-at\
+        \ -o \"android-app/app/src/main/assets/xinput/x86/${dll}.dll\" \\\n    tools/graphics-tests/DrnasXInput.c \"$RUNNER_TEMP/${dll}.def\"\
+        \n  x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \\\n    -shared -Wl,--kill-at -o \"android-app/app/src/main/assets/xinput/x64/${dll}.dll\"\
+        \ \\\n    tools/graphics-tests/DrnasXInput.c \"$RUNNER_TEMP/${dll}.def\"\n  for arch in x86 x64; do\n    path=\"android-app/app/src/main/assets/xinput/${arch}/${dll}.dll\"\
+        \n    sha256sum \"$path\" | cut -d' ' -f1 > \"$path.sha256\"\n    file \"$path\"\n  done\ndone\ni686-w64-mingw32-gcc\
+        \ -std=c11 -O2 -Wall -Wextra -Werror -mwindows \\\n  tools/graphics-tests/XInputProbe.c -luser32 -o android-app/app/src/main/assets/xinput/XInputProbe.exe\n\
+        i686-w64-mingw32-objdump -p android-app/app/src/main/assets/xinput/x86/xinput1_3.dll | grep 'XInputGetState'\nx86_64-w64-mingw32-objdump\
+        \ -p android-app/app/src/main/assets/xinput/x64/xinput1_3.dll | grep 'XInputGetState'\npython3 tests/test_xinput_build_sources.py\n"
+    - name: Build source-owned Retro Paint and RetroPad Windows applications
+      run: "set -euxo pipefail\nmkdir -p android-app/app/src/main/assets/windows-tools\nfor app in DrnasRetroPaint DrnasRetroPad;\
+        \ do\n  i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \\\n    -municode -mwindows -static-libgcc \\\n  \
+        \  \"tools/windows-tools/${app}.c\" -luser32 -lgdi32 -lcomdlg32 \\\n    -o \"android-app/app/src/main/assets/windows-tools/${app/DrnasRetro/DRNAS}.exe\"\
+        \ndone\ni686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -municode -mwindows -static-libgcc \\\n  tools/windows-tools/DrnasDesktop.c\
+        \ -luser32 -lgdi32 -lm \\\n  -o android-app/app/src/main/assets/windows-tools/DRNASDesktop.exe\ni686-w64-mingw32-gcc\
+        \ -std=c11 -O2 -Wall -Wextra -Werror -municode -mwindows -static-libgcc \\\n  tools/windows-tools/DrnasLinkLaunch.c\
+        \ -lole32 -luuid -lshell32 \\\n  -o android-app/app/src/main/assets/windows-tools/DRNASLinkLaunch.exe\ntest -s android-app/app/src/main/assets/windows-tools/DRNASDesktop.exe\n\
+        test -s android-app/app/src/main/assets/windows-tools/DRNASLinkLaunch.exe\ntest -s android-app/app/src/main/assets/windows-tools/DRNASPaint.exe\n\
+        test -s android-app/app/src/main/assets/windows-tools/DRNASPad.exe\nfile android-app/app/src/main/assets/windows-tools/DRNASPaint.exe\n\
+        file android-app/app/src/main/assets/windows-tools/DRNASPad.exe\n"
+    - name: Test scoped XCB Present guard
+      run: python3 tests/test_xcb_present_guard.py
+    - name: Test pinned Turnip packaging policy
+      run: python3 -m unittest discover -s tests -p 'test_turnip_bundle.py'
+    - name: Validate both DXVK standard/async WCP payloads
+      run: python3 tests/test_dxvk_bundle.py
+    - name: Run JVM regression tests before checking signing secrets
+      working-directory: private-src/android-app
+      run: gradle --no-daemon --stacktrace :app:testDebugUnitTest
+    - name: Build isolated non-debuggable performance APK
+      working-directory: private-src/android-app
+      env:
+        DRNAS_REQUIRE_STABLE_SIGNING: '0'
+      run: gradle --no-daemon --stacktrace :app:assembleDebug
+    - name: Verify package, signature and no debugger flag
+      run: 'set -euo pipefail
+
+        apk=android-app/app/build/outputs/apk/debug/app-debug.apk
+
+        "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
+
+        "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > "$RUNNER_TEMP/performance-badging.txt"
+
+        grep -F "package: name=''com.drnas.console.performance.v11lab''" "$RUNNER_TEMP/performance-badging.txt"
+
+        if grep -q application-debuggable "$RUNNER_TEMP/performance-badging.txt"; then echo ''::error::Performance APK must
+        not be debuggable''; exit 1; fi
+
+        mkdir -p "$RUNNER_TEMP/performance-apk"
+
+        cp "$apk" "$RUNNER_TEMP/performance-apk/DRNAS-Blender-v1.1-Performance-Test.apk"
+
+        (cd "$RUNNER_TEMP/performance-apk" && sha256sum ./*.apk > SHA256SUMS.txt)
+
+        cat > "$RUNNER_TEMP/performance-apk/README.txt" <<''EOF''
+
+        DRNAS Blender v1.1 Performance Test. Separate package com.drnas.console.performance.v11lab, ephemeral debug signing
+        certificate, non-debuggable runtime. Official Blender 4.5.14, same Vulkan and GPU selection as v1.1. Includes unified
+        loading dots and movable LMB/RMB/zoom. Bounded asynchronous essential logging; startup X11 mapping queried off Android
+        UI; identical cursor frames skipped. No device FPS or no-hang guarantee: compare the same scene and resolution on
+        the same device. Never replaces the stable Blender installation.
+
+        Private source pin: c0551aae48c05ddd2a2dcb1aa5c475f68aa12f81
+
+        EOF'
+    - name: Save verified APK as unpublished test draft
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: 'set -euo pipefail
+
+        tag="blender-v11-performance-${GITHUB_RUN_ID}"
+
+        gh release create "$tag" "$RUNNER_TEMP/performance-apk/"* --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA"
+        --title ''DRNAS Blender v1.1 Performance Test (DRAFT)'' --notes-file "$RUNNER_TEMP/performance-apk/README.txt"'
+    - uses: actions/upload-artifact@v4
+      with:
+        name: DRNAS-Blender-v11-Performance-Test
+        path: ${{ runner.temp }}/performance-apk/
+        retention-days: 7
+        if-no-files-found: error
