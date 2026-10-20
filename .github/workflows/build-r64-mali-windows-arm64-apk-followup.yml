@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Frane12/EmuExperimental
-          ref: e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd
+          ref: edb3f7988859c59ce7e7bc38fbe8773f7f0a79b8
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           path: private-src
@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = Frane12/Testturnip
           test -n "$PRIVATE_TOKEN" || { echo '::error::Missing EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret'; exit 1; }
-          test "$(git rev-parse HEAD)" = e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd
+          test "$(git rev-parse HEAD)" = edb3f7988859c59ce7e7bc38fbe8773f7f0a79b8
           echo 'DRNAS_R64_PRIVATE_SOURCE_PIN_VERIFIED; checkout remains ephemeral'
       - name: Offline GLX and R64 dialog regression tests
         run: |
@@ -357,7 +357,7 @@ jobs:
           (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-R64-MALI-WINDOWS-ARM64-BLENDER-LAB-DEBUG-SIGNED.apk > SHA256SUMS.txt)
           cp "$RUNNER_TEMP/lab-public-cert-sha256.txt" "$RUNNER_TEMP/lab-release/SIGNING-CERT-SHA256.txt"
           cp "$RUNNER_TEMP/blender-r64/DISTRIBUTION-MANIFEST.json" "$RUNNER_TEMP/lab-release/WINDOWS-ARM64-BLENDER-MANIFEST.json"
-          printf 'DRNAS R64 Mali Vulkan Blender 4.5.14 Windows ARM64 runtime inside Android APK LAB. Seven diagnostic modes including CMD bootstrap A/B, Blender headless and Blender --version without guest X11. Verified release runtime SHA256 is checked in the final APK. Private source pinned to e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
+          printf 'DRNAS R64 Mali Vulkan Blender 4.5.14 Windows ARM64 runtime inside Android APK LAB. Seven diagnostic modes including CMD bootstrap A/B, Blender headless and Blender --version without guest X11. Verified release runtime SHA256 is checked in the final APK. Private source pinned to edb3f7988859c59ce7e7bc38fbe8773f7f0a79b8. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
           printf 'Verified native Windows ARM64 Blender SHA256: %s\n' "$DRNAS_BLENDER_SHA256" >> "$RUNNER_TEMP/lab-release/README.txt"
           python3 - <<'PY'
           import json,os,pathlib
@@ -395,7 +395,7 @@ jobs:
           else
             status='failed_before_private_release_download'
           fi
-          printf 'DRNAS R64 Mali Windows ARM64 Blender APK LAB - build FAILED, no APK attached.\\nPinned private source commit: e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd.\\nNative Windows ARM64 Blender asset status: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
+          printf 'DRNAS R64 Mali Windows ARM64 Blender APK LAB - build FAILED, no APK attached.\\nPinned private source commit: edb3f7988859c59ce7e7bc38fbe8773f7f0a79b8.\\nNative Windows ARM64 Blender asset status: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
           if gh release view "drnas-r64-mali-windows-arm64-apk-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "drnas-r64-mali-windows-arm64-apk-${GITHUB_RUN_ID}" \
               --repo "$GITHUB_REPOSITORY" \
