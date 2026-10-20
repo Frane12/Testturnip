@@ -1,7 +1,23 @@
 name: DRNAS r64 native Windows ARM64 Blender APK - isolated LAB
-# Staged only; manual trigger until provenance and release gates are installed.
+# Automatically follow ONLY a verified successful r64 Windows ARM64 Blender build.
+# Keep a manual fallback using a specific completed native build run ID.
 on:
+  workflow_run:
+    workflows:
+      - DRNAS r64 Mali Vulkan Blender 4.5.14 Windows ARM64 - one-shot LFSFIX public runner
+    types: [completed]
+    branches: [fix/r64-mali-lfsfix-public-20261020]
   workflow_dispatch:
+    inputs:
+      windows_run_id:
+        description: "Successful Windows ARM64 Blender Actions run ID"
+        type: string
+        required: true
+      windows_run_attempt:
+        description: "Native Windows ARM64 run attempt"
+        type: string
+        required: true
+        default: "1"
 permissions:
   contents: write
   actions: read
@@ -10,7 +26,12 @@ concurrency:
   cancel-in-progress: false
 jobs:
   lab:
-    if: github.repository == 'Frane12/Testturnip'
+    if: >-
+      github.repository == 'Frane12/Testturnip' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == 'Frane12/Testturnip' &&
+        github.event.workflow_run.head_branch == 'fix/r64-mali-lfsfix-public-20261020'))
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     defaults:
