@@ -301,7 +301,7 @@ jobs:
           unzip -l "$apk" | grep 'lib/arm64-v8a/libdrnas_host.so'
           mkdir -p "$RUNNER_TEMP/lab-release"
           cp "$apk" "$RUNNER_TEMP/lab-release/DRNAS-R64-ARM64-ISOLATION-LAB-DEBUG-SIGNED.apk"
-          (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-Mali-r64-LAB-PUBLIC-RUNNER-DEBUG-SIGNED.apk > SHA256SUMS.txt)
+          (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-R64-ARM64-ISOLATION-LAB-DEBUG-SIGNED.apk > SHA256SUMS.txt)
           cp "$RUNNER_TEMP/lab-public-cert-sha256.txt" "$RUNNER_TEMP/lab-release/SIGNING-CERT-SHA256.txt"
           printf 'DRNAS R64 ARM64 ISOLATION LAB - public runner DRAFT. Six diagnostic modes including CMD bootstrap A/B and Blender headless without guest X11. Experimental Windows ARM64 Blender under Wine. Private source pinned to bc882b83c10d2cc862c32924fe66a8b9a7cccb70. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
       - name: Attach verified APK to this existing public-repository draft
