@@ -1,4 +1,4 @@
-name: DRNAS Blender v1.1 Performance Test - private source / public runner
+name: DRNAS Blender v1.1 Performance Input Fix - private source / public runner
 'on':
   push:
     branches:
@@ -24,7 +24,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: Frane12/EmuExperimental
-        ref: c0551aae48c05ddd2a2dcb1aa5c475f68aa12f81
+        ref: 9de8de285352f4c3f771343b3241bb2d1d4d9ef3
         token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
         persist-credentials: false
         path: private-src
@@ -180,26 +180,26 @@ jobs:
 
         "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$apk" > "$RUNNER_TEMP/performance-badging.txt"
 
-        grep -F "package: name=''com.drnas.console.performance.v11lab''" "$RUNNER_TEMP/performance-badging.txt"
+        grep -F "package: name=''com.drnas.console.performance.v11route''" "$RUNNER_TEMP/performance-badging.txt"
 
         if grep -q application-debuggable "$RUNNER_TEMP/performance-badging.txt"; then echo ''::error::Performance APK must
         not be debuggable''; exit 1; fi
 
         mkdir -p "$RUNNER_TEMP/performance-apk"
 
-        cp "$apk" "$RUNNER_TEMP/performance-apk/DRNAS-Blender-v1.1-Performance-Test.apk"
+        cp "$apk" "$RUNNER_TEMP/performance-apk/DRNAS-Blender-v1.1-Performance-InputFix.apk"
 
         (cd "$RUNNER_TEMP/performance-apk" && sha256sum ./*.apk > SHA256SUMS.txt)
 
         cat > "$RUNNER_TEMP/performance-apk/README.txt" <<''EOF''
 
-        DRNAS Blender v1.1 Performance Test. Separate package com.drnas.console.performance.v11lab, ephemeral debug signing
+        DRNAS Blender v1.1 Performance Input Fix. Separate package com.drnas.console.performance.v11route, ephemeral debug signing
         certificate, non-debuggable runtime. Official Blender 4.5.14, same Vulkan and GPU selection as v1.1. Includes unified
         loading dots and movable LMB/RMB/zoom. Bounded asynchronous essential logging; startup X11 mapping queried off Android
         UI; identical cursor frames skipped. No device FPS or no-hang guarantee: compare the same scene and resolution on
         the same device. Never replaces the stable Blender installation.
 
-        Private source pin: c0551aae48c05ddd2a2dcb1aa5c475f68aa12f81
+        Private source pin: 9de8de285352f4c3f771343b3241bb2d1d4d9ef3
 
         EOF'
     - name: Save verified APK as unpublished test draft
@@ -210,7 +210,7 @@ jobs:
         tag="blender-v11-performance-${GITHUB_RUN_ID}"
 
         gh release create "$tag" "$RUNNER_TEMP/performance-apk/"* --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA"
-        --title ''DRNAS Blender v1.1 Performance Test (DRAFT)'' --notes-file "$RUNNER_TEMP/performance-apk/README.txt"'
+        --title ''DRNAS Blender v1.1 Performance Input Fix (DRAFT)'' --notes-file "$RUNNER_TEMP/performance-apk/README.txt"'
     - uses: actions/upload-artifact@v4
       with:
         name: DRNAS-Blender-v11-Performance-Test
