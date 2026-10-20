@@ -1,0 +1,329 @@
+name: DRNAS R64 Mali Windows ARM64 LFSFIX private-source draft PUBLIC RUNNER
+# This workflow is intentionally limited to the private r64 source branch.
+# It NEVER modifies the public Android Blender APK/release or Git history.
+on:
+  push:
+    branches:
+      - audit/r64-official-vs-mali-blender-20261020
+    paths:
+      - '.github/workflows/build-r64-mali-lfsfix-windows-arm64-draft.yml'
+
+permissions:
+  contents: write
+concurrency:
+  group: testturnip-blender-r64-lfsfix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile-blender-arm64:
+    defaults:
+      run:
+        working-directory: private-src
+    if: github.repository == 'Frane12/Testturnip' && github.event_name == 'push' && github.ref == 'refs/heads/audit/r64-official-vs-mali-blender-20261020' && github.event.head_commit.message == 'START_APPROVED_R64_MALI_LFSFIX_PUBLIC_RUNNER_20261020'
+    name: Compile patched Blender 4.5.14 for Windows ARM64 (NOT an APK)
+    runs-on: windows-2022
+    timeout-minutes: 325
+    env:
+      GIT_TERMINAL_PROMPT: "0"
+      GIT_LFS_SKIP_SMUDGE: "1"
+    steps:
+      - name: Checkout pinned DRNAS source from PRIVATE repository only into ephemeral runner
+        uses: actions/checkout@v4
+        with:
+          repository: Frane12/EmuExperimental
+          ref: 56d5a5b3502c7cfb1b22f4eb81a878860e0a366e
+          token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-src
+      - name: Verify approved push message, branch and exact private source
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REPOSITORY -ne 'Frane12/Testturnip' -or
+              $env:GITHUB_REF -ne 'refs/heads/audit/r64-official-vs-mali-blender-20261020' -or
+              $env:GITHUB_EVENT_NAME -ne 'push') { throw 'Wrong repository/branch/event' }
+          if ((git rev-parse HEAD).Trim() -ne '56d5a5b3502c7cfb1b22f4eb81a878860e0a366e') { throw 'Private source SHA changed' }
+          Write-Host 'DRNAS_R64_PUBLIC_RUNNER_PRIVATE_SOURCE_EXACT_SHA_VERIFIED'
+      - name: Run LFS/symbols packaging regression tests (no compilation)
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -p test_r64_blender_release_preparation.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'DRNAS Blender packaging guard tests failed' }
+      - name: Print host/toolchain and free disk before source checkout
+        shell: pwsh
+        run: |
+          Get-PSDrive -PSProvider FileSystem | Select-Object Name, Free, Used | Format-Table
+          # Never prematurely close the native clang-cl stdout pipe:
+          # a previous R64 runner could return a spurious exit code here.
+          $clangBanner=@(clang-cl --version 2>&1)
+          if ($LASTEXITCODE -ne 0 -or $clangBanner.Count -eq 0) {
+            throw 'clang-cl --version failed during host preflight'
+          }
+          Write-Host ([string]$clangBanner[0])
+          cmake --version | Select-Object -First 1
+          git --version
+          git lfs version
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $msvc = & $vswhere -latest -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$msvc) { throw 'VS2022 ARM64 targeting component missing' }
+          $llvmToolset = & $vswhere -latest -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Llvm.ClangToolset -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$llvmToolset) {
+            throw 'VS2022 MSBuild ClangCl Toolset component missing; cannot configure -T ClangCl'
+          }
+          Write-Host "VS2022 ARM64 and MSBuild ClangCl components detected: $msvc"
+
+      - name: Fetch exact upstream Blender v4.5.14 source and apply reviewed GPU patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Join-Path $env:RUNNER_TEMP 'drnas-blender-4514-src'
+          git clone -c core.longpaths=true --filter=blob:none --depth=1 --branch v4.5.14 --single-branch https://github.com/blender/blender.git $src
+          if ($LASTEXITCODE -ne 0) { throw 'Blender source clone failed' }
+          git -C $src checkout --detach v4.5.14
+          if ($LASTEXITCODE -ne 0) { throw 'Exact Blender v4.5.14 checkout failed' }
+          python tools/check_blender_mali_patch.py $src
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned r64 patch mismatch' }
+          $patch = Join-Path $PWD.Path 'patches/blender-4.5.14-mali-vulkan-optional-features-r64.patch'
+          git -C $src apply -- $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Blender r64 patch apply failed' }
+          git -C $src diff --check
+          if ($LASTEXITCODE -ne 0) { throw 'Source whitespace/check errors' }
+          git -C $src diff --stat
+          # Host runner is x64; the upstream 4.5 script calls vcvarsall arm64
+          # (ARM64 host!), which cannot run cl.exe on a Windows x64 runner.
+          # Use VS x64-hosted tools targeting ARM64. This is BUILD-SCRIPT-ONLY;
+          # the Blender GPU patch is separately verified against pristine v4.5.14.
+          $vcDetect = Join-Path $src 'build_files/windows/detect_msvc_vswhere.cmd'
+          $detectText = [System.IO.File]::ReadAllText($vcDetect)
+          $oldCall = 'call "%VCVARS%" %BUILD_ARCH%'
+          if (!$detectText.Contains($oldCall)) { throw 'Unrecognized upstream VS compiler detection; refusing unsafe rewrite' }
+          $newCall = 'if "%BUILD_ARCH%" == "arm64" (call "%VCVARS%" x64_arm64) else (call "%VCVARS%" %BUILD_ARCH%)'
+          $detectText = $detectText.Replace($oldCall,$newCall)
+          [System.IO.File]::WriteAllText($vcDetect,$detectText)
+          Write-Host 'CI host-only correction: vcvarsall x64_arm64 (VS x64 cross compiler for ARM64 target)'
+
+          # make.bat resets BUILD_CMAKE_ARGS. Patch *temporary* CMake batch script.
+          $config = Join-Path $src 'build_files/windows/configure_msbuild.cmd'
+          $txt = [IO.File]::ReadAllText($config)
+          $needle = 'set BUILD_PLATFORM_SELECT=-A ARM64'
+          if ([regex]::Matches($txt,[regex]::Escape($needle)).Count -ne 1) { throw 'Unexpected upstream ARM64 configure cmd' }
+          $txt = $txt.Replace($needle,$needle + [Environment]::NewLine +
+            '  set DRNAS_CMAKE_ARM64=-DCMAKE_TOOLCHAIN_FILE:FILEPATH="%BLENDER_DIR%build_files/windows/drnas-arm64-cross.cmake" -DLIBDIR:PATH="%BLENDER_DIR%lib/windows_arm64"')
+          $needle = '%PYDEBUG_CMAKE_ARGS%'
+          if ([regex]::Matches($txt,[regex]::Escape($needle)).Count -ne 1) { throw 'Unexpected upstream CMake args' }
+          $txt = $txt.Replace($needle,$needle + ' %DRNAS_CMAKE_ARM64%')
+          # Upstream configure_msbuild.cmd appends every XML line to
+          # Directory.Build.props, INCLUDING the opening <Project> root.
+          # make.bat is intentionally invoked twice (configure, then build);
+          # without truncation the second invocation creates 2 root elements
+          # and MSBuild aborts with MSB4024. Create a fresh props document
+          # on each invocation, then append only the remaining XML lines.
+          $opening='echo ^<Project^> >> %BUILD_DIR%\Directory.build.props'
+          $fixed='echo ^<Project^> > %BUILD_DIR%\Directory.build.props'
+          if ([regex]::Matches($txt,[regex]::Escape($opening)).Count -ne 1) {
+            throw 'Upstream Blender MSBuild XML root echo changed; do not build malformed project'
+          }
+          $txt=$txt.Replace($opening,$fixed)
+          [IO.File]::WriteAllText($config,$txt)
+          Write-Host 'Fixed MSBuild XML props root: first echo overwrites, subsequent echoes append'
+          # CMake intentionally copies the *host* AMD64 processor when using
+          # -A ARM64 on an x64 Windows runner. A -D CMAKE_SYSTEM_PROCESSOR
+          # cache flag is overwritten by CMake's platform detection.
+          # Explicit Windows cross toolchain initializes target processor
+          # BEFORE project() and compiler detection, as CMake documents.
+          $toolchain=Join-Path $src 'build_files/windows/drnas-arm64-cross.cmake'
+          $toolchainBody=@(
+            '# Staged only in temporary CI Blender source. Not an upstream patch.'
+            'set(CMAKE_SYSTEM_NAME Windows)'
+            'set(CMAKE_SYSTEM_PROCESSOR ARM64)'
+          ) -join [Environment]::NewLine
+          [IO.File]::WriteAllText($toolchain,$toolchainBody+[Environment]::NewLine)
+          if (!(Test-Path -LiteralPath $toolchain -PathType Leaf)) { throw 'Failed to stage ARM64 cross toolchain' }
+          Write-Host "Staged true CMAKE_TOOLCHAIN_FILE for Windows ARM64: $toolchain"
+          # CMake must never silently accept x64 targets or libraries.
+          $platform = Join-Path $src 'build_files/cmake/platform/platform_win32.cmake'
+          $body = [IO.File]::ReadAllText($platform)
+          $key = 'set(WINDOWS_ARM64_MIN_VSCMD_VER 17.12.3)'
+          if ([regex]::Matches($body,[regex]::Escape($key)).Count -ne 1) { throw 'Unrecognized CMake platform file' }
+          $guard = @(
+            'if(NOT CMAKE_VS_PLATFORM_NAME STREQUAL "ARM64" OR'
+            '   NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "ARM64")'
+            '  message(FATAL_ERROR "DRNAS r64: incorrect target architecture: CMAKE_VS_PLATFORM_NAME=${CMAKE_VS_PLATFORM_NAME} CMAKE_SYSTEM_PROCESSOR=${CMAKE_SYSTEM_PROCESSOR} CMAKE_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM} host=${CMAKE_HOST_SYSTEM_PROCESSOR}")'
+            'endif()'
+            'if(NOT DEFINED LIBDIR OR NOT LIBDIR MATCHES "windows_arm64$")'
+            '  message(FATAL_ERROR "DRNAS r64: incorrect target libraries")'
+            'endif()'
+          ) -join [Environment]::NewLine
+          [IO.File]::WriteAllText($platform,$body.Replace($key,$guard+[Environment]::NewLine+$key))
+          Write-Host 'Pinned ARM64 cross toolchain file, LIBDIR and fail-closed architecture checks'
+          "BLENDER_SOURCE=$src" >> $env:GITHUB_ENV
+          "BLENDER_SOURCE_COMMIT=$(git -C $src rev-parse HEAD)" >> $env:GITHUB_ENV
+
+      - name: Fetch exact 4.5.14 Windows ARM64 library submodule and Git LFS payloads
+        shell: pwsh
+        timeout-minutes: 105
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = $env:BLENDER_SOURCE
+          $root = (Get-Item $src).PSDrive.Root
+          $driveName = [System.IO.Path]::GetPathRoot($src).Substring(0,1)
+          $drive = Get-PSDrive -Name $driveName
+          $freeGiB = [Math]::Round($drive.Free / 1GB, 1)
+          Write-Host "Before libraries: $freeGiB GiB free on $driveName"
+          if ($freeGiB -lt 15) {
+            throw "Insufficient free disk for multi-GB Blender library download and ARM64 build (<15 GiB); host needs a larger runner."
+          }
+          git -C $src -c submodule.lib/windows_arm64.update=checkout submodule update --init --depth=1 -- lib/windows_arm64
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Blender lib/windows_arm64 submodule checkout failed' }
+          $lib = Join-Path $src 'lib/windows_arm64'
+          if (!(Test-Path (Join-Path $lib '.git'))) { throw 'Pinned Windows ARM64 dependency submodule absent' }
+          $env:GIT_LFS_SKIP_SMUDGE='0'
+          git -C $lib lfs pull
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream ARM64 dependency LFS download failed' }
+          $env:GIT_LFS_SKIP_SMUDGE='1'
+          git -C $src submodule status -- lib/windows_arm64
+          Get-PSDrive -PSProvider FileSystem | Select-Object Name, Free, Used | Format-Table
+          if ((Get-PSDrive -Name $driveName).Free -lt 6GB) {
+            throw 'Less than 6GiB free after library install; stop before CMake/build.'
+          }
+
+      - name: Resolve upstream Blender SOURCE LFS assets and hard-fail on pointers
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          $ErrorActionPreference='Stop'
+          $src=$env:BLENDER_SOURCE
+          if (!(Test-Path (Join-Path $src 'assets/brushes/essentials_brushes-mesh_sculpt.blend'))) {
+            throw 'Upstream Blender source assets missing'
+          }
+          # Previous R64 set GIT_LFS_SKIP_SMUDGE=1 and only fetched lib/windows_arm64 LFS.
+          # This left 190 unresolved text pointers under Blender's assets/scripts/datafiles.
+          # Download the required source content BEFORE CMake INSTALL, not just the libs.
+          $env:GIT_LFS_SKIP_SMUDGE='0'
+          git -C $src lfs pull --include="assets/**,release/datafiles/**,scripts/**" --exclude=""
+          if ($LASTEXITCODE -ne 0) { throw 'Upstream Blender source Git LFS fetch failed' }
+          $env:GIT_LFS_SKIP_SMUDGE='1'
+          python tools/prepare_r64_blender_distribution.py source-scan $src
+          if ($LASTEXITCODE -ne 0) { throw 'Unresolved upstream Git LFS pointers. BUILD BLOCKED.' }
+          Write-Host 'DRNAS_R64_SOURCE_LFS_VERIFIED_ALL_CRITICAL_RESOURCES=true'
+      - name: Pin LLVM >=20 outside Visual Studio bundled Clang 19
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $found=Get-Command clang-cl.exe -ErrorAction Stop
+          $exe=$found.Source
+          if (!(Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "LLVM executable path is missing: $exe"
+          }
+          # IMPORTANT: never pipe clang-cl --version into Select-Object -First 1.
+          # Closing the native-command output pipe early makes LLVM return a
+          # nonzero exit code on this Windows runner even though it is installed.
+          $lines=@(& $exe --version 2>&1)
+          $clangExit=$LASTEXITCODE
+          $version=if ($lines.Count -gt 0) { [string]$lines[0] } else { '<no output>' }
+          Write-Host "LLVM candidate: $exe; exit=$clangExit; version=$version"
+          if ($clangExit -ne 0) { throw "LLVM --version failed (exit=$clangExit): $version" }
+          $m=[regex]::Match($version,'version ([0-9]+)\.([0-9]+)')
+          if (!$m.Success -or [int]$m.Groups[1].Value -lt 20) { throw "LLVM >=20 required: $version" }
+          "LLVM_EXE=$exe" >> $env:GITHUB_ENV
+          Write-Host "Pinned $version from $exe"
+
+      - name: Configure Windows ARM64 ClangCl Blender full release
+        shell: pwsh
+        timeout-minutes: 45
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location $env:BLENDER_SOURCE
+          try {
+            & cmd.exe /d /c 'make.bat arm64 2022 clang full nobuild verbose'
+            if ($LASTEXITCODE -ne 0) { throw "Windows ARM64 ClangCl CMake configure failed: $LASTEXITCODE" }
+          } finally { Pop-Location }
+          $build = Join-Path (Split-Path $env:BLENDER_SOURCE -Parent) 'build_windows_Full_arm64_vc17_Release'
+          if (!(Test-Path (Join-Path $build 'Blender.sln'))) {
+            throw "ARM64 Visual Studio Blender.sln missing under $build"
+          }
+
+          # Prove the generator, library folder AND real C++ compiler version.
+          $cacheFile=Join-Path $build 'CMakeCache.txt'
+          if (!(Test-Path $cacheFile)) { throw 'No CMake cache' }
+          $cache=Get-Content -LiteralPath $cacheFile -Raw
+          if ($cache -notmatch '(?m)^CMAKE_GENERATOR_PLATFORM:INTERNAL=ARM64\r?$') { throw 'Generator not ARM64' }
+          $lib=[regex]::Match($cache,'(?m)^LIBDIR:PATH=(.+windows_arm64)\r?$')
+          if (!$lib.Success -or !(Test-Path (Join-Path $lib.Groups[1].Value '.git'))) { throw 'Incorrect ARM64 libs' }
+          $versionFile=Get-ChildItem -Path (Join-Path $build 'CMakeFiles') -Filter CMakeCXXCompiler.cmake -Recurse -File | Select-Object -First 1
+          if (!$versionFile) { throw 'Compiler identity missing' }
+          $verText=Get-Content $versionFile.FullName -Raw
+          $v=[regex]::Match($verText,'set\(CMAKE_CXX_COMPILER_VERSION "([0-9]+)\.([0-9]+)(?:\.([0-9]+))?"\)')
+          if (!$v.Success -or [int]$v.Groups[1].Value -lt 20) { throw "CMake using wrong clang-cl: $($v.Value)" }
+          Write-Host "Confirmed Windows ARM64, windows_arm64 lib and clang-cl >=20"
+          # Validate XML before wasting time on a full MSBuild attempt.
+          $props=Join-Path $build 'Directory.Build.props'
+          if (!(Test-Path -LiteralPath $props -PathType Leaf)) { throw 'MSBuild Directory.Build.props missing' }
+          $xml=New-Object System.Xml.XmlDocument
+          $xml.Load($props)
+          if ($xml.DocumentElement.LocalName -ne 'Project') {
+            throw 'MSBuild Directory.Build.props invalid root, expected Project'
+          }
+          Write-Host "Pre-build Directory.Build.props XML root validated"
+          "BLENDER_BUILD=$build" >> $env:GITHUB_ENV
+          Write-Host "Configured Blender Windows ARM64: $build"
+
+      - name: Compile and INSTALL actual Windows ARM64 Blender executable
+        shell: pwsh
+        timeout-minutes: 160
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location $env:BLENDER_SOURCE
+          try {
+            & cmd.exe /d /c 'make.bat arm64 2022 clang full verbose'
+            if ($LASTEXITCODE -ne 0) { throw "Native Blender Windows ARM64 build/INSTALL failed: $LASTEXITCODE" }
+          } finally { Pop-Location }
+
+      - name: Verify installed ARM64 Blender and package runtime WITHOUT PDB/LFS pointers
+        shell: pwsh
+        timeout-minutes: 40
+        run: |
+          $ErrorActionPreference='Stop'
+          $root=Join-Path $env:BLENDER_BUILD 'bin/Release'
+          $out=Join-Path $env:RUNNER_TEMP 'drnas-blender-r64-distribution'
+          python tools/prepare_r64_blender_distribution.py package $root $out
+          if ($LASTEXITCODE -ne 0) { throw 'FAIL-CLOSED: Blender PDB/LFS distribution audit failed' }
+          $manifest=Get-Content (Join-Path $out 'DISTRIBUTION-MANIFEST.json') -Raw | ConvertFrom-Json
+          if ($manifest.machine -ne '0xAA64' -or
+              $manifest.unresolved_git_lfs_pointers -ne 0 -or
+              $manifest.pdb_in_runtime -ne 0 -or
+              -not $manifest.symbols_kept_separate) {
+            throw 'Custom ARM64 release manifest fails mandatory packaging guarantees'
+          }
+          $runtime=Join-Path $out $manifest.runtime.file
+          $symbols=Join-Path $out $manifest.symbols.file
+          foreach($p in @($runtime,$symbols)) {
+            if (!(Test-Path $p) -or (Get-Item $p).Length -ge 1900MB) {
+              throw "Missing/oversized release asset: $p"
+            }
+          }
+          "DRNAS_OUTPUT=$out" >> $env:GITHUB_ENV
+          Write-Host "DRNAS_R64_RUNTIME_WITHOUT_PDB_BYTES=$($manifest.runtime.bytes)"
+          Write-Host "DRNAS_R64_PRIVATE_SYMBOLS_BYTES=$($manifest.symbols.bytes)"
+          Write-Host "DRNAS_R64_LFS_POINTERS=0"
+          Write-Host "DRNAS_R64_PACKAGE_QA_PASSED=true"
+
+      - name: Store completed Windows ARM64 Blender in unpublished PUBLIC repo draft
+        if: success()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          if ($env:GITHUB_REPOSITORY -ne 'Frane12/Testturnip') { throw 'Wrong repo' }
+          $private=gh api "repos/$env:GITHUB_REPOSITORY" --jq .private
+          if ($LASTEXITCODE -ne 0 -or $private.Trim() -ne 'false') { throw 'Incorrect runner source/destination' }
+          Write-Host 'PRIVATE SOURCE REMAINS IN EMUEXPERIMENTAL; PUBLIC REPO UPLOAD IS UNPUBLISHED DRAFT ONLY'
+          $tag = "drnas-r64-mali-lfsfix-windows-arm64-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          $folder = $env:DRNAS_OUTPUT
+          $manifest=Get-Content (Join-Path $folder 'DISTRIBUTION-MANIFEST.json') -Raw | ConvertFrom-Json
+          $zip=Join-Path $folder $manifest.runtime.file
+          $symbols=Join-Path $folder $manifest.symbols.file
+          if (!(Test-Path $zip) -or !(Test-Path $symbols)) { throw 'No verified runtime/symbol ZIP' }
+          gh release create $tag $zip $symbols (Join-Path $folder 'DISTRIBUTION-MANIFEST.json') (Join-Path $folder 'README.txt') (Join-Path $folder 'SHA256SUMS.txt') --draft --target $env:GITHUB_SHA --title 'DRNAS Mali Blender 4.5.14 LFSFIX UNPUBLISHED DRAFT (DEVICE UNTESTED)' --notes-file (Join-Path $folder 'README.txt')
+          if ($LASTEXITCODE -ne 0) { throw 'Private build succeeded but draft release asset upload failed' }
+          Write-Host 'DRNAS_R64_UNPUBLISHED_DRAFT_ONLY=true'
