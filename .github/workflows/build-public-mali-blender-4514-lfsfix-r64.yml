@@ -1,4 +1,5 @@
 name: DRNAS r64 Mali Vulkan Blender 4.5.14 Windows ARM64 - one-shot LFSFIX public runner
+# r64 retry: force canonical LFS remote and explicitly pin GH release target repo.
 # Approval stamp: build only on this one authorized workflow-file commit; no stable branch or public release is modified.
 # Isolated public runner; ONLY pinned private source is checked out ephemerally.
 # No source push, no public publication, no stable Blender v1.1 modifications.
@@ -203,10 +204,21 @@ jobs:
           # objects are intentionally not hosted on GitHub (404s). Fetch them
           # directly from the canonical Blender project Git LFS endpoint.
           # See developer.blender.org/docs/handbook/contributing/using_git/clone_update/
+          # GitHub is an LFS-less mirror. Use the canonical Blender repository
+          # as the LFS remote, and verify Git LFS selected the expected server.
+          git -C $src remote set-url origin 'https://projects.blender.org/blender/blender.git'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not switch Blender origin to canonical upstream' }
           git -C $src config --local lfs.url 'https://projects.blender.org/blender/blender.git/info/lfs'
           if ($LASTEXITCODE -ne 0) { throw 'Cannot configure canonical Blender Git LFS endpoint' }
+          $lfsEnv = @(git -C $src lfs env 2>&1)
+          if ($LASTEXITCODE -ne 0) { throw 'git lfs env failed' }
+          $endpointLines=@($lfsEnv | Where-Object { $_ -match '^Endpoint=' })
+          if ($endpointLines.Count -lt 1 -or $endpointLines[0] -notmatch '^Endpoint=https://projects[.]blender[.]org/blender/blender[.]git/info/lfs') {
+            throw "Wrong Blender LFS endpoint: $($endpointLines -join '; ')"
+          }
+          Write-Host ('Verified Blender Git LFS: ' + $endpointLines[0])
           $env:GIT_LFS_SKIP_SMUDGE='0'
-          git -C $src lfs pull --include="assets/**,release/datafiles/**,scripts/**" --exclude=""
+          git -C $src lfs pull origin --include="assets/**,release/datafiles/**,scripts/**" --exclude=""
           if ($LASTEXITCODE -ne 0) { throw 'Canonical Blender source Git LFS fetch failed' }
           $env:GIT_LFS_SKIP_SMUDGE='1'
           python tools/prepare_r64_blender_distribution.py source-scan $src
@@ -330,6 +342,6 @@ jobs:
           $symbols=Join-Path $out $manifest.symbols.file
           if (!(Test-Path $zip) -or !(Test-Path $symbols)) { throw 'Verified runtime or separated symbols missing' }
           $tag="drnas-mali-blender-r64-lfsfix-lab-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
-          gh release create $tag $zip $symbols (Join-Path $out 'DISTRIBUTION-MANIFEST.json') (Join-Path $out 'README.txt') (Join-Path $out 'SHA256SUMS.txt') --draft --target $env:GITHUB_SHA --title 'DRNAS Mali Blender 4.5.14 Windows ARM64 LFSFIX (LAB, not device-tested)' --notes-file (Join-Path $out 'README.txt')
+          gh release create $tag $zip $symbols (Join-Path $out 'DISTRIBUTION-MANIFEST.json') (Join-Path $out 'README.txt') (Join-Path $out 'SHA256SUMS.txt') --repo $env:GITHUB_REPOSITORY --draft --target $env:GITHUB_SHA --title 'DRNAS Mali Blender 4.5.14 Windows ARM64 LFSFIX (LAB, not device-tested)' --notes-file (Join-Path $out 'README.txt')
           if ($LASTEXITCODE -ne 0) { throw 'Packaging succeeded but draft asset upload failed' }
           Write-Host 'DRNAS_R64_PUBLIC_UNPUBLISHED_DRAFT_ONLY=true'
