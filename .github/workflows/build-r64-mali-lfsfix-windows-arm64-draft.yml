@@ -186,24 +186,35 @@ jobs:
             throw 'Less than 6GiB free after library install; stop before CMake/build.'
           }
 
-      - name: Resolve upstream Blender SOURCE LFS assets and hard-fail on pointers
+      - name: Resolve official Blender SOURCE Git LFS assets and fail on pointers
         shell: pwsh
-        timeout-minutes: 25
+        timeout-minutes: 35
         run: |
           $ErrorActionPreference='Stop'
           $src=$env:BLENDER_SOURCE
           if (!(Test-Path (Join-Path $src 'assets/brushes/essentials_brushes-mesh_sculpt.blend'))) {
-            throw 'Upstream Blender source assets missing'
+            throw 'Blender source assets missing'
           }
-          # Previous R64 set GIT_LFS_SKIP_SMUDGE=1 and only fetched lib/windows_arm64 LFS.
-          # This left 190 unresolved text pointers under Blender's assets/scripts/datafiles.
-          # Download the required source content BEFORE CMake INSTALL, not just the libs.
+          # The Blender GitHub source is a mirror WITHOUT its LFS objects.
+          # The old public workflow fetched 190 pointers from GitHub and failed 404.
+          # Blender's official upstream Git LFS endpoint must be configured explicitly.
+          git -C $src config --local lfs.url 'https://projects.blender.org/blender/blender.git/info/lfs'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not set official Blender LFS URL' }
+          git -C $src remote add lfs-fallback 'https://projects.blender.org/blender/blender.git'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not add official Blender LFS fallback remote' }
+          git -C $src config --local lfs.remote.searchall true
+          if ($LASTEXITCODE -ne 0) { throw 'Could not enable LFS fallback' }
+          $lfsEnv=@(git -C $src lfs env)
+          if ($LASTEXITCODE -ne 0 -or -not ($lfsEnv -match 'projects\.blender\.org')) {
+            throw 'LFS endpoint is not configured to the canonical Blender server'
+          }
+          Write-Host 'DRNAS_R64_LFS_CANONICAL_ENDPOINT_CONFIGURED'
           $env:GIT_LFS_SKIP_SMUDGE='0'
           git -C $src lfs pull --include="assets/**,release/datafiles/**,scripts/**" --exclude=""
-          if ($LASTEXITCODE -ne 0) { throw 'Upstream Blender source Git LFS fetch failed' }
+          if ($LASTEXITCODE -ne 0) { throw 'Official Blender source Git LFS fetch failed' }
           $env:GIT_LFS_SKIP_SMUDGE='1'
           python tools/prepare_r64_blender_distribution.py source-scan $src
-          if ($LASTEXITCODE -ne 0) { throw 'Unresolved upstream Git LFS pointers. BUILD BLOCKED.' }
+          if ($LASTEXITCODE -ne 0) { throw 'Unresolved upstream Git LFS pointers; abort before compiler' }
           Write-Host 'DRNAS_R64_SOURCE_LFS_VERIFIED_ALL_CRITICAL_RESOURCES=true'
       - name: Pin LLVM >=20 outside Visual Studio bundled Clang 19
         shell: pwsh
