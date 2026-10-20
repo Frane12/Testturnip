@@ -86,8 +86,8 @@ jobs:
           assert len(matching)==1, "Expected exactly one successful native Windows R64 build #7 at pinned commit"
           r=matching[0]
           with open(os.environ["GITHUB_ENV"],"a") as env:
-              env.write("DRNAS_REUSE_NATIVE_RUN_ID="+str(r["id"])+"\\n")
-              env.write("DRNAS_REUSE_NATIVE_ATTEMPT="+str(r["run_attempt"])+"\\n")
+              env.write("DRNAS_REUSE_NATIVE_RUN_ID="+str(r["id"])+"\n")
+              env.write("DRNAS_REUSE_NATIVE_ATTEMPT="+str(r["run_attempt"])+"\n")
           print("DRNAS_R64_REUSE_SUCCESSFUL_WINDOWS_COMPILE",r["id"],r["run_attempt"])
           PY
       - name: Verify native Windows ARM64 workflow success and matching public draft provenance
