@@ -86,7 +86,13 @@ jobs:
             'VCINSTALLDIR','WindowsSdkDir','WindowsSDKVersion','UniversalCRTSdkDir','UCRTVersion',
             'VSCMD_ARG_HOST_ARCH','VSCMD_ARG_TGT_ARCH')
           foreach($entry in $developerEnv) {
-            if ($entry -match '^([^=]+)=(.*)
+            if ($entry -match '^([^=]+)=(.*)$' -and $requiredNames -contains $Matches[1]) {
+              [Environment]::SetEnvironmentVariable($Matches[1],$Matches[2],'Process')
+              "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV
+            }
+          }
+          if (!$env:VSCMD_VER) { throw 'VSCMD_VER missing after native developer setup' }
+          Write-Host "DRNAS_R64_NATIVE_VSCMD=$env:VSCMD_VER"
 
       - name: Fetch exact upstream Blender v4.5.14 source and apply reviewed GPU patch
         shell: pwsh
