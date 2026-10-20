@@ -38,6 +38,15 @@ jobs:
           test -n "$PRIVATE_TOKEN" || { echo '::error::Missing EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret'; exit 1; }
           test "$(git rev-parse HEAD)" = 7737f2fc69f5e8622408a8d10493aba238722bfa
           echo 'DRNAS_R64_PRIVATE_SOURCE_PIN_VERIFIED; checkout remains ephemeral'
+      - name: Create an unpublished public-repository draft for this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
+            --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+            --title 'DRNAS R64 LAB - PUBLIC repo DRAFT (build pending)' \
+            --notes 'Isolated R64 test build. Private source remains private. APK not yet built or verified. Never publish this draft before reviewing licenses, source requirements and signatures.'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -59,12 +68,18 @@ jobs:
           mkdir -p "$RUNNER_TEMP/blender-r64"
           # GitHub's by-tag API does not reliably expose private draft releases.
           # Use immutable release + asset IDs and a PAT scoped to private read-only.
-          curl --fail --silent --show-error --location --retry 3 \
+          code=$(curl --silent --show-error --location --retry 2 \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H 'Accept: application/vnd.github+json' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
-            'https://api.github.com/repos/Frane12/EmuExperimental/releases/418000018' \
-            -o "$RUNNER_TEMP/blender-r64/release-meta.json"
+            --output "$RUNNER_TEMP/blender-r64/release-meta.json" --write-out '%{http_code}' \
+            'https://api.github.com/repos/Frane12/EmuExperimental/releases/418000018') || code=000
+          echo "DRNAS_R64_PRIVATE_RELEASE_METADATA_HTTP=$code"
+          echo "metadata_http=$code" > "$RUNNER_TEMP/r64-fetch-status.txt"
+          if test "$code" != 200; then
+            echo "::error::Private draft release unavailable to read-only PAT (HTTP $code)"
+            exit 1
+          fi
           python3 - <<'PY'
           import json, os, pathlib
           d=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"blender-r64/release-meta.json").read_text())
@@ -76,13 +91,20 @@ jobs:
           assert matches[0].get("digest")=="sha256:8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f"
           print("DRNAS_R64_PRIVATE_DRAFT_ASSET_PIN_VERIFIED")
           PY
-          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+          code=$(curl --silent --show-error --location --retry 2 \
             --connect-timeout 30 --max-time 1800 \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H 'Accept: application/octet-stream' \
             -H 'X-GitHub-Api-Version: 2022-11-28' \
-            'https://api.github.com/repos/Frane12/EmuExperimental/releases/assets/658264064' \
-            -o "$RUNNER_TEMP/blender-r64/Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip"
+            --output "$RUNNER_TEMP/blender-r64/Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip" \
+            --write-out '%{http_code}' \
+            'https://api.github.com/repos/Frane12/EmuExperimental/releases/assets/658264064') || code=000
+          echo "DRNAS_R64_PRIVATE_ASSET_HTTP=$code"
+          echo "asset_http=$code" >> "$RUNNER_TEMP/r64-fetch-status.txt"
+          if test "$code" != 200; then
+            echo "::error::Pinned private release asset unavailable (HTTP $code)"
+            exit 1
+          fi
           file="$RUNNER_TEMP/blender-r64/Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip"
           echo "8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f  $file" | sha256sum -c -
           echo "DRNAS_R64_ZIP=$file" >> "$GITHUB_ENV"
@@ -227,17 +249,36 @@ jobs:
           (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-Mali-r64-LAB-PUBLIC-RUNNER-DEBUG-SIGNED.apk > SHA256SUMS.txt)
           cp "$RUNNER_TEMP/lab-public-cert-sha256.txt" "$RUNNER_TEMP/lab-release/SIGNING-CERT-SHA256.txt"
           printf 'DRNAS Mali R64 LAB - public runner DRAFT. Experimental Windows ARM64 Blender under Wine. Private source pinned to 7737f2fc69f5e8622408a8d10493aba238722bfa. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
-      - name: Store signed LAB APK as DRAFT in public Testturnip repo
+      - name: Attach verified APK to this existing public-repository draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = Frane12/Testturnip
           test "$(gh api repos/$GITHUB_REPOSITORY --jq .private)" = false
-          gh release create "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" "$RUNNER_TEMP/lab-release/"* \
-            --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
-            --title 'DRNAS R64 LAB - public runner, DRAFT ONLY, unverified' \
+          gh release upload "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" "$RUNNER_TEMP/lab-release/"* \
+            --repo "$GITHUB_REPOSITORY"
+          gh release edit "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'DRNAS R64 LAB - PUBLIC repo DRAFT with debug-signed APK' \
             --notes-file "$RUNNER_TEMP/lab-release/README.txt"
           gh release view "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" \
             --json isDraft,name,assets,url \
             --jq '{name:.name,isDraft:.isDraft,url:.url,assets:[.assets[].name]}'
+      - name: Preserve failure reason in the unpublished draft
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          info="$RUNNER_TEMP/r64-fetch-status.txt"
+          if test -f "$info"; then
+            status="$(cat "$info")"
+          else
+            status='failed_before_private_release_download'
+          fi
+          printf 'DRNAS R64 public runner DRAFT - build FAILED, no APK attached.\\nPinned private source commit: 7737f2fc69f5e8622408a8d10493aba238722bfa.\\nPrivate asset diagnostic: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
+          gh release edit "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title 'DRNAS R64 LAB - PUBLIC repo DRAFT (build failed)' \
+            --notes-file "$RUNNER_TEMP/lab-draft-status.txt"
