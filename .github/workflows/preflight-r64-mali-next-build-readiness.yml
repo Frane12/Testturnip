@@ -9,7 +9,7 @@ permissions:
   contents: read
 jobs:
   preflight_only:
-    name: Check packaging scripts/tests and manual-only gate, no source or binaries built
+    name: Check packaging scripts/tests and explicit build-authorization gate; no binaries built
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -17,26 +17,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Frane12/EmuExperimental
-          ref: 34f8ac4a1687594d2dbefee18af89144133b165a
+          ref: a4cf171dd2daeb378f2d346013d46481cb5f8d04
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           path: prep
-      - name: Verify source identity and that native build is MANUAL ONLY
+      - name: Verify source identity and that the build has an explicit authorization gate
         run: |
           set -euo pipefail
           cd prep
-          test "$(git rev-parse HEAD)" = 34f8ac4a1687594d2dbefee18af89144133b165a
+          test "$(git rev-parse HEAD)" = a4cf171dd2daeb378f2d346013d46481cb5f8d04
           python3 - <<'PY'
           from pathlib import Path
           wf=Path(".github/workflows/build-blender-4514-mali-arm64-r64.yml").read_text()
-          assert wf.splitlines()[3:5] == ["on:", "  workflow_dispatch:"], "Must be manual only"
-          assert "  push:" not in wf, "No automatic Blender build permitted"
-          assert "USER_APPROVED" in wf and "user_approved_build" in wf
+          assert "user_approved_build" in wf and "ONE_TIME_MESSAGE" in wf
+          assert "AUTHORIZE_ONCE_R64_MALI_LFSFIX_20261020" in wf
+          assert "github.event.head_commit.message" in wf
+          assert "projects.blender.org/blender/blender.git/info/lfs" in wf
           assert "source-scan" in wf and "lfs pull --include=" in wf
           assert "prepare_r64_blender_distribution.py package" in wf
           assert "PDB-PRIVATE.zip" not in wf  # scripts derive symbol name from manifest
           assert "gh release create" in wf and "--draft" in wf
-          print("PASS: Blender build manual-only and protected by source/runtime/PDB gates")
+          print("PASS: explicit authorization gate and canonical LFS/source/runtime/PDB checks")
           PY
       - name: Compile Python source only and run synthetic no-build regressions
         run: |
