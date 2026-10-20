@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Frane12/EmuExperimental
-          ref: 959ccd902ef5cc096d988b17a6a3638305c80c74
+          ref: 07b01128c99d03d724458e14d18e426e687d667e
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           sparse-checkout: tools/audit_blender_archives.py
