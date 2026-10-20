@@ -38,8 +38,10 @@ jobs:
           test -n "$PRIVATE_TOKEN" || { echo '::error::Missing EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret'; exit 1; }
           test "$(git rev-parse HEAD)" = 3645a26267fc4da94d6ad62e336e77c8002d9660
           echo 'DRNAS_R64_PRIVATE_SOURCE_PIN_VERIFIED; checkout remains ephemeral'
-      - name: Offline GLX and Bionic SONAME closure regression tests
-        run: python3 -m unittest discover -s tests -p test_r64_opengl_depclosure.py -v
+      - name: Offline GLX and R64 dialog regression tests
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_r64_opengl_depclosure.py -v
           python3 -m unittest discover -s tests -p test_r64_lab_dialog_visibility.py -v
       - name: Require pinned Blender release PUBLISHED inside PRIVATE EmuExperimental
         env:
