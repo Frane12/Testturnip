@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Frane12/EmuExperimental
-          ref: 968849a0a70f9dc8d5af649f48c261225cc9918b
+          ref: 8dbcfa999044ca649f2fe284683d8b3f839995dc
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           path: private-src
@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = Frane12/Testturnip
           test -n "$PRIVATE_TOKEN" || { echo '::error::Missing EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret'; exit 1; }
-          test "$(git rev-parse HEAD)" = 968849a0a70f9dc8d5af649f48c261225cc9918b
+          test "$(git rev-parse HEAD)" = 8dbcfa999044ca649f2fe284683d8b3f839995dc
           echo 'DRNAS_R64_PRIVATE_SOURCE_PIN_VERIFIED; checkout remains ephemeral'
       - name: Offline GLX and R64 dialog regression tests
         run: |
@@ -229,7 +229,7 @@ jobs:
           cp "$apk" "$RUNNER_TEMP/lab-release/DRNAS-R64-AB-OFFICIAL-v1.1-DEBUG-SIGNED.apk"
           (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-R64-AB-OFFICIAL-v1.1-DEBUG-SIGNED.apk > SHA256SUMS.txt)
           cp "$RUNNER_TEMP/lab-public-cert-sha256.txt" "$RUNNER_TEMP/lab-release/SIGNING-CERT-SHA256.txt"
-          printf 'DRNAS R64 OFFICIAL Blender v1.1 A/B - PUBLIC RUNNER DRAFT. Exact official Blender 4.5.14 Windows ARM64 ZIP, SHA256 ${officialSHA}, replacing ONLY custom Mali-compiled Blender inside the same seven-mode R64 diagnostic runtime. No GPU compatibility is inferred. Compare test 7 --version then test 6 headless. Private source pinned to 968849a0a70f9dc8d5af649f48c261225cc9918b. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
+          printf 'DRNAS R64 OFFICIAL Blender v1.1 A/B - PUBLIC RUNNER DRAFT. Exact official Blender 4.5.14 Windows ARM64 ZIP, SHA256 ${officialSHA}, replacing ONLY custom Mali-compiled Blender inside the same seven-mode R64 diagnostic runtime. No GPU compatibility is inferred. Compare test 7 --version then test 6 headless. Private source pinned to 8dbcfa999044ca649f2fe284683d8b3f839995dc. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
       - name: Attach verified APK to this existing public-repository draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -258,7 +258,7 @@ jobs:
           else
             status='failed_before_private_release_download'
           fi
-          printf 'DRNAS R64 public runner DRAFT - build FAILED, no APK attached.\\nPinned private source commit: 968849a0a70f9dc8d5af649f48c261225cc9918b.\\nPrivate asset diagnostic: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
+          printf 'DRNAS R64 public runner DRAFT - build FAILED, no APK attached.\\nPinned private source commit: 8dbcfa999044ca649f2fe284683d8b3f839995dc.\\nPrivate asset diagnostic: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
           if gh release view "drnas-r64-official-v11-ab-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "drnas-r64-official-v11-ab-${GITHUB_RUN_ID}" \
               --repo "$GITHUB_REPOSITORY" \
