@@ -101,55 +101,57 @@ jobs:
           export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
-      - name: Download exact private Blender r64 distribution
+      - name: Download and verify LFSFIX native Windows ARM64 Blender runtime and manifest
         env:
-          GH_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/blender-r64"
-          # GitHub's by-tag API does not reliably expose private draft releases.
-          # Use immutable release + asset IDs and a PAT scoped to private read-only.
-          code=$(curl --silent --show-error --location --retry 2 \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            --output "$RUNNER_TEMP/blender-r64/release-meta.json" --write-out '%{http_code}' \
-            'https://api.github.com/repos/Frane12/EmuExperimental/releases/418000018') || code=000
-          echo "DRNAS_R64_PRIVATE_RELEASE_METADATA_HTTP=$code"
-          echo "metadata_http=$code" > "$RUNNER_TEMP/r64-fetch-status.txt"
-          if test "$code" != 200; then
-            echo "::error::Private draft release unavailable to read-only PAT (HTTP $code)"
-            exit 1
-          fi
-          python3 - <<'PY'
-          import json, os, pathlib
-          d=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"blender-r64/release-meta.json").read_text())
-          assert d["id"] == 418000018 and d["draft"] is False
-          assert d["tag_name"] == "blender-r64-native-39362488049-1"
-          matches=[a for a in d["assets"] if a["id"] == 658264064]
-          assert len(matches)==1 and matches[0]["name"]=="Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip"
-          assert matches[0]["size"]==416546371
-          assert matches[0].get("digest")=="sha256:8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f"
-          print("DRNAS_R64_PRIVATE_DRAFT_ASSET_PIN_VERIFIED")
+          python3 - <<'PY' > "$RUNNER_TEMP/r64-native-assets-list.txt"
+          import json,os,pathlib
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          obj=json.loads((tmp/"r64-native-assets.json").read_text())
+          for asset in obj["assets"]:
+              print(f"{asset['id']}|{asset['name']}|{asset['sha256']}")
+          with open(os.environ["GITHUB_ENV"],"a") as env:
+              for a in obj["assets"]:
+                  if a["name"].endswith(".zip"):
+                      env.write("DRNAS_R64_ZIP="+str(tmp/"blender-r64"/a["name"])+"\\n")
+                      env.write("DRNAS_BLENDER_SHA256="+a["sha256"]+"\\n")
           PY
-          code=$(curl --silent --show-error --location --retry 2 \
-            --connect-timeout 30 --max-time 1800 \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H 'Accept: application/octet-stream' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            --output "$RUNNER_TEMP/blender-r64/Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip" \
-            --write-out '%{http_code}' \
-            'https://api.github.com/repos/Frane12/EmuExperimental/releases/assets/658264064') || code=000
-          echo "DRNAS_R64_PRIVATE_ASSET_HTTP=$code"
-          echo "asset_http=$code" >> "$RUNNER_TEMP/r64-fetch-status.txt"
-          if test "$code" != 200; then
-            echo "::error::Pinned private release asset unavailable (HTTP $code)"
-            exit 1
-          fi
-          file="$RUNNER_TEMP/blender-r64/Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip"
-          echo "8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f  $file" | sha256sum -c -
-          echo "DRNAS_R64_ZIP=$file" >> "$GITHUB_ENV"
-          echo 'DRNAS_BLENDER_SHA256=8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f' >> "$GITHUB_ENV"
+          while IFS='|' read -r asset_id filename sha; do
+            test -n "$asset_id" && test -n "$sha"
+            curl --fail --location --retry 3 --retry-delay 3 --connect-timeout 30 --max-time 1800 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/octet-stream' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              --output "$RUNNER_TEMP/blender-r64/$filename" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+            echo "$sha  $RUNNER_TEMP/blender-r64/$filename" | sha256sum -c -
+          done < "$RUNNER_TEMP/r64-native-assets-list.txt"
+          python3 - <<'PY'
+          import json,os,pathlib,zipfile
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          src=json.loads((tmp/"r64-native-assets.json").read_text())
+          manifest=json.loads((tmp/"blender-r64"/"DISTRIBUTION-MANIFEST.json").read_text())
+          asset=next(x for x in src["assets"] if x["name"].endswith(".zip"))
+          bundle=tmp/"blender-r64"/asset["name"]
+          assert manifest["machine"]=="0xAA64" and manifest["source_blender_version"]=="4.5.14", "Windows ARM64 build identity mismatch"
+          assert manifest["unresolved_git_lfs_pointers"]==0, "Source contains unresolved Git LFS pointers"
+          assert manifest["pdb_in_runtime"]==0 and manifest["symbols_kept_separate"] is True, "Debug symbols leaked"
+          assert manifest["runtime"]["file"]==asset["name"]
+          assert manifest["runtime"]["sha256"]==asset["sha256"] and manifest["runtime"]["bytes"]==asset["size"]
+          assert 0<manifest["runtime"]["expanded_bytes"]<=1024**3
+          with zipfile.ZipFile(bundle) as z:
+              names=set(z.namelist())
+              assert "blender.exe" in names, "Expected verified LFSFIX flat ZIP root"
+              assert not any(n.lower().endswith(".pdb") for n in names), "PDB files in runtime ZIP"
+              exe=z.read("blender.exe")[:4096]
+              off=int.from_bytes(exe[60:64],"little")
+              assert exe[:2]==b"MZ" and exe[off:off+6]==b"PE\\x00\\x00\\x64\\xaa", "Wrong Blender executable architecture"
+              assert z.testzip() is None, "Corrupt native Windows ARM64 Blender"
+          print("DRNAS_R64_VERIFIED_WINDOWS_ARM64_ZIP",asset["sha256"])
+          PY
       - name: Bundle DRNAS Wine, FEX, DXVK and patched Blender
         run: |
           set -euo pipefail
