@@ -1,6 +1,6 @@
 name: DRNAS R64 Mali Windows ARM64 LFSFIX private-source draft PUBLIC RUNNER
-# This workflow is intentionally limited to the private r64 source branch.
-# It NEVER modifies the public Android Blender APK/release or Git history.
+# Explicitly approved one-shot build on a PUBLIC Windows runner; immutable source is fetched from PRIVATE EmuExperimental.
+# Only an unpublished DRAFT release may receive artifacts; stable v1.1 and Sol's work are untouched.
 on:
   push:
     branches:
