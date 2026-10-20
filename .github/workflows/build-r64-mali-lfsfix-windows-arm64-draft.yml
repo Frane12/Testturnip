@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Frane12/EmuExperimental
-          ref: 56d5a5b3502c7cfb1b22f4eb81a878860e0a366e
+          ref: 400abbe34450e9958de333c9e59d570ac6a54213
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           path: private-src
@@ -41,7 +41,7 @@ jobs:
           if ($env:GITHUB_REPOSITORY -ne 'Frane12/Testturnip' -or
               $env:GITHUB_REF -ne 'refs/heads/audit/r64-official-vs-mali-blender-20261020' -or
               $env:GITHUB_EVENT_NAME -ne 'push') { throw 'Wrong repository/branch/event' }
-          if ((git rev-parse HEAD).Trim() -ne '56d5a5b3502c7cfb1b22f4eb81a878860e0a366e') { throw 'Private source SHA changed' }
+          if ((git rev-parse HEAD).Trim() -ne '400abbe34450e9958de333c9e59d570ac6a54213') { throw 'Private source SHA changed' }
           Write-Host 'DRNAS_R64_PUBLIC_RUNNER_PRIVATE_SOURCE_EXACT_SHA_VERIFIED'
       - name: Run LFS/symbols packaging regression tests (no compilation)
         shell: pwsh
