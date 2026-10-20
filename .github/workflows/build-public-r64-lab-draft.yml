@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Frane12/EmuExperimental
-          ref: 7737f2fc69f5e8622408a8d10493aba238722bfa
+          ref: 7fd06a38f904884f68615e0cf36072f7aa171653
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           path: private-src
@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = Frane12/Testturnip
           test -n "$PRIVATE_TOKEN" || { echo '::error::Missing EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret'; exit 1; }
-          test "$(git rev-parse HEAD)" = 7737f2fc69f5e8622408a8d10493aba238722bfa
+          test "$(git rev-parse HEAD)" = 7fd06a38f904884f68615e0cf36072f7aa171653
           echo 'DRNAS_R64_PRIVATE_SOURCE_PIN_VERIFIED; checkout remains ephemeral'
       - name: Require pinned Blender release PUBLISHED inside PRIVATE EmuExperimental
         env:
@@ -292,7 +292,7 @@ jobs:
           cp "$apk" "$RUNNER_TEMP/lab-release/DRNAS-Mali-r64-LAB-PUBLIC-RUNNER-DEBUG-SIGNED.apk"
           (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-Mali-r64-LAB-PUBLIC-RUNNER-DEBUG-SIGNED.apk > SHA256SUMS.txt)
           cp "$RUNNER_TEMP/lab-public-cert-sha256.txt" "$RUNNER_TEMP/lab-release/SIGNING-CERT-SHA256.txt"
-          printf 'DRNAS Mali R64 LAB - public runner DRAFT. Experimental Windows ARM64 Blender under Wine. Private source pinned to 7737f2fc69f5e8622408a8d10493aba238722bfa. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
+          printf 'DRNAS Mali R64 LAB - public runner DRAFT. Experimental Windows ARM64 Blender under Wine. Private source pinned to 7fd06a38f904884f68615e0cf36072f7aa171653. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
       - name: Attach verified APK to this existing public-repository draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -321,7 +321,7 @@ jobs:
           else
             status='failed_before_private_release_download'
           fi
-          printf 'DRNAS R64 public runner DRAFT - build FAILED, no APK attached.\\nPinned private source commit: 7737f2fc69f5e8622408a8d10493aba238722bfa.\\nPrivate asset diagnostic: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
+          printf 'DRNAS R64 public runner DRAFT - build FAILED, no APK attached.\\nPinned private source commit: 7fd06a38f904884f68615e0cf36072f7aa171653.\\nPrivate asset diagnostic: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
           if gh release view "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
               --repo "$GITHUB_REPOSITORY" \
