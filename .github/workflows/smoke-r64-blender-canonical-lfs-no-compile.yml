@@ -52,7 +52,12 @@ jobs:
               'release/datafiles/studiolights/world/forest.exr':bytes.fromhex('762f3101'),
           }
           for name,signature in signatures.items():
-              with (root/name).open('rb') as file:
-                  assert file.read(len(signature))==signature, f'bad real Blender asset: {name}'
+              file=root/name
+              head=file.read_bytes()[:16]
+              print('DRNAS_R64_ASSET_MAGIC',name,head.hex(),file.stat().st_size)
+              valid=head.startswith(signature)
+              if name.endswith('.blend'):
+                  valid=valid or head.startswith(bytes.fromhex('1f8b')) or head.startswith(bytes.fromhex('28b52ffd'))
+              assert valid and file.stat().st_size>1024, f'invalid LFS/Blender asset: {name} magic={head.hex()}'
           print('DRNAS_R64_LFS_SMOKE_PASS - canonical Blender Git LFS, four real assets, zero unresolved source placeholders')
           PY
