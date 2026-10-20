@@ -1,0 +1,50 @@
+name: DRNAS R64 Mali LFSFIX - source-only PREBUILD check (NO BLENDER/APK BUILD)
+on:
+  push:
+    branches:
+      - audit/r64-official-vs-mali-blender-20261020
+    paths:
+      - '.github/workflows/preflight-r64-mali-next-build-readiness.yml'
+permissions:
+  contents: read
+jobs:
+  preflight_only:
+    name: Check packaging scripts/tests and manual-only gate, no source or binaries built
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout pinned PRIVATE source preparation
+        uses: actions/checkout@v4
+        with:
+          repository: Frane12/EmuExperimental
+          ref: 34f8ac4a1687594d2dbefee18af89144133b165a
+          token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          persist-credentials: false
+          path: prep
+      - name: Verify source identity and that native build is MANUAL ONLY
+        run: |
+          set -euo pipefail
+          cd prep
+          test "$(git rev-parse HEAD)" = 34f8ac4a1687594d2dbefee18af89144133b165a
+          python3 - <<'PY'
+          from pathlib import Path
+          wf=Path(".github/workflows/build-blender-4514-mali-arm64-r64.yml").read_text()
+          assert "
+on:
+  workflow_dispatch:" in wf, "Must be manual only"
+          assert "
+  push:" not in wf, "No automatic Blender build permitted"
+          assert "USER_APPROVED" in wf and "user_approved_build" in wf
+          assert "source-scan" in wf and "lfs pull --include=" in wf
+          assert "prepare_r64_blender_distribution.py package" in wf
+          assert "PDB-PRIVATE.zip" not in wf  # scripts derive symbol name from manifest
+          assert "gh release create" in wf and "--draft" in wf
+          print("PASS: Blender build manual-only and protected by source/runtime/PDB gates")
+          PY
+      - name: Compile Python source only and run synthetic no-build regressions
+        run: |
+          set -euo pipefail
+          cd prep
+          python3 -m py_compile tools/prepare_r64_blender_distribution.py
+          python3 -m unittest discover -s tests -p test_r64_blender_release_preparation.py -v
+          echo 'DRNAS_R64_PREBUILD_TESTS_PASS_NO_BINARY_COMPILATION'
