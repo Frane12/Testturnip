@@ -1,5 +1,5 @@
 name: DRNAS r64 Mali Vulkan Blender 4.5.14 Windows ARM64 - one-shot LFSFIX public runner
-# r64 retry: force canonical LFS remote and explicitly pin GH release target repo.
+# r64 retry: native ARM64 Windows host can execute ARM64 datatoc/makesdna/shader tools.
 # Approval stamp: build only on this one authorized workflow-file commit; no stable branch or public release is modified.
 # Isolated public runner; ONLY pinned private source is checked out ephemerally.
 # No source push, no public publication, no stable Blender v1.1 modifications.
@@ -18,7 +18,7 @@ jobs:
   compile-blender-arm64:
     if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/fix/r64-mali-lfsfix-public-20261020' && github.event.head_commit.message == 'AUTHORIZE_ONCE_R64_MALI_LFSFIX_20261020'
     name: Compile patched Blender 4.5.14 for Windows ARM64 (NOT an APK)
-    runs-on: windows-2022
+    runs-on: windows-11-arm
     timeout-minutes: 325
     defaults:
       run:
@@ -53,6 +53,10 @@ jobs:
       - name: Print host/toolchain and free disk before source checkout
         shell: pwsh
         run: |
+          $ErrorActionPreference='Stop'
+          $osArch=[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+          if ($osArch -ne 'Arm64') { throw "ARM64 build tools need native ARM64 Windows, got $osArch" }
+          Write-Host "DRNAS_R64_NATIVE_WINDOWS_HOST=$osArch"
           Get-PSDrive -PSProvider FileSystem | Select-Object Name, Free, Used | Format-Table
           # Never prematurely close the native clang-cl stdout pipe:
           # a previous R64 runner could return a spurious exit code here.
@@ -90,18 +94,9 @@ jobs:
           git -C $src diff --check
           if ($LASTEXITCODE -ne 0) { throw 'Source whitespace/check errors' }
           git -C $src diff --stat
-          # Host runner is x64; the upstream 4.5 script calls vcvarsall arm64
-          # (ARM64 host!), which cannot run cl.exe on a Windows x64 runner.
-          # Use VS x64-hosted tools targeting ARM64. This is BUILD-SCRIPT-ONLY;
-          # the Blender GPU patch is separately verified against pristine v4.5.14.
-          $vcDetect = Join-Path $src 'build_files/windows/detect_msvc_vswhere.cmd'
-          $detectText = [System.IO.File]::ReadAllText($vcDetect)
-          $oldCall = 'call "%VCVARS%" %BUILD_ARCH%'
-          if (!$detectText.Contains($oldCall)) { throw 'Unrecognized upstream VS compiler detection; refusing unsafe rewrite' }
-          $newCall = 'if "%BUILD_ARCH%" == "arm64" (call "%VCVARS%" x64_arm64) else (call "%VCVARS%" %BUILD_ARCH%)'
-          $detectText = $detectText.Replace($oldCall,$newCall)
-          [System.IO.File]::WriteAllText($vcDetect,$detectText)
-          Write-Host 'CI host-only correction: vcvarsall x64_arm64 (VS x64 cross compiler for ARM64 target)'
+          # Native ARM64 host: preserve upstream vcvarsall arm64.
+          # Do not execute ARM64 generators on a Windows x64 runner (error 216).
+          Write-Host 'Native ARM64 host uses upstream vcvarsall arm64'
 
           # make.bat resets BUILD_CMAKE_ARGS. Patch *temporary* CMake batch script.
           $config = Join-Path $src 'build_files/windows/configure_msbuild.cmd'
@@ -286,6 +281,26 @@ jobs:
           "BLENDER_BUILD=$build" >> $env:GITHUB_ENV
           Write-Host "Configured Blender Windows ARM64: $build"
 
+      - name: Build and exercise ARM64 generators before full compilation
+        shell: pwsh
+        timeout-minutes: 25
+        run: |
+          $ErrorActionPreference='Stop'
+          cmake --build "$env:BLENDER_BUILD" --config Release --target datatoc glsl_preprocess makesdna --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Native ARM64 generator bootstrap failed' }
+          $bin=Join-Path $env:BLENDER_BUILD 'bin/Release'
+          $probe=Join-Path $env:RUNNER_TEMP 'drnas-generator-smoke'
+          New-Item -ItemType Directory -Force -Path $probe | Out-Null
+          $probeInput=Join-Path $probe 'drnas_host_smoke.txt'
+          $probeOutput=Join-Path $probe 'drnas_host_smoke.c'
+          [IO.File]::WriteAllText($probeInput,'DRNAS_ARM64_HOST_GENERATOR_OK')
+          & (Join-Path $bin 'datatoc.exe') $probeInput $probeOutput
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $probeOutput)) { throw 'datatoc ARM64 execution failed' }
+          if ((Get-Content $probeOutput -Raw) -notmatch 'datatoc_drnas_host_smoke_txt') {
+            throw 'datatoc produced unexpected generated C'
+          }
+          Write-Host 'DRNAS_R64_ARM64_GENERATOR_EXECUTION_VERIFIED=true'
+
       - name: Compile and INSTALL actual Windows ARM64 Blender executable
         shell: pwsh
         timeout-minutes: 160
@@ -345,3 +360,14 @@ jobs:
           gh release create $tag $zip $symbols (Join-Path $out 'DISTRIBUTION-MANIFEST.json') (Join-Path $out 'README.txt') (Join-Path $out 'SHA256SUMS.txt') --repo $env:GITHUB_REPOSITORY --draft --target $env:GITHUB_SHA --title 'DRNAS Mali Blender 4.5.14 Windows ARM64 LFSFIX (LAB, not device-tested)' --notes-file (Join-Path $out 'README.txt')
           if ($LASTEXITCODE -ne 0) { throw 'Packaging succeeded but draft asset upload failed' }
           Write-Host 'DRNAS_R64_PUBLIC_UNPUBLISHED_DRAFT_ONLY=true'
+
+      - name: Preserve build failure logs for the next correction
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r64-native-arm64-build-failure-logs
+          path: |
+            ${{ env.BLENDER_BUILD }}/Build.log
+            ${{ env.BLENDER_BUILD }}/CMakeCache.txt
+          if-no-files-found: ignore
+          retention-days: 7
