@@ -18,7 +18,7 @@ jobs:
   compile-blender-arm64:
     if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/fix/r64-mali-lfsfix-public-20261020' && github.event.head_commit.message == 'AUTHORIZE_ONCE_R64_MALI_LFSFIX_20261020'
     name: Compile patched Blender 4.5.14 for Windows ARM64 (NOT an APK)
-    runs-on: windows-11-arm
+    runs-on: windows-11-vs2026-arm
     timeout-minutes: 325
     defaults:
       run:
@@ -60,7 +60,9 @@ jobs:
           Get-PSDrive -PSProvider FileSystem | Select-Object Name, Free, Used | Format-Table
           # Never prematurely close the native clang-cl stdout pipe:
           # a previous R64 runner could return a spurious exit code here.
-          $clangBanner=@(clang-cl --version 2>&1)
+          $hostClang=(Get-Command clang-cl.exe -ErrorAction Stop).Source
+          "DRNAS_HOST_CLANG=$hostClang" >> $env:GITHUB_ENV
+          $clangBanner=@(& $hostClang --version 2>&1)
           if ($LASTEXITCODE -ne 0 -or $clangBanner.Count -eq 0) {
             throw 'clang-cl --version failed during host preflight'
           }
@@ -69,13 +71,22 @@ jobs:
           git --version
           git lfs version
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          $msvc = & $vswhere -latest -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
-          if ($LASTEXITCODE -ne 0 -or !$msvc) { throw 'VS2022 ARM64 targeting component missing' }
-          $llvmToolset = & $vswhere -latest -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Llvm.ClangToolset -property installationPath
+          $msvc = & $vswhere -latest -version '[18.0,19.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or !$msvc) { throw 'VS2026 ARM64 targeting component missing' }
+          $llvmToolset = & $vswhere -latest -version '[18.0,19.0)' -requires Microsoft.VisualStudio.Component.VC.Llvm.ClangToolset -property installationPath
           if ($LASTEXITCODE -ne 0 -or !$llvmToolset) {
-            throw 'VS2022 MSBuild ClangCl Toolset component missing; cannot configure -T ClangCl'
+            throw 'VS2026 MSBuild ClangCl Toolset component missing; cannot configure -T ClangCl'
           }
-          Write-Host "VS2022 ARM64 and MSBuild ClangCl components detected: $msvc"
+          Write-Host "VS2026 ARM64 and MSBuild ClangCl components detected: $msvc"
+          $vcvars=Join-Path $msvc 'VC\Auxiliary\Build\vcvarsall.bat'
+          $developerCommand='call "'+$vcvars+'" arm64 >nul && set'
+          $developerEnv=@(& cmd.exe /d /c $developerCommand)
+          if ($LASTEXITCODE -ne 0) { throw 'Native VS2026 ARM64 developer environment failed' }
+          $requiredNames=@('PATH','INCLUDE','LIB','LIBPATH','VSCMD_VER','VCToolsInstallDir',
+            'VCINSTALLDIR','WindowsSdkDir','WindowsSDKVersion','UniversalCRTSdkDir','UCRTVersion',
+            'VSCMD_ARG_HOST_ARCH','VSCMD_ARG_TGT_ARCH')
+          foreach($entry in $developerEnv) {
+            if ($entry -match '^([^=]+)=(.*)
 
       - name: Fetch exact upstream Blender v4.5.14 source and apply reviewed GPU patch
         shell: pwsh
@@ -98,30 +109,7 @@ jobs:
           # Do not execute ARM64 generators on a Windows x64 runner (error 216).
           Write-Host 'Native ARM64 host uses upstream vcvarsall arm64'
 
-          # make.bat resets BUILD_CMAKE_ARGS. Patch *temporary* CMake batch script.
-          $config = Join-Path $src 'build_files/windows/configure_msbuild.cmd'
-          $txt = [IO.File]::ReadAllText($config)
-          $needle = 'set BUILD_PLATFORM_SELECT=-A ARM64'
-          if ([regex]::Matches($txt,[regex]::Escape($needle)).Count -ne 1) { throw 'Unexpected upstream ARM64 configure cmd' }
-          $txt = $txt.Replace($needle,$needle + [Environment]::NewLine +
-            '  set DRNAS_CMAKE_ARM64=-DCMAKE_TOOLCHAIN_FILE:FILEPATH="%BLENDER_DIR%build_files/windows/drnas-arm64-cross.cmake" -DLIBDIR:PATH="%BLENDER_DIR%lib/windows_arm64"')
-          $needle = '%PYDEBUG_CMAKE_ARGS%'
-          if ([regex]::Matches($txt,[regex]::Escape($needle)).Count -ne 1) { throw 'Unexpected upstream CMake args' }
-          $txt = $txt.Replace($needle,$needle + ' %DRNAS_CMAKE_ARM64%')
-          # Upstream configure_msbuild.cmd appends every XML line to
-          # Directory.Build.props, INCLUDING the opening <Project> root.
-          # make.bat is intentionally invoked twice (configure, then build);
-          # without truncation the second invocation creates 2 root elements
-          # and MSBuild aborts with MSB4024. Create a fresh props document
-          # on each invocation, then append only the remaining XML lines.
-          $opening='echo ^<Project^> >> %BUILD_DIR%\Directory.build.props'
-          $fixed='echo ^<Project^> > %BUILD_DIR%\Directory.build.props'
-          if ([regex]::Matches($txt,[regex]::Escape($opening)).Count -ne 1) {
-            throw 'Upstream Blender MSBuild XML root echo changed; do not build malformed project'
-          }
-          $txt=$txt.Replace($opening,$fixed)
-          [IO.File]::WriteAllText($config,$txt)
-          Write-Host 'Fixed MSBuild XML props root: first echo overwrites, subsequent echoes append'
+          # Invoke CMake directly for VS2026; Blender 4.5 make.bat only knows VS2022.
           # CMake intentionally copies the *host* AMD64 processor when using
           # -A ARM64 on an x64 Windows runner. A -D CMAKE_SYSTEM_PROCESSOR
           # cache flag is overwritten by CMake's platform detection.
@@ -223,8 +211,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $found=Get-Command clang-cl.exe -ErrorAction Stop
-          $exe=$found.Source
+          $exe=$env:DRNAS_HOST_CLANG
           if (!(Test-Path -LiteralPath $exe -PathType Leaf)) {
             throw "LLVM executable path is missing: $exe"
           }
@@ -246,15 +233,28 @@ jobs:
         timeout-minutes: 45
         run: |
           $ErrorActionPreference = 'Stop'
-          Push-Location $env:BLENDER_SOURCE
-          try {
-            & cmd.exe /d /c 'make.bat arm64 2022 clang full nobuild verbose'
-            if ($LASTEXITCODE -ne 0) { throw "Windows ARM64 ClangCl CMake configure failed: $LASTEXITCODE" }
-          } finally { Pop-Location }
-          $build = Join-Path (Split-Path $env:BLENDER_SOURCE -Parent) 'build_windows_Full_arm64_vc17_Release'
-          if (!(Test-Path (Join-Path $build 'Blender.sln'))) {
-            throw "ARM64 Visual Studio Blender.sln missing under $build"
-          }
+          $build=Join-Path $env:RUNNER_TEMP 'build_windows_Full_arm64_vc18_Release'
+          New-Item -ItemType Directory -Force -Path $build | Out-Null
+          $llvmDir=Split-Path (Split-Path $env:LLVM_EXE -Parent) -Parent
+          $llvmVersionText=@(& $env:LLVM_EXE --version 2>&1)
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned LLVM cannot execute' }
+          $llvmVersion=[regex]::Match([string]$llvmVersionText[0],'version ([0-9]+\.[0-9]+\.[0-9]+)').Groups[1].Value
+          if (!$llvmVersion) { throw 'Cannot parse LLVMToolsVersion' }
+          $escapedLlvm=[Security.SecurityElement]::Escape($llvmDir+'\')
+          $propsText="<Project><PropertyGroup><LLVMInstallDir>$escapedLlvm</LLVMInstallDir><LLVMToolsVersion>$llvmVersion</LLVMToolsVersion></PropertyGroup></Project>"
+          [IO.File]::WriteAllText((Join-Path $build 'Directory.Build.props'),$propsText)
+          $configureArgs=@(
+            '-S',$env:BLENDER_SOURCE,'-B',$build,
+            '-G','Visual Studio 18 2026','-A','ARM64','-T','ClangCL',
+            '-C',(Join-Path $env:BLENDER_SOURCE 'build_files/cmake/config/blender_full.cmake'),
+            '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
+            '-DWITH_WINDOWS_EXTERNAL_MANIFEST=ON',
+            ('-DCMAKE_TOOLCHAIN_FILE:FILEPATH='+(Join-Path $env:BLENDER_SOURCE 'build_files/windows/drnas-arm64-cross.cmake')),
+            ('-DLIBDIR:PATH='+(Join-Path $env:BLENDER_SOURCE 'lib/windows_arm64'))
+          )
+          cmake @configureArgs
+          if ($LASTEXITCODE -ne 0) { throw "Native VS2026 ARM64 configure failed: $LASTEXITCODE" }
+          if (!(Test-Path (Join-Path $build 'CMakeCache.txt'))) { throw 'Native ARM64 CMake cache missing' }
 
           # Prove the generator, library folder AND real C++ compiler version.
           $cacheFile=Join-Path $build 'CMakeCache.txt'
@@ -306,11 +306,8 @@ jobs:
         timeout-minutes: 160
         run: |
           $ErrorActionPreference = 'Stop'
-          Push-Location $env:BLENDER_SOURCE
-          try {
-            & cmd.exe /d /c 'make.bat arm64 2022 clang full verbose'
-            if ($LASTEXITCODE -ne 0) { throw "Native Blender Windows ARM64 build/INSTALL failed: $LASTEXITCODE" }
-          } finally { Pop-Location }
+          cmake --build "$env:BLENDER_BUILD" --config Release --target INSTALL --parallel 4 -- "/flp:Summary;Verbosity=minimal;LogFile=$env:BLENDER_BUILD\Build.log"
+          if ($LASTEXITCODE -ne 0) { throw "Native ARM64 Blender build/INSTALL failed: $LASTEXITCODE" }
 
       - name: Verify installed ARM64 Blender and package runtime WITHOUT PDB/LFS pointers
         shell: pwsh
