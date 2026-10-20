@@ -1,0 +1,76 @@
+name: Read-only R64 Blender official vs custom archive forensic audit (NO BUILD)
+on:
+  push:
+    branches:
+      - audit/r64-official-vs-mali-blender-20261020
+    paths:
+      - '.github/workflows/audit-r64-blender-archives-no-build.yml'
+permissions:
+  contents: write
+jobs:
+  compare_archives:
+    if: github.repository == 'Frane12/Testturnip'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout private read-only forensic script (never commit sources)
+        uses: actions/checkout@v4
+        with:
+          repository: Frane12/EmuExperimental
+          ref: 959ccd902ef5cc096d988b17a6a3638305c80c74
+          token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          persist-credentials: false
+          sparse-checkout: tools/audit_blender_archives.py
+          sparse-checkout-cone-mode: false
+          path: private-audit
+      - name: Confirm isolated audit script (no builder, no APK)
+        run: |
+          set -euo pipefail
+          test -f private-audit/tools/audit_blender_archives.py
+          python3 -m py_compile private-audit/tools/audit_blender_archives.py
+          echo 'DRNAS_R64_AUDIT_ONLY_NO_COMPILATION'
+      - name: Download official Blender 4.5.14 ZIP byte-for-byte
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/audit-r64"
+          curl --fail --location --retry 3 --retry-all-errors --max-time 1800 \
+            --user-agent 'Mozilla/5.0 DRNAS-Forensic-Audit' \
+            --output "$RUNNER_TEMP/audit-r64/official.zip" \
+            'https://download.blender.org/release/Blender4.5/blender-4.5.14-windows-arm64.zip'
+          echo '0153ecefc96a0e23985e6edcdbe04e909ba2078258f4ff6a05c21d4b7c756911  '"$RUNNER_TEMP"'/audit-r64/official.zip' | sha256sum -c -
+      - name: Download exact private published custom Mali R64 Blender ZIP
+        env:
+          GH_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download blender-r64-native-39362488049-1 \
+            --repo Frane12/EmuExperimental \
+            --pattern 'Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip' \
+            --dir "$RUNNER_TEMP/audit-r64"
+          mv "$RUNNER_TEMP/audit-r64/Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip" \
+             "$RUNNER_TEMP/audit-r64/mali.zip"
+          echo '8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f  '"$RUNNER_TEMP"'/audit-r64/mali.zip' | sha256sum -c -
+      - name: SHA256-inventory every decompressed file and compare actual PE sections
+        run: |
+          set -euo pipefail
+          python3 private-audit/tools/audit_blender_archives.py \
+            "$RUNNER_TEMP/audit-r64/official.zip" \
+            "$RUNNER_TEMP/audit-r64/mali.zip" \
+            "$RUNNER_TEMP/audit-r64/report"
+          echo 'DRNAS_R64_BINARY_DIFF_COMPLETED=TRUE'
+      - name: Save complete text-only forensic diff in unpublished DRAFT
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "r64-blender-archive-audit-${GITHUB_RUN_ID}" \
+            --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
+            --title 'PRIVATE DRAFT - Blender official v1.1 vs Mali R64 per-file forensic audit' \
+            --notes 'Read-only zip comparison. Original private Blender binary and source never uploaded here; only SHA256-verified file inventory, section sizes, and summary. Never publish this draft without review.'
+          gh release upload "r64-blender-archive-audit-${GITHUB_RUN_ID}" \
+            "$RUNNER_TEMP/audit-r64/report/summary.md" \
+            "$RUNNER_TEMP/audit-r64/report/all_files_diff.csv" \
+            "$RUNNER_TEMP/audit-r64/report/report.json" \
+            --repo "$GITHUB_REPOSITORY"
+          gh release view "r64-blender-archive-audit-${GITHUB_RUN_ID}" \
+            --repo "$GITHUB_REPOSITORY" --json isDraft,assets,name,url
