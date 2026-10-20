@@ -303,14 +303,14 @@ jobs:
           cp "$RUNNER_TEMP/lab-public-cert-sha256.txt" "$RUNNER_TEMP/lab-release/SIGNING-CERT-SHA256.txt"
           cp "$RUNNER_TEMP/blender-r64/DISTRIBUTION-MANIFEST.json" "$RUNNER_TEMP/lab-release/WINDOWS-ARM64-BLENDER-MANIFEST.json"
           printf 'DRNAS R64 Mali Vulkan Blender 4.5.14 Windows ARM64 runtime inside Android APK LAB. Seven diagnostic modes including CMD bootstrap A/B, Blender headless and Blender --version without guest X11. Verified release runtime SHA256 is checked in the final APK. Private source pinned to e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
-          printf 'Verified native Windows ARM64 Blender SHA256: %s\\n' "$DRNAS_BLENDER_SHA256" >> "$RUNNER_TEMP/lab-release/README.txt"
+          printf 'Verified native Windows ARM64 Blender SHA256: %s\n' "$DRNAS_BLENDER_SHA256" >> "$RUNNER_TEMP/lab-release/README.txt"
           python3 - <<'PY'
           import json,os,pathlib
           tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
           info=json.loads((tmp/"r64-native-assets.json").read_text())
           with (tmp/"lab-release"/"README.txt").open("a") as f:
-              f.write("Native Windows release tag: "+info["tag"]+"\\n")
-              f.write("Native Windows Actions source commit: "+info["commit"]+"\\n")
+              f.write("Native Windows release tag: "+info["tag"]+"\n")
+              f.write("Native Windows Actions source commit: "+info["commit"]+"\n")
           PY
       - name: Attach verified APK to this existing public-repository draft
         env:
