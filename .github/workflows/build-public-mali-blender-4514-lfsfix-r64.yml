@@ -1,4 +1,5 @@
 name: DRNAS r64 Mali Vulkan Blender 4.5.14 Windows ARM64 - one-shot LFSFIX public runner
+# Approval stamp: build only on this one authorized workflow-file commit; no stable branch or public release is modified.
 # Isolated public runner; ONLY pinned private source is checked out ephemerally.
 # No source push, no public publication, no stable Blender v1.1 modifications.
 on:
