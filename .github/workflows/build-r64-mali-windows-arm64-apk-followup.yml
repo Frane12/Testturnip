@@ -39,49 +39,45 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests -p test_r64_opengl_depclosure.py -v
           python3 -m unittest discover -s tests -p test_r64_lab_dialog_visibility.py -v
-      - name: Require pinned Blender release PUBLISHED inside PRIVATE EmuExperimental
+      - name: Verify native Windows ARM64 workflow success and matching public draft provenance
         env:
-          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          DRNAS_NATIVE_RUN_ID: ${{ github.event.workflow_run.id || inputs.windows_run_id }}
+          DRNAS_NATIVE_ATTEMPT: ${{ github.event.workflow_run.run_attempt || inputs.windows_run_attempt || '1' }}
         run: |
           set -euo pipefail
-          test -n "$PRIVATE_TOKEN"
-          # A release published in a PRIVATE repository stays private.
-          # Our read-only cross-repo token cannot publish the draft (GitHub 403).
-          # The repository owner must use GitHub > EmuExperimental > Releases >
-          # Blender r64 > Edit > Publish release exactly once.
-          http=$(curl --silent --show-error --request GET \
-            -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            --output "$RUNNER_TEMP/r64-source-repository.json" --write-out '%{http_code}' \
-            'https://api.github.com/repos/Frane12/EmuExperimental') || http=000
-          echo "DRNAS_R64_SOURCE_REPOSITORY_HTTP=$http"
-          test "$http" = 200 || { echo "::error::Private repository not accessible (HTTP $http)"; exit 1; }
+          [[ "$DRNAS_NATIVE_RUN_ID" =~ ^[0-9]+$ ]] || { echo '::error::Native Windows run ID is missing'; exit 1; }
+          [[ "$DRNAS_NATIVE_ATTEMPT" =~ ^[0-9]+$ ]] || { echo '::error::Native Windows run attempt is invalid'; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$DRNAS_NATIVE_RUN_ID" > "$RUNNER_TEMP/r64-native-run.json"
+          gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/r64-native-releases.json"
           python3 - <<'PY'
-          import json,os,pathlib
-          j=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"r64-source-repository.json").read_text())
-          assert j["full_name"]=="Frane12/EmuExperimental" and j["private"] is True
-          print("DRNAS_R64_PRIVATE_REPOSITORY_VERIFIED")
-          PY
-          http=$(curl --silent --show-error --request GET \
-            -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
-            -H 'Accept: application/vnd.github+json' \
-            -H 'X-GitHub-Api-Version: 2022-11-28' \
-            --output "$RUNNER_TEMP/r64-source-release.json" --write-out '%{http_code}' \
-            'https://api.github.com/repos/Frane12/EmuExperimental/releases/418000018') || http=000
-          echo "DRNAS_R64_PRIVATE_RELEASE_HTTP=$http"
-          if test "$http" != 200; then
-            echo "::error::Private R64 source is still an inaccessible draft (HTTP $http). Publish it within PRIVATE EmuExperimental using the GitHub UI first; no source is made public."
-            exit 1
-          fi
-          python3 - <<'PY'
-          import json,os,pathlib
-          j=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"r64-source-release.json").read_text())
-          assert j["id"]==418000018 and j["draft"] is False, "R64 source is still in draft"
-          assert j["tag_name"]=="blender-r64-native-39362488049-1"
-          a=[x for x in j["assets"] if x["id"]==658264064]
-          assert len(a)==1 and a[0].get("digest")=="sha256:8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f"
-          print("DRNAS_R64_PRIVATE_RELEASE_READY; source remains private")
+          import json,os,pathlib,re
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          run=json.loads((tmp/"r64-native-run.json").read_text())
+          assert run["id"]==int(os.environ["DRNAS_NATIVE_RUN_ID"])
+          assert run["status"]=="completed" and run["conclusion"]=="success", "Native Blender Windows ARM64 build failed or is incomplete"
+          assert run["event"]=="push" and run["head_branch"]=="fix/r64-mali-lfsfix-public-20261020"
+          assert run["head_repository"]["full_name"]=="Frane12/Testturnip"
+          assert run["path"].split("@")[0]==".github/workflows/build-public-mali-blender-4514-lfsfix-r64.yml", "Wrong upstream workflow"
+          assert run["run_attempt"]==int(os.environ["DRNAS_NATIVE_ATTEMPT"])
+          tag=f"drnas-mali-blender-r64-lfsfix-lab-{run['id']}-{run['run_attempt']}"
+          releases=json.loads((tmp/"r64-native-releases.json").read_text())
+          found=[r for r in releases if r["tag_name"]==tag]
+          assert len(found)==1, f"No matching native LFSFIX release draft {tag} in 100 latest releases"
+          rel=found[0]
+          assert rel["draft"] is True, "Runtime source release must remain unpublished"
+          assert rel["target_commitish"]==run["head_sha"], "Release target does not match native source workflow"
+          expected=("Blender-4.5.14-DRNAS-MaliVulkan-r64-LFSFIX-WindowsARM64-PRIVATE.zip","DISTRIBUTION-MANIFEST.json")
+          assets=[]
+          for filename in expected:
+              found=[a for a in rel["assets"] if a["name"]==filename]
+              assert len(found)==1, "Missing Windows ARM64 asset: "+filename
+              a=found[0]
+              assert re.fullmatch(r"sha256:[a-f0-9]{64}",a.get("digest") or ""), "Missing GitHub SHA256 digest"
+              assert 100<a["size"]<400*1024**2, "Abnormal release asset size"
+              assets.append({"name":filename,"id":a["id"],"size":a["size"],"sha256":a["digest"][7:]})
+          (tmp/"r64-native-assets.json").write_text(json.dumps({"tag":tag,"commit":run["head_sha"],"assets":assets}))
+          print("DRNAS_R64_WINDOWS_ARM64_VERIFIED_NATIVE_WORKFLOW",tag)
           PY
       - name: Create an unpublished public-repository draft for this run
         env:
