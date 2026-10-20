@@ -84,10 +84,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
+          gh release create "drnas-r64-mali-windows-arm64-apk-${GITHUB_RUN_ID}" \
             --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
-            --title 'DRNAS R64 LAB - PUBLIC repo DRAFT (build pending)' \
-            --notes 'Isolated R64 test build. Private source remains private. APK not yet built or verified. Never publish this draft before reviewing licenses, source requirements and signatures.'
+            --title 'DRNAS R64 Mali Windows ARM64 Blender Android LAB - PUBLIC repo DRAFT (build pending)' \
+            --notes 'Isolated DRNAS Android R64 test with rebuilt Windows ARM64 Mali Vulkan Blender. Private Android source remains private. Draft only; APK not yet built or device-tested. Do not publish without reviewing GPL/source requirements and signatures.'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -298,10 +298,10 @@ jobs:
           unzip -p "$apk" assets/blender/blender-4.5.14-windows-arm64.zip | sha256sum | grep "^${DRNAS_BLENDER_SHA256} "
           unzip -l "$apk" | grep 'lib/arm64-v8a/libdrnas_host.so'
           mkdir -p "$RUNNER_TEMP/lab-release"
-          cp "$apk" "$RUNNER_TEMP/lab-release/DRNAS-R64-ARM64-ISOLATION-LAB-DEBUG-SIGNED.apk"
-          (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-R64-ARM64-ISOLATION-LAB-DEBUG-SIGNED.apk > SHA256SUMS.txt)
+          cp "$apk" "$RUNNER_TEMP/lab-release/DRNAS-R64-MALI-WINDOWS-ARM64-BLENDER-LAB-DEBUG-SIGNED.apk"
+          (cd "$RUNNER_TEMP/lab-release" && sha256sum DRNAS-R64-MALI-WINDOWS-ARM64-BLENDER-LAB-DEBUG-SIGNED.apk > SHA256SUMS.txt)
           cp "$RUNNER_TEMP/lab-public-cert-sha256.txt" "$RUNNER_TEMP/lab-release/SIGNING-CERT-SHA256.txt"
-          printf 'DRNAS R64 ARM64 ISOLATION LAB - public runner DRAFT. Seven diagnostic modes including CMD bootstrap A/B, Blender headless and Blender --version without guest X11. Experimental Windows ARM64 Blender under Wine. Private source pinned to e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
+          printf 'DRNAS R64 Mali Vulkan Blender 4.5.14 Windows ARM64 runtime inside Android APK LAB. Seven diagnostic modes including CMD bootstrap A/B, Blender headless and Blender --version without guest X11. Verified release runtime SHA256 is checked in the final APK. Private source pinned to e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd. Actual device/GPU compatibility and Vulkan first frame are NOT verified. This is an ephemeral DEBUG-signed APK. It cannot upgrade a previously installed stable-signed R64 LAB; back up data and uninstall the old LAB before testing. Keep this release draft until separate license/source review.\n' > "$RUNNER_TEMP/lab-release/README.txt"
       - name: Attach verified APK to this existing public-repository draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -309,13 +309,13 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = Frane12/Testturnip
           test "$(gh api repos/$GITHUB_REPOSITORY --jq .private)" = false
-          gh release upload "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" "$RUNNER_TEMP/lab-release/"* \
+          gh release upload "drnas-r64-mali-windows-arm64-apk-${GITHUB_RUN_ID}" "$RUNNER_TEMP/lab-release/"* \
             --repo "$GITHUB_REPOSITORY"
-          gh release edit "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
+          gh release edit "drnas-r64-mali-windows-arm64-apk-${GITHUB_RUN_ID}" \
             --repo "$GITHUB_REPOSITORY" \
-            --title 'DRNAS R64 ARM64 isolation LAB - PUBLIC repo DRAFT with debug-signed APK' \
+            --title 'DRNAS R64 Mali Windows ARM64 Blender - DRAFT with debug-signed APK' \
             --notes-file "$RUNNER_TEMP/lab-release/README.txt"
-          gh release view "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" \
+          gh release view "drnas-r64-mali-windows-arm64-apk-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" \
             --json isDraft,name,assets,url \
             --jq '{name:.name,isDraft:.isDraft,url:.url,assets:[.assets[].name]}'
       - name: Preserve failure reason in the unpublished draft
@@ -330,11 +330,11 @@ jobs:
           else
             status='failed_before_private_release_download'
           fi
-          printf 'DRNAS R64 public runner DRAFT - build FAILED, no APK attached.\\nPinned private source commit: e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd.\\nPrivate asset diagnostic: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
-          if gh release view "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
+          printf 'DRNAS R64 Mali Windows ARM64 Blender APK LAB - build FAILED, no APK attached.\\nPinned private source commit: e26e5915ef5262e506c4d7b5d7a18f6f6d0a2ccd.\\nNative Windows ARM64 Blender asset status: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
+          if gh release view "drnas-r64-mali-windows-arm64-apk-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "drnas-r64-mali-windows-arm64-apk-${GITHUB_RUN_ID}" \
               --repo "$GITHUB_REPOSITORY" \
-              --title 'DRNAS R64 LAB - PUBLIC repo DRAFT (build failed)' \
+              --title 'DRNAS R64 Mali Windows ARM64 Blender APK - DRAFT (build failed)' \
               --notes-file "$RUNNER_TEMP/lab-draft-status.txt"
           else
             echo 'No public draft was created: private release promotion/preflight failed first.'
