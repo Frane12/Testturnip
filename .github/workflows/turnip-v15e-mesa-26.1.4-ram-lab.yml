@@ -1,0 +1,120 @@
+name: Turnip V15-E RAM LAB - Working V15-D plus BO reclaim and memory budget variants
+
+on:
+  push:
+    paths:
+      - '.github/workflows/turnip-v15e-mesa-26.1.4-ram-lab.yml'
+      - 'patches/v15d_gralloc_ubwc.py'
+      - 'patches/v15e_ram_lab.py'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/turnip-v15e-mesa-26.1.4-ram-lab.yml'
+      - 'patches/v15d_gralloc_ubwc.py'
+      - 'patches/v15e_ram_lab.py'
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [eager, guarded]
+    env:
+      VARIANT: ${{ matrix.variant }}
+
+    steps:
+      - name: Check out Frane patches
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+
+      - name: Set up Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+
+      - name: Fetch exact upstream Mesa 26.1.4
+        run: |
+          set -eu
+          SOURCE_SHA=6dfbc555b4128ee51139c5f78c5aba2594c9701b
+          git clone --depth 1 --branch mesa-26.1.4 https://gitlab.freedesktop.org/mesa/mesa.git mesa
+          test "$(git -C mesa rev-parse HEAD)" = "$SOURCE_SHA"
+          git -C mesa rev-parse HEAD | tee mesa-commit.txt
+          printf '%s\n' 'Working V15-D gralloc + V15-E RAM Lab ('"$VARIANT"'); stock UBWC ON' | tee build-variant.txt
+
+      - name: Apply isolated whitebelyash gralloc UBWC fallback fix; keep UBWC enabled
+        run: |
+          set -eu
+          python3 patches/v15d_gralloc_ubwc.py
+          python3 patches/v15e_ram_lab.py --variant "$VARIANT"
+          printf '#define TUGEN8_DRV_VERSION "Frane-V15E-%s"\n' "$VARIANT" > mesa/src/freedreno/vulkan/tu_version.h
+
+      - name: Prepare Android cross file
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '-static-libstdc++']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/nonexistent', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+
+      - name: Configure upstream Mesa 26.1.4 Android Turnip
+        run: |
+          cd mesa
+          meson setup build-android --cross-file ../android-aarch64.ini -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true
+
+      - name: Compile
+        run: meson compile -C mesa/build-android -j 4
+
+      - name: Package separate AdrenoTools ZIP for comparison
+        run: |
+          set -eu
+          mkdir -p output
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so output/
+          SHA=$(git -C mesa rev-parse --short HEAD)
+          export SHA VARIANT
+          python3 - <<'PY'
+          import json, os
+          metadata = {
+              'schemaVersion': 1,
+              'name': f'Frane Turnip V15-E {os.environ["VARIANT"]} RAM LAB / Mesa 26.1.4 {os.environ["SHA"]}',
+              'description': 'Working V15-D gralloc + experimental eager transient BO reclaim; guarded variant adds dynamic conservative Vulkan EXT_memory_budget policy. UBWC stays enabled. Unverified RAM and FPS.',
+              'author': 'Frane12',
+              'packageVersion': '15',
+              'vendor': 'Mesa',
+              'minApi': 34,
+              'libraryName': 'libvulkan_freedreno.so',
+          }
+          with open('output/meta.json', 'w') as out:
+              json.dump(metadata, out, indent=2)
+          PY
+          cd output
+          zip -9 "../Frane-Turnip-V15E-${VARIANT}-RAM-LAB.zip" libvulkan_freedreno.so meta.json
+
+      - name: Upload V15-E experimental RAM variants and source revision
+        uses: actions/upload-artifact@v4
+        with:
+          name: Frane-Turnip-V15E-${{ matrix.variant }}-RAM-LAB
+          path: |
+            Frane-Turnip-V15E-${{ matrix.variant }}-RAM-LAB.zip
+            mesa-commit.txt
+            build-variant.txt
