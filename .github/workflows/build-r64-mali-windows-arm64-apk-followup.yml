@@ -116,8 +116,8 @@ jobs:
           with open(os.environ["GITHUB_ENV"],"a") as env:
               for a in obj["assets"]:
                   if a["name"].endswith(".zip"):
-                      env.write("DRNAS_R64_ZIP="+str(tmp/"blender-r64"/a["name"])+"\\n")
-                      env.write("DRNAS_BLENDER_SHA256="+a["sha256"]+"\\n")
+                      env.write("DRNAS_R64_ZIP="+str(tmp/"blender-r64"/a["name"])+"\n")
+                      env.write("DRNAS_BLENDER_SHA256="+a["sha256"]+"\n")
           PY
           while IFS='|' read -r asset_id filename sha; do
             test -n "$asset_id" && test -n "$sha"
@@ -148,7 +148,7 @@ jobs:
               assert not any(n.lower().endswith(".pdb") for n in names), "PDB files in runtime ZIP"
               exe=z.read("blender.exe")[:4096]
               off=int.from_bytes(exe[60:64],"little")
-              assert exe[:2]==b"MZ" and exe[off:off+6]==b"PE\\x00\\x00\\x64\\xaa", "Wrong Blender executable architecture"
+              assert exe[:2]==b"MZ" and exe[off:off+6]==b"PE\x00\x00\x64\xaa", "Wrong Blender executable architecture"
               assert z.testzip() is None, "Corrupt native Windows ARM64 Blender"
           print("DRNAS_R64_VERIFIED_WINDOWS_ARM64_ZIP",asset["sha256"])
           PY
