@@ -29,11 +29,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           wf=Path(".github/workflows/build-blender-4514-mali-arm64-r64.yml").read_text()
-          assert "
-on:
-  workflow_dispatch:" in wf, "Must be manual only"
-          assert "
-  push:" not in wf, "No automatic Blender build permitted"
+          assert wf.splitlines()[3:5] == ["on:", "  workflow_dispatch:"], "Must be manual only"
+          assert "  push:" not in wf, "No automatic Blender build permitted"
           assert "USER_APPROVED" in wf and "user_approved_build" in wf
           assert "source-scan" in wf and "lfs pull --include=" in wf
           assert "prepare_r64_blender_distribution.py package" in wf
