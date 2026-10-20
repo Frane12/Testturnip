@@ -1,0 +1,58 @@
+name: DRNAS R64 canonical Blender LFS smoke test - NO COMPILATION
+on:
+  push:
+    branches:
+      - audit/r64-official-vs-mali-blender-20261020
+    paths:
+      - '.github/workflows/smoke-r64-blender-canonical-lfs-no-compile.yml'
+permissions:
+  contents: read
+jobs:
+  verify_blender_source_lfs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Clone exact Blender v4.5.14 without LFS assets
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --depth=1 --branch v4.5.14 --single-branch \
+            https://github.com/blender/blender.git blender-source
+          test "$(git -C blender-source rev-parse HEAD)" = 62c1db4208e862312bc36db5bc15d4a6dbcfa3e3
+      - name: Hydrate Blender source assets from the CANONICAL LFS server
+        env:
+          GIT_LFS_SKIP_SMUDGE: '0'
+        run: |
+          set -euo pipefail
+          git -C blender-source config --local lfs.url https://projects.blender.org/blender/blender.git/info/lfs
+          git -C blender-source remote add lfs-fallback https://projects.blender.org/blender/blender.git
+          git -C blender-source config --local lfs.remote.searchall true
+          git -C blender-source lfs env | grep -F 'projects.blender.org'
+          git -C blender-source lfs pull \
+            --include='assets/**,release/datafiles/**,scripts/**' --exclude=''
+      - name: Assert every relevant source asset is hydrated (zero Git LFS pointers)
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          root=pathlib.Path('blender-source')
+          bad=[]
+          for sub in ('assets','release/datafiles','scripts'):
+              for p in (root/sub).rglob('*'):
+                  if p.is_file() and p.stat().st_size <=512:
+                      with p.open('rb') as f:
+                          if f.read(48).startswith(b'version https://git-lfs.github.com/spec/v1'):
+                              bad.append(str(p))
+          assert not bad, f'FAIL: {len(bad)} unresolved LFS pointers, first: {bad[:10]}'
+          signatures={
+              'assets/brushes/essentials_brushes-mesh_sculpt.blend':b'BLENDER',
+              'assets/geometry_nodes/procedural_hair_node_assets.blend':b'BLENDER',
+              'scripts/startup/bl_app_templates_system/2D_Animation/startup.blend':b'BLENDER',
+              'release/datafiles/studiolights/world/forest.exr':bytes.fromhex('762f3101'),
+          }
+          for name,signature in signatures.items():
+              with (root/name).open('rb') as file:
+                  assert file.read(len(signature))==signature, f'bad real Blender asset: {name}'
+          print('DRNAS_R64_LFS_SMOKE_PASS - canonical Blender Git LFS, four real assets, zero unresolved source placeholders')
+          PY
