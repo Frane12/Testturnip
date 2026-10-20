@@ -29,7 +29,7 @@ jobs:
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           path: private-src
-      - name: Verify public runner, source SHA and read-only private token
+      - name: Verify public runner and pinned private source SHA
         env:
           PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
         run: |
@@ -38,6 +38,55 @@ jobs:
           test -n "$PRIVATE_TOKEN" || { echo '::error::Missing EMUEXPERIMENTAL_RELEASE_READ_TOKEN secret'; exit 1; }
           test "$(git rev-parse HEAD)" = 7737f2fc69f5e8622408a8d10493aba238722bfa
           echo 'DRNAS_R64_PRIVATE_SOURCE_PIN_VERIFIED; checkout remains ephemeral'
+      - name: Publish pinned Blender source release inside PRIVATE EmuExperimental
+        env:
+          PRIVATE_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$PRIVATE_TOKEN"
+          # Before changing a release, verify the TARGET repo still is private.
+          http=$(curl --silent --show-error --request GET \
+            -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            --output "$RUNNER_TEMP/r64-source-repository.json" --write-out '%{http_code}' \
+            'https://api.github.com/repos/Frane12/EmuExperimental') || http=000
+          echo "DRNAS_R64_SOURCE_REPOSITORY_HTTP=$http"
+          if test "$http" != 200; then
+            echo "::error::Private repo metadata is inaccessible (HTTP $http). No release modified."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json,os,pathlib
+          info=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"r64-source-repository.json").read_text())
+          assert info["full_name"] == "Frane12/EmuExperimental"
+          assert info["private"] is True, "Refusing to publish release of non-private source repo"
+          print("DRNAS_R64_PRIVATE_VISIBILITY_VERIFIED")
+          PY
+          # User-approved promotion: draft -> published ONLY inside private repo.
+          # The PAT might lack Contents write; fail closed if so.
+          http=$(curl --silent --show-error --request PATCH \
+            -H "Authorization: Bearer ${PRIVATE_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            -H 'Content-Type: application/json' \
+            --data '{"draft":false,"prerelease":true}' \
+            --output "$RUNNER_TEMP/r64-publish-result.json" --write-out '%{http_code}' \
+            'https://api.github.com/repos/Frane12/EmuExperimental/releases/418000018') || http=000
+          echo "DRNAS_R64_PRIVATE_RELEASE_PROMOTION_HTTP=$http"
+          if test "$http" != 200; then
+            echo "::error::Private release promotion requires Contents write on the private repository, or manual Publish release (HTTP $http). No public source release created."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json,os,pathlib
+          j=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"r64-publish-result.json").read_text())
+          assert j["id"] == 418000018 and j["draft"] is False and j["prerelease"] is True
+          assert j["tag_name"]=="blender-r64-native-39362488049-1"
+          a=[x for x in j["assets"] if x["id"]==658264064]
+          assert len(a)==1 and a[0].get("digest")=="sha256:8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f"
+          print("DRNAS_R64_PRIVATE_RELEASE_PUBLISHED_AND_ASSET_VERIFIED")
+          PY
       - name: Create an unpublished public-repository draft for this run
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,7 +132,7 @@ jobs:
           python3 - <<'PY'
           import json, os, pathlib
           d=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"blender-r64/release-meta.json").read_text())
-          assert d["id"] == 418000018 and d["draft"] is True
+          assert d["id"] == 418000018 and d["draft"] is False
           assert d["tag_name"] == "blender-r64-native-39362488049-1"
           matches=[a for a in d["assets"] if a["id"] == 658264064]
           assert len(matches)==1 and matches[0]["name"]=="Blender-4.5.14-DRNAS-MaliVulkan-r64-WindowsARM64-NATIVE-PRIVATE.zip"
@@ -278,7 +327,11 @@ jobs:
             status='failed_before_private_release_download'
           fi
           printf 'DRNAS R64 public runner DRAFT - build FAILED, no APK attached.\\nPinned private source commit: 7737f2fc69f5e8622408a8d10493aba238722bfa.\\nPrivate asset diagnostic: %s\\nBuild logs: https://github.com/Frane12/Testturnip/actions/runs/%s\\nSource remains private and stable signing key was never transferred.\\n' "$status" "$GITHUB_RUN_ID" > "$RUNNER_TEMP/lab-draft-status.txt"
-          gh release edit "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title 'DRNAS R64 LAB - PUBLIC repo DRAFT (build failed)' \
-            --notes-file "$RUNNER_TEMP/lab-draft-status.txt"
+          if gh release view "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "drnas-r64-public-runner-lab-${GITHUB_RUN_ID}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title 'DRNAS R64 LAB - PUBLIC repo DRAFT (build failed)' \
+              --notes-file "$RUNNER_TEMP/lab-draft-status.txt"
+          else
+            echo 'No public draft was created: private release promotion/preflight failed first.'
+          fi
