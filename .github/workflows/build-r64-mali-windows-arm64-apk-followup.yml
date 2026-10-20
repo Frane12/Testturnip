@@ -161,9 +161,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib, pathlib, re, zipfile
-          expected = "8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f"
+          import hashlib, os, pathlib, re, zipfile
+          expected = os.environ["DRNAS_BLENDER_SHA256"]
           source = pathlib.Path("android-app/app/src/main/java/com/drnas/console/BundledBlenderArchive.java").read_text()
+          old_hash = "8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f"
+          old_literal = f'static final String SHA256="{old_hash}";'
+          assert source.count(old_literal) == 1, "R64 installer original SHA mismatch"
+          source = source.replace(old_literal, f'static final String SHA256="{expected}";')
           assert f'static final String SHA256="{expected}";' in source, "Installer SHA mismatch"
           assert "Mixed Blender archive roots" in source, "Mali r64 root guard missing"
           archive = pathlib.Path("android-app/app/src/main/assets/blender/blender-4.5.14-windows-arm64.zip")
@@ -291,7 +295,7 @@ jobs:
           test -n "$cert" || { echo "::error::No APK signing certificate"; exit 1; }
           echo "DRNAS_PUBLIC_RUNNER_DEBUG_SIGNED_CERT_SHA256=$cert"
           echo "$cert" > "$RUNNER_TEMP/lab-public-cert-sha256.txt"
-          unzip -p "$apk" assets/blender/blender-4.5.14-windows-arm64.zip | sha256sum | grep '^8802767f9ac63a6e8054e6e37b3ba994b49c2fb6d37d34cfc50ae48491851d6f '
+          unzip -p "$apk" assets/blender/blender-4.5.14-windows-arm64.zip | sha256sum | grep "^${DRNAS_BLENDER_SHA256} "
           unzip -l "$apk" | grep 'lib/arm64-v8a/libdrnas_host.so'
           mkdir -p "$RUNNER_TEMP/lab-release"
           cp "$apk" "$RUNNER_TEMP/lab-release/DRNAS-R64-ARM64-ISOLATION-LAB-DEBUG-SIGNED.apk"
