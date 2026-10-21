@@ -167,10 +167,10 @@ jobs:
           test -s "$RUNNER_TEMP/drnas-freecad-lab/DRNAS-FreeCAD-Proton11-PUBLIC-RUNNER-LAB.apk"
           tag="freecad-proton11-public-runner-${GITHUB_RUN_ID}"
           gh release create "$tag" "$RUNNER_TEMP/drnas-freecad-lab/"* \
-            --draft --target "$GITHUB_SHA" \
+            --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
             --title "FreeCAD Proton 11 isolated Android APK LAB (private source, untested)" \
             --notes "Public Actions runner, pinned private DRNAS source. Only APK, SHA256 and notes attached. FreeCAD binary NOT included. CI package test only. Draft remains unpublished."
-          gh release view "$tag" --json isDraft --jq '.isDraft' | grep -qx true
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -qx true
 
       - name: Report completed public-repo draft tag
         if: success()
