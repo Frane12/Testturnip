@@ -84,7 +84,7 @@ jobs:
       - name: Package native Bionic X11 font runtime and GL dependency closure
         run: |
           set -euo pipefail
-          python3 tools/package_gui_runtime.py "$RUNNER_TEMP/imagefs_bionic.txz" android-app/app/src/main/assets/gui-runtime-v1.zip
+          python3 tools/package_gui_runtime.py "$RUNNER_TEMP/imagefs_bionic.txz" android-app/app/src/main/assets/gui-runtime-v1.zip android-app/app/src/main/assets/opengl-runtime-v1.zip
           python3 tools/package_opengl_runtime.py --verify android-app/app/src/main/assets/gui-runtime-v1.zip android-app/app/src/main/assets/opengl-runtime-v1.zip
           mkdir -p android-app/app/src/main/jniLibs/arm64-v8a
           "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang" -Wall -Wextra -Werror -fPIE -pie -Wl,-z,max-page-size=16384 android-app/app/src/main/cpp/gui_dependency_probe.c -ldl -o android-app/app/src/main/jniLibs/arm64-v8a/libdrnas_gui_probe.so
