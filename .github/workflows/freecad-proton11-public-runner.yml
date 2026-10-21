@@ -1,0 +1,177 @@
+name: DRNAS FreeCAD Proton 11 - PUBLIC runner / private source APK smoke
+on:
+  push:
+    branches: [lab/freecad-proton11-public-runner-20261021]
+    paths:
+      - ".github/workflows/freecad-proton11-public-runner.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: freecad-proton11-public-runner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  freecad-private-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: private-src
+    steps:
+      - name: Checkout pinned PRIVATE emulator source without publishing it
+        uses: actions/checkout@v4
+        with:
+          repository: Frane12/EmuExperimental
+          ref: cf8f367bb103b14adf73ab84b9aa3da5b8ddc86c
+          token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+          persist-credentials: false
+          path: private-src
+
+      - name: Verify pinned PRIVATE source and public runner isolation
+        env:
+          PRIVATE_READ_TOKEN: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'Frane12/Testturnip'
+          test -n "$PRIVATE_READ_TOKEN" || { echo "::error::Missing private source read-only repository secret"; exit 1; }
+          test "$(git rev-parse HEAD)" = cf8f367bb103b14adf73ab84b9aa3da5b8ddc86c
+          git remote set-url origin https://github.com/Frane12/EmuExperimental.git
+          echo 'DRNAS FreeCAD pinned private source verified; never upload source or Git history.'
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Gradle build cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+          cache-read-only: false
+
+      - name: Prepare Android SDK NDK and build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/cmdline-tools/16.0/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          test -f "$ANDROID_HOME/ndk/27.2.12479018/build/cmake/android.toolchain.cmake"
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends zstd gcc-mingw-w64-i686 gcc-mingw-w64-x86-64
+
+      - name: Run unit tests including FreeCAD safety checks before packaging
+        working-directory: private-src/android-app
+        run: gradle --no-daemon --stacktrace :app:testDebugUnitTest
+
+      - name: Fetch checksum-pinned Proton 11 FEX DXVK and DRNAS Turnip
+        run: |
+          set -euo pipefail
+          python3 tools/package_bundled_runtime.py android-app/app/src/main/assets
+          test -s android-app/app/src/main/assets/runtime-components-v1.json
+
+      - name: Package native Android OpenGL EGL Zink
+        run: |
+          set -euo pipefail
+          python3 tools/package_opengl_runtime.py android-app/app/src/main/assets/opengl-runtime-v1.zip
+          unzip -tq android-app/app/src/main/assets/opengl-runtime-v1.zip
+
+      - name: Package native Bionic X11 font runtime and GL dependency closure
+        run: |
+          set -euo pipefail
+          python3 tools/package_gui_runtime.py "$RUNNER_TEMP/imagefs_bionic.txz" android-app/app/src/main/assets/gui-runtime-v1.zip
+          python3 tools/package_opengl_runtime.py --verify android-app/app/src/main/assets/gui-runtime-v1.zip android-app/app/src/main/assets/opengl-runtime-v1.zip
+          mkdir -p android-app/app/src/main/jniLibs/arm64-v8a
+          "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang" -Wall -Wextra -Werror -fPIE -pie -Wl,-z,max-page-size=16384 android-app/app/src/main/cpp/gui_dependency_probe.c -ldl -o android-app/app/src/main/jniLibs/arm64-v8a/libdrnas_gui_probe.so
+
+      - name: Package pinned Android audio and GPU probes
+        run: |
+          set -euo pipefail
+          python3 tools/package_audio_runtime.py android-app/app/src/main
+          "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang" -Wall -Wextra -Werror -fPIE -pie -Wl,-z,max-page-size=16384 android-app/app/src/main/cpp/vulkan_device_probe.c -ldl -pthread -o android-app/app/src/main/jniLibs/arm64-v8a/libdrnas_vulkan_probe.so
+
+      - name: Compile bundled Windows desktop helpers without building Blender
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-app/app/src/main/assets/windows-tools
+          for app in DrnasRetroPaint DrnasRetroPad; do
+            i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -municode -mwindows -static-libgcc "tools/windows-tools/${app}.c" -luser32 -lgdi32 -lcomdlg32 -o "android-app/app/src/main/assets/windows-tools/${app/DrnasRetro/DRNAS}.exe"
+          done
+          i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -municode -mwindows -static-libgcc tools/windows-tools/DrnasDesktop.c -luser32 -lgdi32 -lm -o android-app/app/src/main/assets/windows-tools/DRNASDesktop.exe
+          i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -municode -mwindows -static-libgcc tools/windows-tools/DrnasLinkLaunch.c -lole32 -luuid -lshell32 -o android-app/app/src/main/assets/windows-tools/DRNASLinkLaunch.exe
+          mkdir -p android-app/app/src/main/assets/graphics-tests
+          i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -mwindows -static-libgcc tools/graphics-tests/TestD3D.c -ld3d9 -lgdi32 -luser32 -lm -o android-app/app/src/main/assets/graphics-tests/TestD3D.exe
+          sha256sum android-app/app/src/main/assets/graphics-tests/TestD3D.exe | cut -d' ' -f1 > android-app/app/src/main/assets/graphics-tests/TestD3D.sha256
+          mkdir -p android-app/app/src/main/assets/xinput/x86 android-app/app/src/main/assets/xinput/x64
+          for dll in xinput1_3 xinput1_4 xinput9_1_0; do
+            sed "s/xinput1_3/${dll}/g" tools/graphics-tests/xinput1_3.def > "$RUNNER_TEMP/${dll}.def"
+            i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -Wl,--kill-at -o "android-app/app/src/main/assets/xinput/x86/${dll}.dll" tools/graphics-tests/DrnasXInput.c "$RUNNER_TEMP/${dll}.def"
+            x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -shared -Wl,--kill-at -o "android-app/app/src/main/assets/xinput/x64/${dll}.dll" tools/graphics-tests/DrnasXInput.c "$RUNNER_TEMP/${dll}.def"
+            for arch in x86 x64; do
+              sha256sum "android-app/app/src/main/assets/xinput/${arch}/${dll}.dll" | cut -d' ' -f1 > "android-app/app/src/main/assets/xinput/${arch}/${dll}.dll.sha256"
+            done
+          done
+          i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -mwindows tools/graphics-tests/XInputProbe.c -luser32 -o android-app/app/src/main/assets/xinput/XInputProbe.exe
+
+      - name: Assemble separate FreeCAD LAB APK with temporary debug signing
+        working-directory: private-src/android-app
+        env:
+          DRNAS_REQUIRE_STABLE_SIGNING: '0'
+          DRNAS_PREFIX_RECOVERY_LAB: '0'
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Verify FreeCAD package identity and native components
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=android-app/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "name='com.drnas.console.freecadlab"
+          unzip -l "$APK" | grep 'runtime-components-v1.json'
+          unzip -l "$APK" | grep 'lib/arm64-v8a/libdrnas_host.so'
+          unzip -l "$APK" | grep 'assets/opengl-runtime-v1.zip'
+          unzip -l "$APK" | grep 'assets/gui-runtime-v1.zip'
+          unzip -l "$APK" | grep 'assets/windows-tools/DRNASDesktop.exe'
+          mkdir -p "$RUNNER_TEMP/drnas-freecad-lab"
+          cp "$APK" "$RUNNER_TEMP/drnas-freecad-lab/DRNAS-FreeCAD-Proton11-PUBLIC-RUNNER-LAB.apk"
+          cat > "$RUNNER_TEMP/drnas-freecad-lab/README.md" <<'EOF'
+          DRNAS FreeCAD Proton 11 — isolated Android emulation LAB
+          Public GitHub Actions runner; original DRNAS emulator source remains PRIVATE.
+          APK signed with a temporary Android debug key, distinct from installed DRNAS/Blender.
+          FreeCAD Windows x64 executable is NOT bundled. Manually supply the official
+          Windows x64 FreeCAD binary under the Wine C: drive, e.g. C:\FreeCAD\bin\FreeCAD.exe.
+          Launch it through DRNAS Shortcuts > FreeCAD (LAB) and confirm the action.
+          Linux ARM64 FreeCAD is NOT a Windows executable and cannot be launched by Wine.
+          Running a CI build does not prove x64/FEX translation, OpenGL viewport, or GUI.
+          This APK is a draft/test build; review bundled third-party licenses before
+          distributing it as a public release.
+          EOF
+          (cd "$RUNNER_TEMP/drnas-freecad-lab" && sha256sum *.apk > SHA256SUMS.txt)
+
+      - name: Preserve APK as an UNPUBLISHED draft (public-repository runner)
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'Frane12/Testturnip'
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private')" = 'false'
+          test -s "$RUNNER_TEMP/drnas-freecad-lab/DRNAS-FreeCAD-Proton11-PUBLIC-RUNNER-LAB.apk"
+          tag="freecad-proton11-public-runner-${GITHUB_RUN_ID}"
+          gh release create "$tag" "$RUNNER_TEMP/drnas-freecad-lab/"* \
+            --draft --target "$GITHUB_SHA" \
+            --title "FreeCAD Proton 11 isolated Android APK LAB (private source, untested)" \
+            --notes "Public Actions runner, pinned private DRNAS source. Only APK, SHA256 and notes attached. FreeCAD binary NOT included. CI package test only. Draft remains unpublished."
+          gh release view "$tag" --json isDraft --jq '.isDraft' | grep -qx true
+
+      - name: Report completed public-repo draft tag
+        if: success()
+        run: echo "FreeCAD PUBLIC RUNNER LAB complete; see the Testturnip GitHub Releases drafts."
