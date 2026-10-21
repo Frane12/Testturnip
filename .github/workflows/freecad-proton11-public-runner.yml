@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Frane12/EmuExperimental
-          ref: 99d7c3e627de65c10001e6519bb9fe646b6a26ec
+          ref: 542a6c36a2cdf3bfcbdf220a32c391e80251ac6f
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           path: private-src
@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 'Frane12/Testturnip'
           test -n "$PRIVATE_READ_TOKEN" || { echo "::error::Missing private source read-only repository secret"; exit 1; }
-          test "$(git rev-parse HEAD)" = 99d7c3e627de65c10001e6519bb9fe646b6a26ec
+          test "$(git rev-parse HEAD)" = 542a6c36a2cdf3bfcbdf220a32c391e80251ac6f
           git remote set-url origin https://github.com/Frane12/EmuExperimental.git
           echo 'DRNAS FreeCAD pinned private source verified; never upload source or Git history.'
 
@@ -119,6 +119,21 @@ jobs:
           done
           i686-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -mwindows tools/graphics-tests/XInputProbe.c -luser32 -o android-app/app/src/main/assets/xinput/XInputProbe.exe
 
+      - name: Verify FreeCAD installer branding before APK compilation
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=android-app/app/src/main/AndroidManifest.xml
+          launcher=android-app/app/src/main/res/mipmap-anydpi-v26/ic_freecad_launcher.xml
+          artwork=android-app/app/src/main/res/drawable/ic_freecad_lab.xml
+          grep -Fq 'android:icon="@mipmap/ic_freecad_launcher"' "$manifest"
+          grep -Fq 'android:roundIcon="@mipmap/ic_freecad_launcher"' "$manifest"
+          grep -Fq '@drawable/ic_freecad_lab' "$launcher"
+          test -s "$artwork"
+          ! grep -q 'ic_blender_launcher' "$manifest"
+          grep -Fq 'FreeCAD · DRNAS LAB' android-app/app/build.gradle.kts
+          echo "DRNAS_FREECAD_INSTALL_BRANDING_VERIFIED"
+
       - name: Assemble separate FreeCAD LAB APK with temporary debug signing
         working-directory: private-src/android-app
         env:
@@ -134,6 +149,7 @@ jobs:
           test -s "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "name='com.drnas.console.freecadlab"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "application-label:'FreeCAD · DRNAS LAB'"
           unzip -l "$APK" | grep 'runtime-components-v1.json'
           unzip -l "$APK" | grep 'lib/arm64-v8a/libdrnas_host.so'
           unzip -l "$APK" | grep 'assets/opengl-runtime-v1.zip'
