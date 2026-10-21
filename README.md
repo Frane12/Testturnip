@@ -10,7 +10,7 @@ Android ARM64 · KGSL · Winlator / compatible userspace driver managers
 [![Latest A810 release](https://img.shields.io/badge/A810-S%20Ultimate%20v1.0-2ea44f)](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-a810-s-ultimate-v1.0)
 [![Experimental](https://img.shields.io/badge/status-experimental-orange)](https://github.com/Frane12/Testturnip/releases)
 
-[**A810 S Ultimate v1.0**](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-a810-s-ultimate-v1.0) · [**NeuroFlow — TESTING ONLY**](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-neuroflow-a8xx-testing-20261016) · [**DRNAS Blender for Android — Preview**](https://github.com/Frane12/Testturnip/releases/tag/blender-v1.1) · [**All public releases**](https://github.com/Frane12/Testturnip/releases)
+[**A810 S Ultimate v1.0**](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-a810-s-ultimate-v1.0) · [**NeuroFlow — TESTING ONLY**](https://github.com/Frane12/Testturnip/releases/tag/drnas-turnip-neuroflow-a8xx-testing-20261016) · [**DRNAS EMU Blender v1.1**](https://github.com/Frane12/Testturnip/releases/tag/blender-v1.1) · [**Native Blender PreAlpha 0.1**](https://github.com/Frane12/DRNAS-Native-Blender/releases/tag/native-prealpha-v0.1) · [**All public releases**](https://github.com/Frane12/Testturnip/releases)
 
 </div>
 
@@ -35,6 +35,22 @@ Alongside the Turnip driver research, **DRNAS EMU** is an experimental Android A
 - **Experimental GPU paths:** automatic selection/fallback for supported Adreno, eligible Mali, and Samsung Xclipse devices. The **Adreno 840** has been exercised on-device; broad GPU compatibility is **not** guaranteed.
 
 This is **not a native or official Blender Android release** and is **not affiliated with the Blender Foundation**. Startup, installation, rendering and secondary windows may still fail on some devices. Save backups of important `.blend` files and check the [v1.1 release notes](https://github.com/Frane12/Testturnip/releases/tag/blender-v1.1) for setup, limitations and troubleshooting.
+
+## Native Blender PreAlpha 0.1 — a separate Android track
+
+[**DRNAS Native Blender repository**](https://github.com/Frane12/DRNAS-Native-Blender) · [**PreAlpha 0.1 release page**](https://github.com/Frane12/DRNAS-Native-Blender/releases/tag/native-prealpha-v0.1) · [**Source, tests and roadmap**](https://github.com/Frane12/DRNAS-Native-Blender#readme)
+
+DRNAS is exploring a **second, independent** approach to Blender on Android:
+
+| | **DRNAS EMU Blender v1.1 (this repository)** | **DRNAS Native Blender PreAlpha 0.1** |
+| --- | --- | --- |
+| Blender executable | Blender **4.5.14 LTS Windows ARM64** | Android **ARM64 native lite** build |
+| Integration | **Wine/X11/Vulkan compatibility environment** | Native Android GHOST/JNI and experimental Vulkan viewport |
+| Windows compatibility layer | Yes (ARM64 app; not automatically x86 emulation) | No |
+| Current evidence | Public preview; basic viewport editing and zoom exercised on Adreno 840 | Build-time checks; hardware rendering and device support still require validation |
+| Trade-off | Broader Windows desktop application workflow, with compatibility overhead | Potentially simpler native stack, with **lite/incomplete features** |
+
+**Pre-alpha is not a stability or speed claim.** Both approaches are experimental; neither is an official Blender Foundation Android release. The native APK has **its own package ID** and does **not** replace DRNAS EMU. Native 0.1 APK availability depends on successful build, signing and packaging checks. Details, source attribution and testing priorities are documented in its own repository.
 
 ---
 
