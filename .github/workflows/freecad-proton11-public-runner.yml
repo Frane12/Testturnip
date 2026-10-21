@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Frane12/EmuExperimental
-          ref: 542a6c36a2cdf3bfcbdf220a32c391e80251ac6f
+          ref: d7159abbaec812a2a04797f508403e62d2f7a736
           token: ${{ secrets.EMUEXPERIMENTAL_RELEASE_READ_TOKEN }}
           persist-credentials: false
           path: private-src
@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = 'Frane12/Testturnip'
           test -n "$PRIVATE_READ_TOKEN" || { echo "::error::Missing private source read-only repository secret"; exit 1; }
-          test "$(git rev-parse HEAD)" = 542a6c36a2cdf3bfcbdf220a32c391e80251ac6f
+          test "$(git rev-parse HEAD)" = d7159abbaec812a2a04797f508403e62d2f7a736
           git remote set-url origin https://github.com/Frane12/EmuExperimental.git
           echo 'DRNAS FreeCAD pinned private source verified; never upload source or Git history.'
 
