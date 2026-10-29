@@ -1,0 +1,91 @@
+name: DRNAS A840 H3.0 render recovery diagnostic
+on:
+  push:
+    branches:
+      - experiment/a840-h30-render-recovery-20261029
+    paths:
+      - .github/workflows/drnas-turnip-upstream-a8xx.yml
+  workflow_dispatch:
+    inputs:
+      mesa_ref:
+        description: Full 40-character reviewed Mesa commit SHA
+        required: true
+        default: 1c3a936490f9f0951188218e136cd03bca497386
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        gpu: [A840]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-venv python3-mako python3-yaml python3-packaging python3-ply bison flex glslang-tools spirv-tools libexpat1-dev zip
+          python3 -m venv /tmp/mesa-venv
+          /tmp/mesa-venv/bin/pip install 'meson>=1.4' mako pyyaml packaging ply
+          echo /tmp/mesa-venv/bin >> "$GITHUB_PATH"
+      - name: Checkout immutable Mesa upstream
+        env:
+          MESA_REF: ${{ inputs.mesa_ref || '1c3a936490f9f0951188218e136cd03bca497386' }}
+        run: |
+          set -euo pipefail
+          [[ "$MESA_REF" =~ ^[a-fA-F0-9]{40}$ ]] || exit 1
+          git clone --filter=blob:none https://gitlab.freedesktop.org/mesa/mesa.git mesa
+          git -C mesa checkout --detach "$MESA_REF"
+          test "$(git -C mesa rev-parse HEAD)" = "${MESA_REF,,}"
+          git -C mesa rev-parse HEAD > mesa-commit.txt
+      - name: Android cross toolchain
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_NDK_LATEST_HOME"
+          test -d "$NDK"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p /tmp/mesa-empty-pc
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = '$BIN/aarch64-linux-android34-clang++'
+          ar = '$BIN/llvm-ar'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/mesa-empty-pc', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+      - name: Build KGSL Turnip
+        run: |
+          meson setup mesa/build-android-aarch64 mesa --cross-file "$GITHUB_WORKSPACE/android-aarch64.ini" -Dbuildtype=release -Dplatforms=android -Dplatform-sdk-version=34 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
+          meson compile -C mesa/build-android-aarch64 -j 4
+      - name: Apply conservative A840 diagnostic baseline
+        run: |
+          echo 'A840 H3.0 diagnostic: no unverified NeuroFlow render hooks; compare default and TU_DEBUG=sysmem on device'
+      - name: Package for independent device tests
+        env:
+          GPU: ${{ matrix.gpu }}
+        run: |
+          set -euo pipefail
+          mkdir -p package
+          cp mesa/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so package/
+          python3 - <<'PY'
+          import json,os
+          gpu=os.environ['GPU']
+          with open('package/meta.json','w') as f:
+              json.dump({'schemaVersion':1,'name':f'DRNAS {gpu} H3.0 render recovery diagnostic','description':'Mesa 27.0 KGSL diagnostic baseline; NO H2.9 patches; use TU_DEBUG=sysmem for artifact isolation','author':'Frane12','packageVersion':'1','vendor':'Mesa','minApi':34,'libraryName':'libvulkan_freedreno.so'},f,indent=2)
+          PY
+          cp mesa-commit.txt package/
+          (cd package && sha256sum libvulkan_freedreno.so > SHA256SUMS.txt && zip -9 "../DRNAS-$GPU-H30-render-recovery-diagnostic.zip" libvulkan_freedreno.so meta.json mesa-commit.txt SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DRNAS-${{ matrix.gpu }}-H30-render-recovery-diagnostic
+          path: DRNAS-${{ matrix.gpu }}-H30-render-recovery-diagnostic.zip
+          if-no-files-found: error
+          retention-days: 7
