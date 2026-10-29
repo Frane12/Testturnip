@@ -67,7 +67,7 @@ jobs:
           meson compile -C mesa/build-android-aarch64 -j 4
       - name: Apply conservative A840 diagnostic baseline
         run: |
-          echo 'A840 H3.0 diagnostic: no unverified NeuroFlow render hooks; test TU_DEBUG=sysmem on device'
+          echo 'A840 H3.0 diagnostic: no unverified NeuroFlow render hooks; compare default and TU_DEBUG=sysmem on device'
       - name: Package for independent device tests
         env:
           GPU: ${{ matrix.gpu }}
