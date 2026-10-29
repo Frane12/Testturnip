@@ -1,11 +1,16 @@
 name: DRNAS A8xx pinned upstream test
 on:
+  push:
+    branches:
+      - experiment/drnas-a8xx-upstream-20261029
+    paths:
+      - .github/workflows/drnas-turnip-upstream-a8xx.yml
   workflow_dispatch:
     inputs:
       mesa_ref:
         description: Full 40-character reviewed Mesa commit SHA
         required: true
-        default: 6dfbc555b4128ee51139c5f78c5aba2594c9701b
+        default: 1c3a936490f9f0951188218e136cd03bca497386
         type: string
 permissions:
   contents: read
@@ -28,7 +33,7 @@ jobs:
           echo /tmp/mesa-venv/bin >> "$GITHUB_PATH"
       - name: Checkout immutable Mesa upstream
         env:
-          MESA_REF: ${{ inputs.mesa_ref }}
+          MESA_REF: ${{ inputs.mesa_ref || '1c3a936490f9f0951188218e136cd03bca497386' }}
         run: |
           set -euo pipefail
           [[ "$MESA_REF" =~ ^[a-fA-F0-9]{40}$ ]] || exit 1
