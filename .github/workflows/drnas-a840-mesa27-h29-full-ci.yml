@@ -1,0 +1,133 @@
+name: DRNAS A840 Mesa27 full H2.9 via private patch public CI
+on:
+  push:
+    branches: [experiment/a840-mesa27-h29-full-port-ci-20261031]
+    paths: ['.github/workflows/drnas-a840-mesa27-h29-full-ci.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full_port:
+    if: github.repository == 'Frane12/Testturnip'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip file g++ xz-utils
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Android NDK r29 (historical H2.9 toolchain)
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Load ORIGINAL full-stack H2.9 patch from PRIVATE draft release
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          gh release download a840-h29-private-build-39026174945 --repo Frane12/Turnip-Neuro-Private --pattern 'A840-Neuro-Flow-H2-9-Aggressive-integrated.patch' --dir .
+          test -s A840-Neuro-Flow-H2-9-Aggressive-integrated.patch
+          sha256sum A840-Neuro-Flow-H2-9-Aggressive-integrated.patch > diagnostics/patch-sha256.txt
+          echo 'Original H2.9 FULL source patch retrieved privately (not generated from incomplete Mesa27 controller port).' >> "$GITHUB_STEP_SUMMARY"
+      - name: Fetch exact Mesa 27 and ORIGINAL Mesa 26.3 base blob history
+        run: |
+          set -euo pipefail
+          git init mesa
+          git -C mesa remote add origin https://github.com/chaotic-cx/mesa-mirror.git
+          git -C mesa fetch --depth 1 origin 1c3a936490f9f0951188218e136cd03bca497386
+          git -C mesa fetch --depth 1 origin eda9aceb39d5ff169b096444abe366bdf2269e24
+          git -C mesa checkout --detach 1c3a936490f9f0951188218e136cd03bca497386
+          test "$(cat mesa/VERSION)" = 27.0.0-devel
+          git -C mesa rev-parse HEAD > diagnostics/mesa-head.txt
+      - name: Three-way replay of ALL legacy H2.9 changes (never force conflict resolutions)
+        run: |
+          set -uo pipefail
+          git -C mesa apply --3way --index ../A840-Neuro-Flow-H2-9-Aggressive-integrated.patch > diagnostics/apply.log 2>&1
+          rc=$?
+          git -C mesa status --short > diagnostics/git-status.txt
+          git -C mesa diff --name-only --diff-filter=U > diagnostics/conflicting-paths.txt
+          git -C mesa diff --cached --name-only > diagnostics/staged-paths.txt
+          echo "PATCH_3WAY_RESULT=$rc" >> "$GITHUB_STEP_SUMMARY"
+          echo "Conflicting files: $(wc -l < diagnostics/conflicting-paths.txt)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Auto-merged paths: $(wc -l < diagnostics/staged-paths.txt)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::Mesa27 full H2.9 source has API/merge conflicts; review PRIVATE diagnostics; no broken driver will be published."
+            exit 2
+          fi
+          git -C mesa diff --cached --check
+          grep -Fq 'TU_FRANE_A840_TEX_DYNAMIC' mesa/src/freedreno/vulkan/tu_shader.cc
+          grep -Fq 'frane_tex_window' mesa/src/freedreno/ir3/ir3_sched.c
+          grep -Fq 'TU_FRANE_A840_AGGRESSIVE' mesa/src/freedreno/vulkan/tu_autotune.cc
+          echo 'FULL H2.9 PATCH AUTOMERGED AND PRESERVED' >> "$GITHUB_STEP_SUMMARY"
+      - name: Original r29 cross-build settings plus Vulkan beta and SDK 36
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$BIN/aarch64-linux-android34-clang++"
+          mkdir -p /tmp/neuro-empty-pkgconfig
+          cat > android-aarch64-neuro.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/neuro-empty-pkgconfig', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+          set +e
+          meson setup mesa/build-android mesa --cross-file "$GITHUB_WORKSPACE/android-aarch64-neuro.ini" -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true > diagnostics/meson.log 2>&1
+          rc=$?
+          if [ "$rc" -ne 0 ]; then tail -50 diagnostics/meson.log; exit "$rc"; fi
+          ninja -C mesa/build-android -j 8 > diagnostics/compile.log 2>&1
+          rc=$?
+          if [ "$rc" -ne 0 ]; then tail -100 diagnostics/compile.log; exit "$rc"; fi
+          set -e
+      - name: Verify and pack complete H2.9 A840 Mesa27 PRIVATE experimental driver
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so dist/
+          file dist/libvulkan_freedreno.so | grep 'ARM aarch64'
+          for token in TU_FRANE_A840_ADAPTIVE TU_FRANE_A840_AGGRESSIVE TU_FRANE_A840_TEX_DYNAMIC TU_FRANE_S1_NEURO_CACHE TU_FRANE_TEX_DYNAMIC; do
+            strings dist/libvulkan_freedreno.so | grep -Fq "$token"
+          done
+          python3 - <<'PY'
+          import json
+          obj={'schemaVersion':1,'name':'DRNAS A840 Mesa27 FULL original H2.9 experimental','description':'FULL historical A840 H2.9 source replay on Mesa27; includes IR3/TEX and Neuro layers; Vulkan beta, SDK36 and NDK r29; device UNTESTED.','author':'Frane12','packageVersion':'mesa27-h29-full-port-20261031','vendor':'Mesa','minApi':34,'libraryName':'libvulkan_freedreno.so'}
+          with open('dist/meta.json','w') as f: json.dump(obj,f,indent=2)
+          PY
+          (cd dist && sha256sum libvulkan_freedreno.so > SHA256SUMS.txt && zip -9 -q ../DRNAS-A840-MESA27-H29-FULL-PRIVATE.zip libvulkan_freedreno.so meta.json SHA256SUMS.txt)
+          unzip -t DRNAS-A840-MESA27-H29-FULL-PRIVATE.zip
+      - name: Deliver full port in PRIVATE draft, never public artifacts
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "a840-mesa27-full-h29-port-${{ github.run_id }}" DRNAS-A840-MESA27-H29-FULL-PRIVATE.zip --repo Frane12/Turnip-Neuro-Private --draft --prerelease --title "A840 Mesa27 COMPLETE H2.9 experimental ${{ github.run_id }}" --notes "Private; original full-stack H2.9 source reapplied; Vulkan beta, SDK36, NDK r29. GPU correctness unverified. Maintain working Gen8 rollback."
+      - name: Save PRIVATE stage-by-stage diagnostic report on any failed port step
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          echo "run=${{ github.run_id }}" > diagnostics/attempt.txt
+          echo "mesa27=1c3a936490f9f0951188218e136cd03bca497386" >> diagnostics/attempt.txt
+          gh release create "a840-mesa27-full-h29-diag-${{ github.run_id }}" diagnostics/* --repo Frane12/Turnip-Neuro-Private --draft --prerelease --title "Mesa27 FULL H2.9 private port diagnostics ${{ github.run_id }}" --notes "PRIVATE migration diagnostics. Failed preflight or compilation; no driver is published."
