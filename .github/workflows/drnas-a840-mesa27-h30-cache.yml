@@ -1,0 +1,176 @@
+name: DRNAS A840 Mesa 27 H3.0 Decision Cache experiment
+on:
+  push:
+    branches: [experiment/a840-mesa27-h30-cache-ci-20261031]
+    paths: ['.github/workflows/drnas-a840-mesa27-h30-cache.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  MESA_SHA: fd8ef2befafd01190e33f12dbfd109b924c8ebc3
+  PORT_SHA: 8404ff07d832743b5a164f5dba5f10a906b984e8
+  DELTA_SHA256: 5feb039983e92eb7cf9439e215f880e87d08650b1a33810b2bc451ce40b9db3c
+  PATCH_SHA256: a8d43fe8ca4129e689293e9a0b7d6867d201089080ee969a7701a435bf8c0d31
+jobs:
+  full_port:
+    if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/experiment/a840-mesa27-h30-cache-ci-20261031'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip file g++ xz-utils
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Android NDK r29 (historical H2.9 toolchain)
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Fetch and validate pinned private H2.9 sources
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          repo=Frane12/Turnip-Neuro-Private
+          test "$(gh api "repos/$repo" --jq .private)" = true
+          gh api -H 'Accept: application/vnd.github.raw+json' \
+            "repos/$repo/contents/patches/mesa27/A840-H29-full.patch?ref=$PORT_SHA" > port.patch
+          echo "$PATCH_SHA256  port.patch" | sha256sum -c -
+          gh api -H 'Accept: application/vnd.github.raw+json' "repos/$repo/contents/patches/mesa27/A840-H30-DecisionCache.patch?ref=$PORT_SHA" > cache.patch
+          echo "$DELTA_SHA256  cache.patch" | sha256sum -c -
+          mkdir -p host-tests
+          for src in a840_mesa27_id.c a840_adaptive_host.cpp a840_aggressive_host.cpp a840_mesa27_cache_ab.cpp a840_mesa27_cache_host.cpp; do
+            gh api -H 'Accept: application/vnd.github.raw+json' "repos/$repo/contents/tests/$src?ref=$PORT_SHA" > "host-tests/$src"
+          done
+          gh release download a840-h29-private-build-39026174945 --repo "$repo" --pattern '*-integrated.patch' --output original.patch
+          echo 'e7507471f95802079bdb51d8d284b84805e8a559dab2d8cb83db223a43a6d8b8  original.patch' | sha256sum -c -
+      - name: Apply the port and compare coverage against the historical release
+        run: |
+          set -euo pipefail
+          git init -q mesa
+          git -C mesa fetch --quiet --depth 1 https://github.com/chaotic-cx/mesa-mirror.git "$MESA_SHA"
+          git -C mesa checkout -q --detach FETCH_HEAD
+          test "$(git -C mesa rev-parse HEAD)" = "$MESA_SHA"
+          test "$(cat mesa/VERSION)" = 27.0.0-devel
+          git -C mesa apply --index --whitespace=error ../port.patch > diagnostics/apply.log 2>&1
+          git -C mesa diff --cached --check > diagnostics/diff-check.log
+          git apply --numstat original.patch | cut -f3- | sed 's|/ir3_disk_cache.c$|/ir3_disk_cache.cpp|' | LC_ALL=C sort > original.paths
+          git -C mesa diff --cached --name-only | LC_ALL=C sort > port.paths
+          { cat original.paths; echo src/freedreno/common/frane_a840_id.h; } | LC_ALL=C sort > expected.paths
+          diff -u expected.paths port.paths
+          test "$(wc -l < original.paths)" -eq 69
+          cc -std=c11 -Wall -Wextra -Werror -Imesa/src/freedreno/common host-tests/a840_mesa27_id.c -o "$RUNNER_TEMP/h29-id"
+          "$RUNNER_TEMP/h29-id"
+          for test in a840_adaptive_host a840_aggressive_host; do
+            g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Imesa/src/freedreno/vulkan "host-tests/$test.cpp" -o "$RUNNER_TEMP/$test" > "diagnostics/$test.log" 2>&1
+            UBSAN_OPTIONS=halt_on_error=1 "$RUNNER_TEMP/$test" >> "diagnostics/$test.log" 2>&1
+          done
+          echo "Applied all 69 paths from H2.9 on $MESA_SHA." >> "$GITHUB_STEP_SUMMARY"
+      - name: Apply H3 delta and compare with the H2.9 control
+        run: |
+          set -euo pipefail
+          export UBSAN_OPTIONS=halt_on_error=1
+          native=(g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Imesa/src/freedreno/vulkan)
+          "${native[@]}" host-tests/a840_mesa27_cache_ab.cpp -o "$RUNNER_TEMP/h29-replay" > diagnostics/replay-build.log 2>&1
+          "$RUNNER_TEMP/h29-replay" > diagnostics/control.txt
+          git -C mesa apply --index --whitespace=error ../cache.patch > diagnostics/apply-cache.log 2>&1
+          git -C mesa diff --cached --check > diagnostics/diff-check.log
+          for test in a840_adaptive_host a840_aggressive_host a840_mesa27_cache_host; do
+            "${native[@]}" "host-tests/$test.cpp" -o "$RUNNER_TEMP/$test" > "diagnostics/$test.log" 2>&1
+            "$RUNNER_TEMP/$test" >> "diagnostics/$test.log" 2>&1
+          done
+          "${native[@]}" -DNF_H30 host-tests/a840_mesa27_cache_ab.cpp -o "$RUNNER_TEMP/h30-replay" >> diagnostics/replay-build.log 2>&1
+          "$RUNNER_TEMP/h30-replay" off > diagnostics/cache-off.txt
+          "$RUNNER_TEMP/h30-replay" on > diagnostics/cache-on.txt
+          cmp diagnostics/control.txt diagnostics/cache-off.txt
+          grep -Eq ' restore=[1-9][0-9]* ' diagnostics/cache-on.txt
+          for mode in control cache-off cache-on; do echo "$mode $(cat diagnostics/$mode.txt)" >> "$GITHUB_STEP_SUMMARY"; done
+      - name: Original r29 cross-build settings plus Vulkan beta and SDK 36
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$BIN/aarch64-linux-android34-clang++"
+          mkdir -p /tmp/neuro-empty-pkgconfig
+          cat > android-aarch64-neuro.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/neuro-empty-pkgconfig', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+          meson setup mesa/build-android mesa --cross-file "$GITHUB_WORKSPACE/android-aarch64-neuro.ini" -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true > diagnostics/meson.log 2>&1
+          ninja -C mesa/build-android -j 4 -k 0 src/freedreno/vulkan/libvulkan_freedreno.so > diagnostics/compile.log 2>&1
+      - name: Verify ARM64 HAL, H3.0 cache and driver ZIP
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          bin="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p dist
+          so=dist/libvulkan_freedreno.so
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so "$so"
+          "$bin/llvm-strip" --strip-unneeded "$so"
+          "$bin/llvm-readelf" -h "$so" > diagnostics/elf.txt
+          grep -Eq 'Machine: +AArch64' diagnostics/elf.txt
+          "$bin/llvm-readelf" --dyn-syms "$so" > diagnostics/symbols.txt
+          grep -Eq 'GLOBAL +DEFAULT +[0-9]+ +HMI$' diagnostics/symbols.txt
+          strings "$so" > "$RUNNER_TEMP/h29-strings"
+          for token in TU_FRANE_A840_ADAPTIVE TU_FRANE_A840_AGGRESSIVE TU_FRANE_A840_TEX_DYNAMIC TU_FRANE_TEX_DYNAMIC TU_FRANE_S1_NEURO_LIVING TU_FRANE_S1_NEURO_CACHE TU_FRANE_GPU_MEM TU_FRANE_A840_DECISION_CACHE A840_H30; do
+            grep -Fq "$token" "$RUNNER_TEMP/h29-strings"
+          done
+          python3 - <<'PYMETA'
+          import json, os
+          from pathlib import Path
+          meta = dict(schemaVersion=1, name="DRNAS A840 NeuroFlow H3.0 Decision Cache · Mesa 27",
+                      description="Experimental bounded RAM decision cache on the verified Mesa 27 H2.9 port for A840.",
+                      author="Frane12", packageVersion="h30-cache-mesa27-" + os.environ["GITHUB_RUN_ID"],
+                      vendor="Mesa", driverVersion="27.0.0-devel", minApi=34, libraryName="libvulkan_freedreno.so")
+          Path("dist/meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+          PYMETA
+          printf 'Mesa %s\nPrivate sources %s\nH2.9 SHA256 %s\nH3 delta SHA256 %s\n' "$MESA_SHA" "$PORT_SHA" "$PATCH_SHA256" "$DELTA_SHA256" > dist/PROVENANCE.txt
+          (cd dist && sha256sum libvulkan_freedreno.so > SHA256SUMS.txt && zip -q -9 ../DRNAS-A840-MESA27-H30-DECISION-CACHE.zip libvulkan_freedreno.so meta.json PROVENANCE.txt SHA256SUMS.txt)
+          unzip -t DRNAS-A840-MESA27-H30-DECISION-CACHE.zip
+      - name: Deliver the private H3.0 test driver
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo=Frane12/Turnip-Neuro-Private
+          test "$(gh api "repos/$repo" --jq .private)" = true
+          gh release create "a840-mesa27-h30-cache-$GITHUB_RUN_ID" DRNAS-A840-MESA27-H30-DECISION-CACHE.zip \
+            --repo "$repo" --target "$PORT_SHA" --draft --prerelease --title "A840 H3.0 Decision Cache · Mesa 27 · $GITHUB_RUN_ID" \
+            --notes "Based on hardware-tested H2.9 run 41194454244. Cache defaults ON. Set TU_FRANE_A840_DECISION_CACHE=0 for an in-binary control. Mesa $MESA_SHA. Sources $PORT_SHA. H3 device validation pending."
+      - name: Record private compiler diagnostics on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo=Frane12/Turnip-Neuro-Private
+          test "$(gh api "repos/$repo" --jq .private)" = true
+          mkdir -p diagnostics
+          printf '%s\n' "$MESA_SHA" "$PORT_SHA" > diagnostics/revisions.txt
+          zip -qr "$RUNNER_TEMP/diagnostics.zip" diagnostics
+          gh release create "a840-mesa27-h30-cache-diag-$GITHUB_RUN_ID" "$RUNNER_TEMP/diagnostics.zip" --repo "$repo" --draft --prerelease --title "H3.0 cache private diagnostics $GITHUB_RUN_ID" --notes "Private build logs."
+          { grep -Eh 'error:|fatal:|FAILED:|ERROR:|undefined (reference|symbol)' diagnostics/*.log || true; } | cut -c1-900 | tail -200 > diagnostics/errors.txt
+          if test -s diagnostics/errors.txt; then
+            jq -Rs '{content: ., encoding:"utf-8"}' diagnostics/errors.txt | gh api -X POST "repos/$repo/git/blobs" --input - --jq .sha
+          fi
