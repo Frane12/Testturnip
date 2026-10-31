@@ -1,0 +1,124 @@
+name: DRNAS A840 H3.0 NeuroFlow observer stage1
+on:
+  push:
+    branches:
+      - experiment/a840-h30-neuroflow-stage1-20261031
+    paths:
+      - '.github/workflows/drnas-a840-h30-neuroflow-stage1.yml'
+      - 'include/nf_a840_temporal.h'
+      - 'include/nf_a840_optional_work.h'
+      - 'drivers/tu_nf_a840_observer_bridge.c'
+      - 'tests/test_nf_a840_temporal.c'
+      - 'tests/test_nf_a840_optional_work.c'
+  workflow_dispatch:
+    inputs:
+      mesa_ref:
+        description: Full 40-character reviewed Mesa commit SHA
+        required: true
+        default: 1c3a936490f9f0951188218e136cd03bca497386
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        gpu: [A840]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-venv python3-mako python3-yaml python3-packaging python3-ply bison flex glslang-tools spirv-tools libexpat1-dev zip
+          python3 -m venv /tmp/mesa-venv
+          /tmp/mesa-venv/bin/pip install 'meson>=1.4' mako pyyaml packaging ply
+          echo /tmp/mesa-venv/bin >> "$GITHUB_PATH"
+      - name: Checkout immutable Mesa upstream
+        env:
+          MESA_REF: ${{ inputs.mesa_ref || '1c3a936490f9f0951188218e136cd03bca497386' }}
+        run: |
+          set -euo pipefail
+          [[ "$MESA_REF" =~ ^[a-fA-F0-9]{40}$ ]] || exit 1
+          git clone --filter=blob:none https://gitlab.freedesktop.org/mesa/mesa.git mesa
+          git -C mesa checkout --detach "$MESA_REF"
+          test "$(git -C mesa rev-parse HEAD)" = "${MESA_REF,,}"
+          git -C mesa rev-parse HEAD > mesa-commit.txt
+      - name: Test preserved NeuroFlow CPU observer reference
+        run: |
+          set -euo pipefail
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Iinclude tests/test_nf_a840_temporal.c -o /tmp/nf-a840-temporal
+          /tmp/nf-a840-temporal
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Iinclude tests/test_nf_a840_optional_work.c -o /tmp/nf-a840-optional
+          /tmp/nf-a840-optional
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Iinclude -c drivers/tu_nf_a840_observer_bridge.c -o /tmp/tu_nf_a840_observer_bridge.o
+      - name: Stage observer-only reference module into pinned Mesa
+        run: |
+          set -euo pipefail
+          cp include/nf_a840_temporal.h include/nf_a840_optional_work.h mesa/src/freedreno/vulkan/
+          cp drivers/tu_nf_a840_observer_bridge.c mesa/src/freedreno/vulkan/
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path("mesa/src/freedreno/vulkan/meson.build")
+          src=p.read_text()
+          anchor="  'tu_autotune.cc',"
+          assert src.count(anchor)==1, "Mesa upstream source list changed: STOP, do not patch blindly"
+          src=src.replace(anchor,anchor+"\n  'tu_nf_a840_observer_bridge.c',",1)
+          p.write_text(src)
+          assert src.count("'tu_nf_a840_observer_bridge.c'")==1
+          PY
+      - name: Android cross toolchain
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_NDK_LATEST_HOME"
+          test -d "$NDK"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p /tmp/mesa-empty-pc
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = '$BIN/aarch64-linux-android34-clang++'
+          ar = '$BIN/llvm-ar'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/mesa-empty-pc', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+      - name: Build KGSL Turnip
+        run: |
+          meson setup mesa/build-android-aarch64 mesa --cross-file "$GITHUB_WORKSPACE/android-aarch64.ini" -Dbuildtype=release -Dplatforms=android -Dplatform-sdk-version=34 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl
+          meson compile -C mesa/build-android-aarch64 -j 4
+      - name: Verify linked observer symbols in Android ARM64 driver
+        run: |
+          set -euo pipefail
+          so=mesa/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so
+          file "$so"
+          readelf -Ws "$so" | grep -F 'tu_nf_a840_observer_abi_version'
+          readelf -Ws "$so" | grep -F 'tu_nf_a840_observer_selftest'
+
+      - name: Package for independent device tests
+        env:
+          GPU: ${{ matrix.gpu }}
+        run: |
+          set -euo pipefail
+          mkdir -p package
+          cp mesa/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so package/
+          python3 - <<'PY'
+          import json,os
+          gpu=os.environ['GPU']
+          with open('package/meta.json','w') as f:
+              json.dump({'schemaVersion':1,'name':f'DRNAS {gpu} H3.0 NeuroFlow observer stage1','description':'Mesa 27 KGSL with linked NeuroFlow CPU observer; no H2.9 render patch or live autotune; compare TU_DEBUG=sysmem','author':'Frane12','packageVersion':'1','vendor':'Mesa','minApi':34,'libraryName':'libvulkan_freedreno.so'},f,indent=2)
+          PY
+          cp mesa-commit.txt package/
+          (cd package && sha256sum libvulkan_freedreno.so > SHA256SUMS.txt && zip -9 "../DRNAS-$GPU-H30-neuroflow-observer-stage1.zip" libvulkan_freedreno.so meta.json mesa-commit.txt SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DRNAS-${{ matrix.gpu }}-H30-neuroflow-observer-stage1
+          path: DRNAS-${{ matrix.gpu }}-H30-neuroflow-observer-stage1.zip
+          if-no-files-found: error
+          retention-days: 7
