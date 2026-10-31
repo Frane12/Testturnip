@@ -35,7 +35,25 @@ jobs:
           gh release download a840-h29-private-build-39026174945 --repo Frane12/Turnip-Neuro-Private --pattern 'A840-Neuro-Flow-H2-9-Aggressive-integrated.patch' --dir .
           test -s A840-Neuro-Flow-H2-9-Aggressive-integrated.patch
           sha256sum A840-Neuro-Flow-H2-9-Aggressive-integrated.patch > diagnostics/patch-sha256.txt
-          echo 'Original H2.9 FULL source patch retrieved privately (not generated from incomplete Mesa27 controller port).' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('A840-Neuro-Flow-H2-9-Aggressive-integrated.patch')
+          s=p.read_text()
+          old='src/freedreno/ir3/ir3_disk_cache.c'
+          new='src/freedreno/ir3/ir3_disk_cache.cpp'
+          headers={
+              'diff --git a/'+old+' b/'+old:'diff --git a/'+new+' b/'+new,
+              '--- a/'+old:'--- a/'+new,
+              '+++ b/'+old:'+++ b/'+new,
+          }
+          for before,after in headers.items():
+              assert s.count(before)==1, 'Cannot safely translate cache path: '+before
+              s=s.replace(before,after,1)
+          out=Path('A840-H29-MESA27-CXX-REPATH.patch')
+          out.write_text(s)
+          print('Translated ir3_disk_cache.c -> .cpp patch path, contents preserved')
+          PY
+          echo 'Original H2.9 FULL patch fetched privately and Mesa27 cache translation prepared.' >> "$GITHUB_STEP_SUMMARY"
       - name: Fetch exact Mesa 27 and ORIGINAL Mesa 26.3 base blob history
         run: |
           set -euo pipefail
@@ -50,7 +68,7 @@ jobs:
         run: |
           set +e
           set -uo pipefail
-          git -C mesa apply --3way --index ../A840-Neuro-Flow-H2-9-Aggressive-integrated.patch > diagnostics/apply.log 2>&1
+          git -C mesa apply --3way --index ../A840-H29-MESA27-CXX-REPATH.patch > diagnostics/apply.log 2>&1
           rc=$?
           git -C mesa status --short > diagnostics/git-status.txt
           git -C mesa diff --name-only --diff-filter=U > diagnostics/conflicting-paths.txt
@@ -137,4 +155,5 @@ jobs:
           mkdir -p diagnostics
           echo "run=${{ github.run_id }}" > diagnostics/attempt.txt
           echo "mesa27=1c3a936490f9f0951188218e136cd03bca497386" >> diagnostics/attempt.txt
-          gh release create "a840-mesa27-full-h29-diag-${{ github.run_id }}" diagnostics/* --repo Frane12/Turnip-Neuro-Private --draft --prerelease --title "Mesa27 FULL H2.9 private port diagnostics ${{ github.run_id }}" --notes "PRIVATE migration diagnostics. Failed preflight or compilation; no driver is published."
+          zip -q -r "H29-MESA27-port-diagnostics-${{ github.run_id }}.zip" diagnostics
+          gh release create "a840-mesa27-full-h29-diag-${{ github.run_id }}" "H29-MESA27-port-diagnostics-${{ github.run_id }}.zip" --repo Frane12/Turnip-Neuro-Private --draft --prerelease --title "Mesa27 FULL H2.9 private port diagnostics ${{ github.run_id }}" --notes "PRIVATE migration diagnostics. Failed preflight or compilation; no driver is published."
