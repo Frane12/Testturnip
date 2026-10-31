@@ -1,0 +1,205 @@
+name: DRNAS A840 Gen8 stable-base + private H2.9 policy A/B
+on:
+  push:
+    branches: [experiment/a840-public-ci-1031]
+    paths: ['.github/workflows/drnas-a840-h29-gen8-render-ab.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/experiment/a840-public-ci-1031'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check private read-write token
+        env:
+          PRIVATE_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          if test -z "$PRIVATE_TOKEN"; then
+            echo "::error::Set Testturnip Actions secret DRNAS_NEURO_PRIVATE_TOKEN with Contents read/write on ONLY Turnip-Neuro-Private"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Checkout immutable PRIVATE source without publishing
+        uses: actions/checkout@v4
+        with:
+          repository: Frane12/Turnip-Neuro-Private
+          ref: f1536cb39855cd904fab85387bdbb8bb13ce09e3
+          token: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+          persist-credentials: false
+          path: private-src
+      - name: Verify H2.9 source provenance
+        run: |
+          set -euo pipefail
+          test "$(git -C private-src rev-parse HEAD)" = f1536cb39855cd904fab85387bdbb8bb13ce09e3
+          test -s private-src/patches/frane_a840_adaptive.h
+          test -s private-src/patches/port_a840_h29_mesa27.py
+          test -s private-src/tests/a840_aggressive_host.cpp
+          echo "DRNAS_A840_H29_PRIVATE_SOURCE_PINNED"
+      - name: Mesa27 Android build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y git ninja-build pkg-config python3-venv python3-mako python3-yaml python3-packaging python3-ply bison flex glslang-tools spirv-tools libexpat1-dev zip file binutils g++
+          python3 -m venv /tmp/mesa-venv
+          /tmp/mesa-venv/bin/pip install 'meson>=1.4' mako pyyaml packaging ply
+          echo /tmp/mesa-venv/bin >> "$GITHUB_PATH"
+      - name: Checkout exact A840-compatible Gen8 fork baseline
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/whitebelyash/mesa-unified.git mesa
+          git -C mesa checkout --detach 9c7e022677dfa3abb356c2b6732cbd2e25783d01
+          test "$(git -C mesa rev-parse HEAD)" = 9c7e022677dfa3abb356c2b6732cbd2e25783d01
+      - name: Test original H2.9 policy + public NeuroFlow Stage1 observer
+        run: |
+          set -euo pipefail
+          if ! (g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Iprivate-src/patches private-src/tests/a840_aggressive_host.cpp -o /tmp/h29-host && UBSAN_OPTIONS=halt_on_error=1 /tmp/h29-host) >"$RUNNER_TEMP/h29-host.log" 2>&1; then
+            echo "::error::H2.9 host test failed. Detailed log is private."
+            exit 1
+          fi
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Iinclude tests/test_nf_a840_temporal.c -o /tmp/h30-temporal
+          /tmp/h30-temporal
+          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Iinclude tests/test_nf_a840_optional_work.c -o /tmp/h30-optional
+          /tmp/h30-optional
+          cc -std=c11 -O2 -Wall -Wextra -Wmissing-prototypes -Wstrict-prototypes -Werror -pedantic -Iinclude -c drivers/tu_nf_a840_observer_bridge.c -o /tmp/h30-observer.o
+          echo "DRNAS_PRIVATE_H29_HOST_TESTS_PASSED"
+      - name: Verify Gen8 A840 hardware profile and adapt legacy autotune flags syntax
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          d=Path('mesa/src/freedreno/common/freedreno_devices.py').read_text()
+          k='GPUId(chip_id=0xffff44050A31, name="Adreno (TM) 840")'
+          assert d.count(k)==1, 'A840 hardware profile missing'
+          block=d[d.index(k):d.index('    ))',d.index(k))]
+          assert 'num_ccu = 6' in block and 'num_slices = 3' in block
+          assert 'cs_shared_mem_size = 64 * 1024' in block, 'Not selected Gen8 profile'
+          p=Path('mesa/src/freedreno/vulkan/tu_autotune.cc')
+          s=p.read_text()
+          a='return metric_flags & (uint32_t) f;'
+          assert s.count(a)==1, 'Legacy Mesa autotune API drift: abort instead of guessing'
+          p.write_text(s.replace(a,'return metric_flags & static_cast<uint32_t>(f);',1))
+          print('GEN8_A840_PROFILE_PINNED_6CCU_3SLICE_64K')
+          PY
+      - name: Add genuine H2.9 GMEM controller to known-working Gen8 shader base
+        run: |
+          set -euo pipefail
+          mkdir -p patches
+          cp private-src/patches/frane_a840_adaptive.h patches/
+          if ! python3 private-src/patches/port_a840_h29_mesa27.py >"$RUNNER_TEMP/h29-port.log" 2>&1; then
+            echo "::error::Gen8 H2.9 patch compatibility failure. Private diagnostics only."
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('mesa/src/freedreno/vulkan/tu_autotune.cc')
+          s=p.read_text()
+          flag='debug_get_bool_option("TU_FRANE_A840_ADAPTIVE", true)'
+          assert s.count(flag)==1, 'H2.9 opt-in anchor drift'
+          s=s.replace(flag,'debug_get_bool_option("TU_FRANE_A840_ADAPTIVE", false)')
+          incl='#include "frane_a840_adaptive.h"\n'
+          assert s.count(incl)==1, 'Mesa27 H2.9 include anchor drift'
+          s=s.replace(incl,incl+'#include "util/u_debug.h"\n',1)
+          assert "A840_H29_MESA27" in s and "0xffff44050A31" in s
+          p.write_text(s)
+          PY
+          git -C mesa diff --check
+          echo "DRNAS_H29_MESA27_ACTIVE_POLICY_OPT_IN_STAGED"
+      - name: Retain linked Stage1 observer in Vulkan library
+        run: |
+          set -euo pipefail
+          cp include/nf_a840_temporal.h include/nf_a840_optional_work.h mesa/src/freedreno/vulkan/
+          cp drivers/tu_nf_a840_observer_bridge.c mesa/src/freedreno/vulkan/
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('mesa/src/freedreno/vulkan/meson.build')
+          s=p.read_text(); a="  'tu_autotune.cc',"
+          assert s.count(a)==1
+          p.write_text(s.replace(a,a+"\n  'tu_nf_a840_observer_bridge.c',",1))
+          PY
+      - name: Android ARM64 cross-file
+        run: |
+          set -euo pipefail
+          BIN="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$BIN/aarch64-linux-android34-clang++"
+          mkdir -p /tmp/empty-pc
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = '$BIN/aarch64-linux-android34-clang++'
+          ar = '$BIN/llvm-ar'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/empty-pc', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+      - name: Compile A840 KGSL Gen8 with H2.9 policy
+        run: |
+          set -euo pipefail
+          if ! (meson setup mesa/build-android-aarch64 mesa --cross-file "$GITHUB_WORKSPACE/android-aarch64.ini" -Dbuildtype=release -Dplatforms=android -Dplatform-sdk-version=34 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl && meson compile -C mesa/build-android-aarch64 -j 4) >"$RUNNER_TEMP/h29-build.log" 2>&1; then
+            echo "::error::A840 Gen8 build failed; private diagnostic draft will contain compiler log."
+            exit 1
+          fi
+      - name: Verify A840 H2.9 active policy + Stage1 ELF
+        run: |
+          set -euo pipefail
+          so=mesa/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so
+          file "$so" | grep -F 'ARM aarch64'
+          strings "$so" | grep -Fq 'TU_FRANE_A840_ADAPTIVE'
+          strings "$so" | grep -Fq 'TU_FRANE_A840_AGGRESSIVE'
+          strings "$so" | grep -Fq 'A840_H29_MESA27'
+          readelf -Ws "$so" | grep -F 'tu_nf_a840_observer_abi_version'
+          readelf -Ws "$so" | grep -F 'tu_nf_a840_observer_selftest'
+      - name: Package ARM64 ZIP (PRIVATE only)
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp mesa/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so dist/
+          python3 - <<'PY'
+          import json
+          m={'schemaVersion':1,'name':'DRNAS A840 Gen8 (64K) + H2.9 GMEM + Observer PRIVATE TEST',
+             'description':'A840 H2.9 CPU GMEM/SYSMEM policy opt-in with TU_FRANE_A840_ADAPTIVE=1; Stage1 linked. No legacy H2.7 TEX dual shader port or NPU. Device unverified.',
+             'author':'Frane12','packageVersion':'a840-gen8-h29-isolation-20261031',
+             'vendor':'Mesa','minApi':34,'libraryName':'libvulkan_freedreno.so'}
+          json.dump(m,open('dist/meta.json','w'),indent=2)
+          PY
+          cp private-src/README_A840_H29.md dist/ORIGINAL-H29-README.md
+          printf 'mesa=9c7e022677dfa3abb356c2b6732cbd2e25783d01\nh29=f1536cb39855cd904fab85387bdbb8bb13ce09e3\n' > dist/PROVENANCE.txt
+          (cd dist && sha256sum libvulkan_freedreno.so > SHA256SUMS.txt && zip -9 -q ../DRNAS-A840-GEN8-H29-POLICY-PRIVATE.zip libvulkan_freedreno.so meta.json SHA256SUMS.txt PROVENANCE.txt)
+          unzip -t DRNAS-A840-GEN8-H29-POLICY-PRIVATE.zip
+      - name: Save test ZIP in PRIVATE draft release, not PUBLIC artifact
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="a840-gen8-h29-ci-$GITHUB_RUN_ID"
+          gh release create "$tag" DRNAS-A840-GEN8-H29-POLICY-PRIVATE.zip \
+            --repo Frane12/Turnip-Neuro-Private --target f1536cb39855cd904fab85387bdbb8bb13ce09e3 \
+            --draft --prerelease --title "A840 Gen8 H2.9 policy A/B private test $GITHUB_RUN_ID" \
+            --notes "Built in public runner from pinned PRIVATE source; no public artifact. H2.9 GMEM policy defaults OFF; enable TU_FRANE_A840_ADAPTIVE=1. No TEX/IR3 migration or NPU, render correctness unverified."
+          test "$(gh release view "$tag" --repo Frane12/Turnip-Neuro-Private --json isDraft --jq .isDraft)" = true
+          echo "PRIVATE draft release: $tag" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload private diagnostic log if build failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN" || exit 0
+          mkdir -p "$RUNNER_TEMP/h29-private-diagnostics"
+          for f in h29-host.log h29-port.log h29-build.log; do
+            test ! -s "$RUNNER_TEMP/$f" || cp "$RUNNER_TEMP/$f" "$RUNNER_TEMP/h29-private-diagnostics/$f"
+          done
+          test -n "$(ls -A "$RUNNER_TEMP/h29-private-diagnostics")" || exit 0
+          tag="a840-gen8-h29-diag-$GITHUB_RUN_ID"
+          gh release create "$tag" "$RUNNER_TEMP/h29-private-diagnostics/"* \
+            --repo Frane12/Turnip-Neuro-Private --target f1536cb39855cd904fab85387bdbb8bb13ce09e3 \
+            --draft --prerelease --title "A840 Gen8 H2.9 private compiler diagnostics $GITHUB_RUN_ID" \
+            --notes "Private compiler and migration logs; source remains uncommitted to public repository."
+          echo "PRIVATE diagnostic draft: $tag" >> "$GITHUB_STEP_SUMMARY"
