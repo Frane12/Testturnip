@@ -8,8 +8,8 @@ permissions:
   contents: read
 env:
   MESA_SHA: fd8ef2befafd01190e33f12dbfd109b924c8ebc3
-  PORT_SHA: 7fa7eb30d2575294051e8b6191a66c913ea24413
-  PATCH_SHA256: 60e2750cc0e060584b2b6992522b063a8b1e52f328b07122cd15d31971223300
+  PORT_SHA: 7f1fcfcfdde4bb993a752a8965cac8bf1d5a57e9
+  PATCH_SHA256: a8d43fe8ca4129e689293e9a0b7d6867d201089080ee969a7701a435bf8c0d31
 jobs:
   full_port:
     if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/experiment/a840-mesa27-h29-full-port-ci-20261031'
@@ -41,6 +41,10 @@ jobs:
           gh api -H 'Accept: application/vnd.github.raw+json' \
             "repos/$repo/contents/patches/mesa27/A840-H29-full.patch?ref=$PORT_SHA" > port.patch
           echo "$PATCH_SHA256  port.patch" | sha256sum -c -
+          mkdir -p host-tests
+          for src in a840_mesa27_id.c a840_adaptive_host.cpp a840_aggressive_host.cpp; do
+            gh api -H 'Accept: application/vnd.github.raw+json' "repos/$repo/contents/tests/$src?ref=$PORT_SHA" > "host-tests/$src"
+          done
           gh release download a840-h29-private-build-39026174945 --repo "$repo" --pattern '*-integrated.patch' --output original.patch
           echo 'e7507471f95802079bdb51d8d284b84805e8a559dab2d8cb83db223a43a6d8b8  original.patch' | sha256sum -c -
       - name: Apply the port and compare coverage against the historical release
@@ -55,8 +59,15 @@ jobs:
           git -C mesa diff --cached --check > diagnostics/diff-check.log
           git apply --numstat original.patch | cut -f3- | sed 's|/ir3_disk_cache.c$|/ir3_disk_cache.cpp|' | LC_ALL=C sort > original.paths
           git -C mesa diff --cached --name-only | LC_ALL=C sort > port.paths
-          diff -u original.paths port.paths
-          test "$(wc -l < port.paths)" -eq 69
+          { cat original.paths; echo src/freedreno/common/frane_a840_id.h; } | LC_ALL=C sort > expected.paths
+          diff -u expected.paths port.paths
+          test "$(wc -l < original.paths)" -eq 69
+          cc -std=c11 -Wall -Wextra -Werror -Imesa/src/freedreno/common host-tests/a840_mesa27_id.c -o "$RUNNER_TEMP/h29-id"
+          "$RUNNER_TEMP/h29-id"
+          for test in a840_adaptive_host a840_aggressive_host; do
+            g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Imesa/src/freedreno/vulkan "host-tests/$test.cpp" -o "$RUNNER_TEMP/$test" > "diagnostics/$test.log" 2>&1
+            UBSAN_OPTIONS=halt_on_error=1 "$RUNNER_TEMP/$test" >> "diagnostics/$test.log" 2>&1
+          done
           echo "Applied all 69 paths from H2.9 on $MESA_SHA." >> "$GITHUB_STEP_SUMMARY"
       - name: Original r29 cross-build settings plus Vulkan beta and SDK 36
         env:
