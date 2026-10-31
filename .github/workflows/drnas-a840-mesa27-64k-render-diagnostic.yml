@@ -53,7 +53,7 @@ jobs:
           git clone --filter=blob:none https://gitlab.freedesktop.org/mesa/mesa.git mesa
           git -C mesa checkout --detach 1c3a936490f9f0951188218e136cd03bca497386
           test "$(git -C mesa rev-parse HEAD)" = 1c3a936490f9f0951188218e136cd03bca497386
-      - name: Isolate A840 only: Gen8 64KiB shared memory on Mesa27
+      - name: Isolate A840 Gen8 64KiB shared memory on Mesa27
         run: |
           set -euo pipefail
           python3 - <<'PY'
