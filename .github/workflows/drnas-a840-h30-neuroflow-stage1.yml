@@ -7,6 +7,8 @@ on:
       - '.github/workflows/drnas-a840-h30-neuroflow-stage1.yml'
       - 'include/nf_a840_temporal.h'
       - 'include/nf_a840_optional_work.h'
+      - 'include/nf_a840_spsc_mailbox.h'
+      - 'include/nf_a840_npu_port.h'
       - 'drivers/tu_nf_a840_observer_bridge.c'
       - 'tests/test_nf_a840_temporal.c'
       - 'tests/test_nf_a840_optional_work.c'
