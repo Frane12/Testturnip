@@ -48,6 +48,7 @@ jobs:
           git -C mesa rev-parse HEAD > diagnostics/mesa-head.txt
       - name: Three-way replay of ALL legacy H2.9 changes (never force conflict resolutions)
         run: |
+          set +e
           set -uo pipefail
           git -C mesa apply --3way --index ../A840-Neuro-Flow-H2-9-Aggressive-integrated.patch > diagnostics/apply.log 2>&1
           rc=$?
@@ -58,6 +59,12 @@ jobs:
           echo "Conflicting files: $(wc -l < diagnostics/conflicting-paths.txt)" >> "$GITHUB_STEP_SUMMARY"
           echo "Auto-merged paths: $(wc -l < diagnostics/staged-paths.txt)" >> "$GITHUB_STEP_SUMMARY"
           if [ "$rc" -ne 0 ]; then
+            echo "----- H2.9 Three-way merge result (filenames, no source contents) -----"
+            grep -E '^(Applied|error:|Performing|Falling back|Using|U |\* |\s*Patch|\s*Checking|Conflicts|Failed|warning:)' diagnostics/apply.log | head -100 || true
+            echo "----- Unmerged paths -----"
+            cat diagnostics/conflicting-paths.txt
+            echo "----- Other changed paths -----"
+            head -100 diagnostics/git-status.txt
             echo "::error::Mesa27 full H2.9 source has API/merge conflicts; review PRIVATE diagnostics; no broken driver will be published."
             exit 2
           fi
