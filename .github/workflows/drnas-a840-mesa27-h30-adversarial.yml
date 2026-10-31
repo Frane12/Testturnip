@@ -1,0 +1,87 @@
+name: DRNAS A840 H3.0 adversarial cache validation
+on:
+  push:
+    branches: [experiment/a840-mesa27-h30-adversarial-ci-20261031]
+    paths: ['.github/workflows/drnas-a840-mesa27-h30-adversarial.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  MESA_SHA: fd8ef2befafd01190e33f12dbfd109b924c8ebc3
+  PORT_SHA: 8404ff07d832743b5a164f5dba5f10a906b984e8
+  H30_DELTA_SHA256: 5feb039983e92eb7cf9439e215f880e87d08650b1a33810b2bc451ce40b9db3c
+  H29_PATCH_SHA256: a8d43fe8ca4129e689293e9a0b7d6867d201089080ee969a7701a435bf8c0d31
+  TEST_SHA: 6016234001617a1b2c508e2ac076e3b35f9be38f
+jobs:
+  adversarial:
+    if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/experiment/a840-mesa27-h30-adversarial-ci-20261031'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch pinned private patches and adverse-history test
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo=Frane12/Turnip-Neuro-Private
+          test "$(gh api "repos/$repo" --jq .private)" = true
+          gh api -H 'Accept: application/vnd.github.raw+json' "repos/$repo/contents/patches/mesa27/A840-H29-full.patch?ref=$PORT_SHA" > h29.patch
+          echo "$H29_PATCH_SHA256  h29.patch" | sha256sum -c -
+          gh api -H 'Accept: application/vnd.github.raw+json' "repos/$repo/contents/patches/mesa27/A840-H30-DecisionCache.patch?ref=$PORT_SHA" > h30.patch
+          echo "$H30_DELTA_SHA256  h30.patch" | sha256sum -c -
+          gh api -H 'Accept: application/vnd.github.raw+json' "repos/$repo/contents/tests/a840_mesa27_h30_adversarial.cpp?ref=$TEST_SHA" > adversarial.cpp
+          test -s adversarial.cpp
+      - name: Reconstruct and test verified Mesa 27 H2.9 control
+        run: |
+          set -euo pipefail
+          git init -q mesa
+          git -C mesa fetch --quiet --depth 1 https://github.com/chaotic-cx/mesa-mirror.git "$MESA_SHA"
+          git -C mesa checkout -q --detach FETCH_HEAD
+          test "$(git -C mesa rev-parse HEAD)" = "$MESA_SHA"
+          test "$(cat mesa/VERSION)" = 27.0.0-devel
+          git -C mesa apply --index --whitespace=error ../h29.patch
+          mkdir -p diagnostics
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Imesa/src/freedreno/vulkan adversarial.cpp -o "$RUNNER_TEMP/h29"
+          for seed in $(seq 1 12); do
+            UBSAN_OPTIONS=halt_on_error=1 "$RUNNER_TEMP/h29" "$seed" > "diagnostics/h29-$seed.txt"
+          done
+      - name: Apply H3.0 and run same-history cache OFF versus H2.9
+        run: |
+          set -euo pipefail
+          git -C mesa apply --index --whitespace=error ../h30.patch
+          git -C mesa diff --cached --check
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -DNF_H30 -Imesa/src/freedreno/vulkan adversarial.cpp -o "$RUNNER_TEMP/h30"
+          for seed in $(seq 1 12); do
+            UBSAN_OPTIONS=halt_on_error=1 "$RUNNER_TEMP/h30" "$seed" off > "diagnostics/h30-off-$seed.txt"
+            cmp "diagnostics/h29-$seed.txt" "diagnostics/h30-off-$seed.txt"
+          done
+      - name: Exercise cache ON, verify key isolation, age, use limits and pressure
+        run: |
+          set -euo pipefail
+          for seed in $(seq 1 12); do
+            UBSAN_OPTIONS=halt_on_error=1 "$RUNNER_TEMP/h30" "$seed" on > "diagnostics/h30-on-$seed.txt" 2>> diagnostics/properties.log
+          done
+          grep -q 'properties=PASS' diagnostics/properties.log
+          python3 - <<'PY'
+          import pathlib,re,os
+          p=pathlib.Path('diagnostics')
+          def metric(mode, key):
+              return sum(int(re.search(r'\b'+key+r'=(\d+)', f.read_text()).group(1))
+                         for f in sorted(p.glob(f'{mode}-*.txt')))
+          passes=metric('h29','passes')
+          before=metric('h29','measure')
+          off=metric('h30-off','measure')
+          after=metric('h30-on','measure')
+          restores=metric('h30-on','restore')
+          assert passes==240000, passes
+          assert before==off, (before,off)
+          print(f'12 identical randomized histories; passes={passes}, H29_measures={before}, H30_off_measures={off}, H30_on_measures={after}, cache_restores={restores}')
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as fp:
+              fp.write(f'### A840 H3.0 adversarial controller replay\n')
+              fp.write(f'12 seeded histories, {passes} simulated passes; H2.9 and H3.0-cache-OFF bitwise-identical outputs.\n')
+              fp.write(f'Measure requests: H2.9={before}; H3.0 ON={after}; cache restore events={restores}.\n')
+              fp.write('All exact-key, pressure, expiration, usage-cap and toggle assertions passed. Synthetic policy test, not GPU FPS.\n')
+          PY
