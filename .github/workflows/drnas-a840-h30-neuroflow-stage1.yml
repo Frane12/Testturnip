@@ -55,7 +55,7 @@ jobs:
           /tmp/nf-a840-temporal
           cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Iinclude tests/test_nf_a840_optional_work.c -o /tmp/nf-a840-optional
           /tmp/nf-a840-optional
-          cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Iinclude -c drivers/tu_nf_a840_observer_bridge.c -o /tmp/tu_nf_a840_observer_bridge.o
+          cc -std=c11 -O2 -Wall -Wextra -Wmissing-prototypes -Wstrict-prototypes -Werror -pedantic -Iinclude -c drivers/tu_nf_a840_observer_bridge.c -o /tmp/tu_nf_a840_observer_bridge.o
       - name: Stage observer-only reference module into pinned Mesa
         run: |
           set -euo pipefail

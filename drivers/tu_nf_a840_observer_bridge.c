@@ -14,6 +14,10 @@
 #define NF_KEEP __attribute__((visibility("default"), used))
 #endif
 
+/* Public ABI declarations required by Mesa's -Wmissing-prototypes build. */
+uint32_t tu_nf_a840_observer_abi_version(void);
+int tu_nf_a840_observer_selftest(void);
+
 NF_KEEP uint32_t tu_nf_a840_observer_abi_version(void)
 {
    return UINT32_C(0xA8400301);
