@@ -1,0 +1,197 @@
+name: DRNAS A840 H3.1 crash isolation A and B
+on:
+  push:
+    branches: [experiment/a840-h31-isolation-ci-20261118]
+    paths: ['.github/workflows/drnas-a840-h31-isolation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: drnas-a840-h31-isolation
+  cancel-in-progress: false
+env:
+  MESA_SHA: fd8ef2befafd01190e33f12dbfd109b924c8ebc3
+  PORT_SHA: c4933faa919385d7e4e6bad494610b0fa74dd2ed
+  PATCH_SHA256: a8d43fe8ca4129e689293e9a0b7d6867d201089080ee969a7701a435bf8c0d31
+  DELTA_SHA256: 5feb039983e92eb7cf9439e215f880e87d08650b1a33810b2bc451ce40b9db3c
+jobs:
+  validate_and_build:
+    if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/experiment/a840-h31-isolation-ci-20261118'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - variant: A
+            sha256: dd91eca652ce6b7ee42dba85dbb6b18d70e85dfe6cb3093e34e9a2c53074887e
+          - variant: B
+            sha256: 521505863304e3b31858f25599365433dcb37e27a5b51b3fdd97668bde3c4c2d
+    env:
+      H31_SHA256: ${{ matrix.sha256 }}
+      VARIANT: ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-mako python3-yaml python3-ply python3-packaging bison flex glslang-tools spirv-tools libdrm-dev libelf-dev libexpat1-dev libzstd-dev zip file g++ xz-utils
+          python3 -m pip install --break-system-packages 'meson>=1.4' mako pyyaml packaging ply
+      - name: Android NDK r29
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+      - name: Fetch pinned private sources
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics private-source
+          repo=Frane12/Turnip-Neuro-Private
+          test "$(gh api "repos/$repo" --jq .private)" = true
+          for path in \
+            patches/mesa27/A840-H29-full.patch \
+            patches/mesa27/A840-H30-DecisionCache.patch \
+            patches/mesa27/A840-H31${VARIANT}-Isolation.patch \
+            tests/a840_adaptive_host.cpp tests/a840_aggressive_host.cpp \
+            tests/a840_mesa27_cache_host.cpp tests/a840_mesa27_h30_adversarial.cpp \
+            tests/a840_h31_context.cpp tests/a840_h31_math.cpp \
+            tests/math14_finite_relations.hpp tests/a840_policy_model.cpp \
+            tests/model_parameters.json tests/run_h31_validation.py \
+            tests/reference_h30/frane_a840_adaptive.h \
+            tests/reference_h30/frane_a840_decision_cache.h \
+            README_A840_MESA27_H31.md; do
+            mkdir -p "private-source/$(dirname "$path")"
+            gh api -H 'Accept: application/vnd.github.raw+json' \
+              "repos/$repo/contents/$path?ref=$PORT_SHA" > "private-source/$path"
+          done
+          echo "$PATCH_SHA256  private-source/patches/mesa27/A840-H29-full.patch" | sha256sum -c -
+          echo "$DELTA_SHA256  private-source/patches/mesa27/A840-H30-DecisionCache.patch" | sha256sum -c -
+          echo "$H31_SHA256  private-source/patches/mesa27/A840-H31${VARIANT}-Isolation.patch" | sha256sum -c -
+      - name: Apply H2.9, H3.0 and H3.1 in order
+        run: |
+          set -euo pipefail
+          git init -q mesa
+          git -C mesa fetch --quiet --depth 1 https://github.com/chaotic-cx/mesa-mirror.git "$MESA_SHA"
+          git -C mesa checkout -q --detach FETCH_HEAD
+          test "$(git -C mesa rev-parse HEAD)" = "$MESA_SHA"
+          test "$(cat mesa/VERSION)" = 27.0.0-devel
+          for patch in A840-H29-full.patch A840-H30-DecisionCache.patch A840-H31${VARIANT}-Isolation.patch; do
+            git -C mesa apply --index --whitespace=error "../private-source/patches/mesa27/$patch" > "diagnostics/$patch.log" 2>&1
+          done
+          git -C mesa diff --cached --check > diagnostics/diff-check.log
+      - name: Isolated controller regressions
+        run: |
+          set -euo pipefail
+          export UBSAN_OPTIONS=halt_on_error=1
+          mkdir -p diagnostics/validation
+          for test in a840_adaptive_host a840_aggressive_host a840_mesa27_cache_host a840_h31_context; do
+            g++ -std=c++17 -O2 -Wall -Wextra -Werror -pthread -fsanitize=undefined -Imesa/src/freedreno/vulkan "private-source/tests/$test.cpp" -o "$RUNNER_TEMP/$test" > "diagnostics/$test-build.log" 2>&1
+            if test "$VARIANT" = B && test "$test" = a840_h31_context; then
+              set +e
+              "$RUNNER_TEMP/$test" > "diagnostics/validation/$test.txt" 2>&1
+              status=$?
+              set -e
+              test "$status" -eq 1
+              grep -q 'context_checks=33 failures=33' "diagnostics/validation/$test.txt"
+            else
+              "$RUNNER_TEMP/$test" > "diagnostics/validation/$test.txt" 2>&1
+            fi
+          done
+          echo "Isolation $VARIANT host checks PASS. Hardware crash diagnosis requires device test." >> "$GITHUB_STEP_SUMMARY"
+      - name: Original r29 cross-build settings plus Vulkan beta and SDK 36
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          test -x "$BIN/aarch64-linux-android34-clang++"
+          mkdir -p /tmp/neuro-empty-pkgconfig
+          cat > android-aarch64-neuro.ini <<EOF
+          [binaries]
+          ar = '$BIN/llvm-ar'
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = ['$BIN/aarch64-linux-android34-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables']
+          c_ld = 'lld'
+          cpp_ld = 'lld'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/neuro-empty-pkgconfig', '/usr/bin/pkg-config']
+          [built-in options]
+          cpp_link_args = ['-static-libstdc++']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+          meson setup mesa/build-android mesa --cross-file "$GITHUB_WORKSPACE/android-aarch64-neuro.ini" -Dbuildtype=release -Dcpp_args=-Wno-c++11-narrowing -Dplatforms=android -Dplatform-sdk-version=36 -Dandroid-stub=true -Dandroid-libbacktrace=disabled -Degl=disabled -Dgallium-drivers= -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl -Dvulkan-beta=true > diagnostics/meson.log 2>&1
+          ninja -C mesa/build-android -j 4 -k 0 src/freedreno/vulkan/libvulkan_freedreno.so > diagnostics/compile.log 2>&1
+      - name: Verify ARM64 HAL, H3.1 cache and driver ZIP
+        env:
+          NDK: ${{ steps.ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          bin="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p dist
+          so=dist/libvulkan_freedreno.so
+          cp mesa/build-android/src/freedreno/vulkan/libvulkan_freedreno.so "$so"
+          "$bin/llvm-strip" --strip-unneeded "$so"
+          "$bin/llvm-readelf" -h "$so" > diagnostics/elf.txt
+          grep -Eq 'Machine: +AArch64' diagnostics/elf.txt
+          "$bin/llvm-readelf" --dyn-syms "$so" > diagnostics/symbols.txt
+          grep -Eq 'GLOBAL +DEFAULT +[0-9]+ +HMI$' diagnostics/symbols.txt
+          strings "$so" > "$RUNNER_TEMP/h29-strings"
+          for token in TU_FRANE_A840_ADAPTIVE TU_FRANE_A840_AGGRESSIVE TU_FRANE_A840_TEX_DYNAMIC TU_FRANE_TEX_DYNAMIC TU_FRANE_S1_NEURO_LIVING TU_FRANE_S1_NEURO_CACHE TU_FRANE_GPU_MEM TU_FRANE_A840_DECISION_CACHE A840_H31${VARIANT}; do
+            grep -Fq "$token" "$RUNNER_TEMP/h29-strings"
+          done
+          python3 - <<'PYMETA'
+          import json, os
+          from pathlib import Path
+          meta = dict(schemaVersion=1, name="DRNAS A840 H3.1 Isolation " + os.environ["VARIANT"] + " · Mesa 27",
+                      description="Crash isolation only: A=controller changes, B=upstream changes. Device validation pending.",
+                      author="Frane12", packageVersion="h31-isolation-" + os.environ["VARIANT"] + "-mesa27-" + os.environ["GITHUB_RUN_ID"],
+                      vendor="Mesa", driverVersion="27.0.0-devel", minApi=34, libraryName="libvulkan_freedreno.so")
+          Path("dist/meta.json").write_text(json.dumps(meta, indent=2) + "\n")
+          PYMETA
+          printf 'Mesa %s\nPrivate sources %s\nH2.9 SHA256 %s\nH3.0 delta SHA256 %s\n' "$MESA_SHA" "$PORT_SHA" "$PATCH_SHA256" "$DELTA_SHA256" > dist/PROVENANCE.txt
+          printf 'H3.1 delta SHA256 %s\n' "$H31_SHA256" >> dist/PROVENANCE.txt
+          (cd dist && sha256sum libvulkan_freedreno.so > SHA256SUMS.txt && zip -q -9 ../DRNAS-A840-H31${VARIANT}-ISOLATION.zip libvulkan_freedreno.so meta.json PROVENANCE.txt SHA256SUMS.txt)
+          unzip -t DRNAS-A840-H31${VARIANT}-ISOLATION.zip
+      - name: Deliver private experimental driver and audit
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo=Frane12/Turnip-Neuro-Private
+          test "$(gh api "repos/$repo" --jq .private)" = true
+          cp private-source/README_A840_MESA27_H31.md diagnostics/
+          find diagnostics/validation -maxdepth 1 -type f ! -name '*.json' ! -name '*.csv' ! -name '*.txt' -delete
+          zip -qr DRNAS-A840-H31${VARIANT}-ISOLATION-AUDIT.zip diagnostics
+          gh release create "a840-h31-isolation-$VARIANT-$GITHUB_RUN_ID" \
+            DRNAS-A840-H31${VARIANT}-ISOLATION.zip DRNAS-A840-H31${VARIANT}-ISOLATION-AUDIT.zip \
+            --repo "$repo" --target "$PORT_SHA" --draft --prerelease \
+            --title "A840 H3.1$VARIANT CRASH ISOLATION · $GITHUB_RUN_ID" \
+            --notes "Diagnostic only. Original H3.1 crashes on game launch while previous driver works. Variant $VARIANT: A=H3.0 plus context controller only; B=H3.0 plus upstream backports only. Build $PORT_SHA. No device fix claimed."
+          echo 'Private isolation driver saved. Device comparison required.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Save diagnostics privately on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo=Frane12/Turnip-Neuro-Private
+          test "$(gh api "repos/$repo" --jq .private)" = true
+          mkdir -p diagnostics
+          printf '%s\n' "$MESA_SHA" "$PORT_SHA" > diagnostics/revisions.txt
+          zip -qr "$RUNNER_TEMP/h31-diagnostics.zip" diagnostics
+          gh release create "a840-h31-isolation-diag-$VARIANT-$GITHUB_RUN_ID" "$RUNNER_TEMP/h31-diagnostics.zip" \
+            --repo "$repo" --draft --prerelease --title "H3.1 private diagnostics $GITHUB_RUN_ID" --notes "Private build logs."
+          { grep -Eh 'error:|fatal:|FAILED:|ERROR:|undefined (reference|symbol)' diagnostics/*.log || true; } | cut -c1-900 | tail -200 > diagnostics/errors.txt
+          if test -s diagnostics/errors.txt; then
+            jq -Rs '{content: ., encoding:"utf-8"}' diagnostics/errors.txt | gh api -X POST "repos/$repo/git/blobs" --input - --jq .sha
+          fi
