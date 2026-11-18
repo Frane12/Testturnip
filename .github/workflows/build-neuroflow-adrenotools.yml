@@ -1,0 +1,125 @@
+name: Build NeuroFlow reference Turnip (AdrenoTools)
+
+on:
+  push:
+    branches:
+      - feature/neuroflow-decision-debt-v01
+    paths:
+      - 'include/nf_decision_debt.h'
+      - 'drivers/tu_nf_debt_bridge.c'
+      - '.github/workflows/build-neuroflow-adrenotools.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies and pinned Mesa
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build pkg-config python3-pip python3-venv python3-mako python3-yaml python3-packaging python3-ply bison flex glslang-tools spirv-tools libexpat1-dev zip file binutils
+          python3 -m venv /tmp/mesa-venv
+          /tmp/mesa-venv/bin/pip install 'meson>=1.4' mako pyyaml packaging ply
+          echo /tmp/mesa-venv/bin >> "$GITHUB_PATH"
+          if ! git clone --filter=blob:none https://gitlab.freedesktop.org/mesa/mesa.git mesa; then
+            rm -rf mesa
+            git clone --filter=blob:none https://github.com/chaotic-cx/mesa-mirror.git mesa
+          fi
+          git -C mesa checkout 6dfbc555b4128ee51139c5f78c5aba2594c9701b
+          test "$(cat mesa/VERSION)" = "26.1.4"
+
+      - name: Compile reference module INTO Turnip (no runtime hot-path hook)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp include/nf_decision_debt.h mesa/src/freedreno/vulkan/nf_decision_debt.h
+          cp drivers/tu_nf_debt_bridge.c mesa/src/freedreno/vulkan/tu_nf_debt_bridge.c
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("mesa/src/freedreno/vulkan/meson.build")
+          src = p.read_text()
+          anchor = "  'tu_autotune.cc',"
+          assert src.count(anchor) == 1, "Upstream Mesa layout changed: refusing to patch blindly"
+          p.write_text(src.replace(anchor, anchor + "\n  'tu_nf_debt_bridge.c',", 1))
+          PY
+
+      - name: Configure Android ARM64 cross-toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_NDK_LATEST_HOME"
+          test -d "$NDK"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > android-aarch64.ini <<EOF
+          [binaries]
+          c = '$BIN/aarch64-linux-android34-clang'
+          cpp = '$BIN/aarch64-linux-android34-clang++'
+          ar = '$BIN/llvm-ar'
+          strip = '$BIN/llvm-strip'
+          pkg-config = ['env', 'PKG_CONFIG_LIBDIR=/tmp/mesa-empty-pc', '/usr/bin/pkg-config']
+          [host_machine]
+          system = 'android'
+          cpu_family = 'aarch64'
+          cpu = 'armv8'
+          endian = 'little'
+          EOF
+          mkdir -p /tmp/mesa-empty-pc
+          meson setup mesa/build-android-aarch64 mesa \
+            --cross-file "$GITHUB_WORKSPACE/android-aarch64.ini" \
+            -Dbuildtype=release \
+            -Dplatforms=android \
+            -Dplatform-sdk-version=34 \
+            -Dandroid-stub=true \
+            -Dandroid-libbacktrace=disabled \
+            -Degl=disabled \
+            -Dgallium-drivers= \
+            -Dvulkan-drivers=freedreno \
+            -Dfreedreno-kmds=kgsl
+
+      - name: Build Turnip .so
+        run: meson compile -C mesa/build-android-aarch64
+
+      - name: Verify and package AdrenoTools ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          SO="mesa/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so"
+          test -s "$SO"
+          file "$SO" | tee /tmp/elfinfo.txt
+          grep -q 'ARM aarch64' /tmp/elfinfo.txt
+          readelf -Ws "$SO" > /tmp/neuroflow-symbols.txt
+          grep -q 'tu_neuroflow_reference_abi_version' /tmp/neuroflow-symbols.txt
+          grep -q 'tu_neuroflow_reference_selftest' /tmp/neuroflow-symbols.txt
+          mkdir -p dist/staging
+          cp "$SO" dist/staging/libvulkan_freedreno.so
+          cat > dist/staging/meta.json <<'EOF'
+          {
+            "schemaVersion": 1,
+            "name": "Drnas NeuroFlow v0.1 (REFERENCE; no render-policy integration)",
+            "description": "Mesa 26.1.4 Android KGSL baseline with linked NeuroFlow reference controller; no frame-time improvements claimed.",
+            "author": "Drnas Turnip contributors",
+            "packageVersion": "1",
+            "vendor": "Mesa",
+            "driverVersion": "26.1.4-NF-ref0.1",
+            "minApi": 34,
+            "libraryName": "libvulkan_freedreno.so"
+          }
+          EOF
+          python3 -m json.tool dist/staging/meta.json > /dev/null
+          (cd dist/staging && zip -9 -q ../Drnas-NeuroFlow-Reference-v0.1-AdrenoTools.zip meta.json libvulkan_freedreno.so)
+          cd dist
+          sha256sum Drnas-NeuroFlow-Reference-v0.1-AdrenoTools.zip > SHA256SUMS.txt
+          test -s Drnas-NeuroFlow-Reference-v0.1-AdrenoTools.zip
+
+      - name: Upload complete ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: Drnas-NeuroFlow-Reference-v0.1-AdrenoTools
+          path: |
+            dist/Drnas-NeuroFlow-Reference-v0.1-AdrenoTools.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
