@@ -1,0 +1,131 @@
+name: Publish A840 H3.0 Decision Cache and H3.1 NOT TESTED
+on:
+  push:
+    branches:
+      - release/a840-h30-h31-public-20261120
+    paths:
+      - .github/workflows/publish-a840-h30-h31.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: a840-h30-h31-public-release-20261120
+  cancel-in-progress: false
+jobs:
+  publish_h30:
+    if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/release/a840-h30-h31-public-20261120'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve pinned original H3.0 binary from the private lab
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          mkdir -p dist/h30
+          gh release download a840-mesa27-h30-cache-41199717594 --repo Frane12/Turnip-Neuro-Private --pattern DRNAS-A840-MESA27-H30-DECISION-CACHE.zip --dir dist/h30
+          echo 'bb06f42ac927969d96fa2d74803803c3f76707bdb62dc7c3d281c76500aa80db  dist/h30/DRNAS-A840-MESA27-H30-DECISION-CACHE.zip' | sha256sum -c -
+      - name: Check A840 ARM64 package and prepare clear release notes
+        run: |
+          set -euo pipefail
+          archive=dist/h30/DRNAS-A840-MESA27-H30-DECISION-CACHE.zip
+          unzip -t "$archive"
+          mkdir -p /tmp/a840-h30-verify
+          unzip -q "$archive" -d /tmp/a840-h30-verify
+          readelf -h /tmp/a840-h30-verify/libvulkan_freedreno.so | grep -q 'AArch64'
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('/tmp/a840-h30-verify/meta.json').read_text())
+          assert 'A840' in obj['name'] and 'H3.0' in obj['name']
+          assert obj['libraryName']=='libvulkan_freedreno.so'
+          assert obj['driverVersion']=='27.0.0-devel'
+          assert obj['minApi']==34
+          PY
+          (cd dist/h30 && sha256sum DRNAS-A840-MESA27-H30-DECISION-CACHE.zip > SHA256SUMS.txt)
+          cat > dist/h30/RELEASE_NOTES.md <<'NOTES'
+          # DRNAS Turnip A840 H3.0 — Decision Cache (Mesa 27)
+
+          **Experimental public Release, NOT a stable or universally validated driver.**
+          Built for **Adreno A840 only**, Android ARM64 / KGSL (min API 34), using Mesa 27.0.0-devel.
+
+          - H3.0 bounded decision-cache experiment layered on the H2.9 A840 port.
+          - Decision cache defaults ON; an internal A/B control is available via `TU_FRANE_A840_DECISION_CACHE=0`.
+          - Archive is the original compiled driver transferred from the pinned private laboratory release, with its SHA-256 verified; public source attribution and package provenance are preserved in the ZIP.
+          - **Compatibility warning:** device and game coverage is incomplete. Game-start crashes or regressions are possible, and compatibility problems were reported in the A840 Mesa 27 tests. Back up a working driver (e.g. A840 H2.9) before trying this.
+          - Do **not** install on A810 or A830. No performance improvement claim is made without paired hardware benchmarks.
+          NOTES
+      - name: Publish regular release without overwriting existing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=drnas-a840-h3.0-decision-cache-mesa27
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Existing release $tag detected; refusing to overwrite."
+            exit 0
+          fi
+          gh release create "$tag"             dist/h30/DRNAS-A840-MESA27-H30-DECISION-CACHE.zip             dist/h30/SHA256SUMS.txt             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title 'DRNAS Turnip A840 H3.0 Decision Cache · Mesa 27 · EXPERIMENTAL'             --notes-file dist/h30/RELEASE_NOTES.md
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,name,isPrerelease,assets
+
+  publish_h31:
+    if: github.repository == 'Frane12/Testturnip' && github.ref == 'refs/heads/release/a840-h30-h31-public-20261120'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve pinned original H3.1 binary from the private lab
+        env:
+          GH_TOKEN: ${{ secrets.DRNAS_NEURO_PRIVATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN"
+          mkdir -p dist/h31
+          gh release download a840-h31-context-math-44293183840 --repo Frane12/Turnip-Neuro-Private --pattern DRNAS-A840-MESA27-H31-CONTEXT-GUARD.zip --dir dist/h31
+          echo '7da2c5591805f1882e399ea081750ec2bf886a694f789d0bbbf6df0d6163170e  dist/h31/DRNAS-A840-MESA27-H31-CONTEXT-GUARD.zip' | sha256sum -c -
+      - name: Check A840 ARM64 package and prepare NOT TESTED notice
+        run: |
+          set -euo pipefail
+          archive=dist/h31/DRNAS-A840-MESA27-H31-CONTEXT-GUARD.zip
+          unzip -t "$archive"
+          mkdir -p /tmp/a840-h31-verify
+          unzip -q "$archive" -d /tmp/a840-h31-verify
+          readelf -h /tmp/a840-h31-verify/libvulkan_freedreno.so | grep -q 'AArch64'
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('/tmp/a840-h31-verify/meta.json').read_text())
+          assert 'A840' in obj['name'] and 'H3.1' in obj['name']
+          assert obj['libraryName']=='libvulkan_freedreno.so'
+          assert obj['driverVersion']=='27.0.0-devel'
+          assert obj['minApi']==34
+          PY
+          (cd dist/h31 && sha256sum DRNAS-A840-MESA27-H31-CONTEXT-GUARD.zip > SHA256SUMS.txt)
+          cat > dist/h31/RELEASE_NOTES.md <<'NOTES'
+          # DRNAS Turnip A840 H3.1 — Context Guard
+
+          **PRE-RELEASE · NOT TESTED / NOT DEVICE-VALIDATED · EXPERIMENTAL — HIGH CRASH RISK**
+
+          A840-only Android ARM64 / KGSL driver, Mesa 27.0.0-devel, min API 34.
+
+          - H3.1 builds on H3.0 Decision Cache and adds context-guard / upstream LRZ and GMEM synchronization work.
+          - Laboratory host tests and mathematical parameter audits do **not** establish that Android GPU rendering works.
+          - **Known caution:** follow-up H3.1 isolation notes document a game-start crash involving the original H3.1 path. This build must not be represented as stable, game-tested or crash-free.
+          - This public archive is the unchanged pinned private lab binary with its SHA-256 verified; package provenance is inside the ZIP.
+          - Back up the last working driver before installing. Keep H3.0 or H2.9 available for rollback. Not for A810 or A830.
+          - No FPS, thermal, game-compatibility or performance claims.
+          NOTES
+      - name: Publish public prerelease without overwriting existing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=drnas-a840-h3.1-context-guard-mesa27-not-tested
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Existing prerelease $tag detected; refusing to overwrite."
+            exit 0
+          fi
+          gh release create "$tag"             dist/h31/DRNAS-A840-MESA27-H31-CONTEXT-GUARD.zip             dist/h31/SHA256SUMS.txt             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title 'DRNAS Turnip A840 H3.1 Context Guard · NOT TESTED'             --notes-file dist/h31/RELEASE_NOTES.md             --prerelease
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,name,isPrerelease,assets
